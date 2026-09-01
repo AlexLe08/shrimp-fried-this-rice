@@ -2,7 +2,7 @@ import { SlashCommandBuilder, ChatInputCommandInteraction, MessageFlags} from 'd
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath, pathToFileURL,  } from 'node:url';
-import type { Command } from '../../types/command.js';
+import type { Command } from '../../types/command.ts';
 
 // The __dirname variable is not available in ES modules, so we need to use the fileURLToPath() function from the node:url module to get the current file's path and then use path.dirname() to get the directory name.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -17,7 +17,6 @@ export default  {
                 .setDescription('The command to reload.')
                 .setRequired(true)),
     async execute(interaction: ChatInputCommandInteraction) {
-        if (!interaction.isChatInputCommand()) return;
         const commandName = interaction.options.getString('command', true).toLowerCase();
         const command = interaction.client.commands.get(commandName);
 

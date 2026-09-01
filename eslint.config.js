@@ -1,6 +1,6 @@
-import { configs } from '@eslint/js';
+import js from '@eslint/js';
 export default [
-	configs.recommended,
+	js.configs.recommended,
 	{
 		languageOptions: {
 			ecmaVersion: 'latest',

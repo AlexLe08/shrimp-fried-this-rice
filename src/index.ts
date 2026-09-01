@@ -1,7 +1,7 @@
 import { Client, Collection, GatewayIntentBits } from "discord.js";
 import 'dotenv/config';
 
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
 import type { Command } from "./types/command.ts";
@@ -21,21 +21,19 @@ for (const folder of commandFolders) {
 	const commandsPath = path.join(foldersPath, folder);
 	// reads the path to this directory and returns an array of all the file names they contain,
 	const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.ts'));
+
+	// always false; data/execute are under command.default
+	// const command = await import (filePath);
 	for (const file of commandFiles) {
 		const filePath = path.join(commandsPath, file);
-		// always false; data/execute are under command.default
-		// const command = await import (filePath);
-		for (const file of commandFiles) {
-			const filePath = path.join(commandsPath, file);
-			const commandModule = await import(filePath) as { default: Command };
-			const command = commandModule.default;
-			// Set a new item in the Collection with the key as the command name and the value as the exported module
-			// For each file being loaded, check that it has at least the data and execute properties.
-			if (command && 'data' in command && 'execute' in command) {
-				client.commands.set(command.data.name, command);
-			} else {
-				console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
-			}
+		const commandModule = await import(filePath) as { default: Command };
+		const command = commandModule.default;
+		// Set a new item in the Collection with the key as the command name and the value as the exported module
+		// For each file being loaded, check that it has at least the data and execute properties.
+		if (command && 'data' in command && 'execute' in command) {
+			client.commands.set(command.data.name, command);
+		} else {
+			console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
 		}
 	}
 }
@@ -61,4 +59,4 @@ for (const file of eventFiles) {
 
 client.cooldowns = new Collection();
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(process.env["DISCORD_TOKEN"]);

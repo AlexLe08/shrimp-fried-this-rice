@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, ChannelType } from 'discord.js';
+import { SlashCommandBuilder, ChannelType, ChatInputCommandInteraction, MessageFlags } from 'discord.js';
 
 export default {
     data: new SlashCommandBuilder()
@@ -20,6 +20,33 @@ export default {
         })
         .addBooleanOption( (option) => {
             return option.setName('ephemeral').setDescription('Whether or not the echo should be ephemeral')
-        })
-        ,
-}
+        }),
+    async execute(interaction: ChatInputCommandInteraction) {
+        if (!interaction.inCachedGuild()) {
+            await interaction.reply({
+                content: 'This command can only be used in a server.',
+                flags: MessageFlags.Ephemeral,
+            });
+            return;
+        }
+
+		const input = interaction.options.getString('input', true);
+		const channel = interaction.options.getChannel('channel', true);
+		const ephemeral = interaction.options.getBoolean('ephemeral') ?? false;
+
+		if (!channel.isTextBased()) {
+			await interaction.reply({
+				content: 'Please select a text channel.',
+				flags: MessageFlags.Ephemeral,
+			});
+			return;
+		}
+
+		await channel.send(input);
+
+		await interaction.reply({
+            content: `Echoed your message to ${channel}.`,
+            ...(ephemeral ? { flags: MessageFlags.Ephemeral} : {} )
+        });
+	},
+};
