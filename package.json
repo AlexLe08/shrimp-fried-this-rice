@@ -9,10 +9,12 @@
   "private": true,
   "scripts": {
     "start": "node ./src/index.ts",
+    "deploycommands": "node ./src/deploy-commands.ts",
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "node --watch ./src/index.ts",
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "zip": "zip -X -r project-export.zip . -x 'node_modules/*' -x '.git/*' -x 'dist/*' -x '.env' -x '*.zip' -x '.DS_Store' -x '__MACOSX/*'"
   },
   "keywords": [],
   "author": "",

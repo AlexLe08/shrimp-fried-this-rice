@@ -21,10 +21,11 @@ export default  {
         const command = interaction.client.commands.get(commandName);
 
         if (!command) {
-            return interaction.reply({
+            await interaction.reply({
                 content: `There is no command with name \`${commandName}\`!`, 
                 flags: MessageFlags.Ephemeral, 
             });
+            return;
         }
         // at runtime, this code executes as compiled .js in dist/, so importing ./${commandName}.ts will fail to resolve. It needs .js, and per Node's ESM rules should be a proper file URL built with pathToFileURL, not a bare relative path.
         //const commandPath = path.join(__dirname, `${commandName}.js`);
@@ -47,10 +48,11 @@ export default  {
         }
 
         if (!commandPath) {
-            return interaction.reply({
+            await interaction.reply({
                 content: `Could not find a command file for \`${commandName}\`.`, 
                 flags: MessageFlags.Ephemeral, 
             });
+            return;
         }
 
         // Dynamically import the command module using the path to the file and a query parameter to force a reload
