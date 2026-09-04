@@ -1,33 +1,37 @@
 # Posture & Hydration Reminder Bot
 
-A Discord bot built with **TypeScript** and **discord.js v14**. The end goal is a bot that periodically sends a preset reminder message (e.g. "Check your posture!" or "Time to drink water!") to a server channel, and optionally as a DM to individual users who opt in.
-
-> **Status:** the bot's core framework (command handling, event handling, cooldowns, error handling) is built and working. The reminder-scheduling feature itself (the original goal of the project) has not been implemented yet — see [Status](#status) below for the current breakdown.
+A Discord bot built with **TypeScript** and **discord.js v14** that periodically sends a preset reminder message (e.g. "Check your posture!" or "Time to drink water!") to a server channel, and optionally as a DM to individual users who opt in.
 
 ## Status
 
-**Built and working:**
+**Core feature set is complete and working end-to-end:**
 - Slash command loading and registration
 - Event handling (`ClientReady`, `InteractionCreate`)
 - Per-command, per-user cooldowns
 - A `/reload` command for hot-reloading a single command file without restarting the bot
+- SQLite-backed persistence (`src/storage.ts`) for server and per-user settings
+- A polling scheduler (`src/scheduler.ts`) that sends reminders when they're due
+- Full CRUD management of server reminders, plus a server-wide master toggle
+- Personal opt-in DM reminders, independent of any server setting
 - A handful of utility commands (`/ping`, `/echo`, `/info`, `/server`, `/user`) used to shake out the framework
 
-**Not yet implemented (stubbed files exist, logic doesn't yet):**
-- `src/scheduler.ts` — will hold the interval/cron logic that actually sends the periodic reminder
-- `src/storage.ts` — will hold the persistence layer (per-user/per-server settings: interval, custom message, DM toggle)
-- The reminder message itself, and the commands to configure it (interval, target channel, DM opt-in)
+**Deferred / future enhancements (not blocking, not started):**
+- Custom-styled Discord embeds for reminder messages (currently plain text, which still supports pasted image/GIF/YouTube/Spotify links via Discord's automatic link unfurling)
+- True file/audio attachments on reminders (bundled sound files or user-uploaded audio)
+- Global command registration, so `/remindme` can be run directly in a DM with the bot (currently guild-scoped only — see [Execution Model](#execution-model) note on command registration)
+- Autocomplete for custom server emojis in reminder messages (Discord's own slash-command input fields don't always convert a picked custom emoji into its proper renderable format — this is a Discord client limitation, not a bug in this bot; standard Unicode emojis are unaffected)
 
 ## Tech Stack
 
 - [discord.js](https://discord.js.org) v14
 - TypeScript, executed natively by Node (no compile step in the normal run path — see [Execution Model](#execution-model))
-- `node-cron` (installed, not yet wired up) for scheduling
-- Persistence layer not yet chosen/implemented
+- SQLite via `better-sqlite3` for persistence
 
 ## Execution Model
 
 This project runs TypeScript **directly via Node's native type-stripping support** rather than compiling to a `dist/` folder first. This requires **Node.js v23.6.0 or later** (ideally the current LTS). There is a `build`/`dist` path available (`npm run build`) for future use (e.g. if deployment ever requires it), but it isn't part of the normal dev/run workflow.
+
+Slash commands are currently registered **guild-scoped** (see `deploycommands` script below) for fast iteration during development. This means `/remindme` — despite delivering its reminders via DM — can currently only be *invoked* from within the configured test server, not from a direct DM with the bot. Switching to global command registration is a planned future step; see [Status](#status) above.
 
 ## Prerequisites
 
@@ -62,13 +66,15 @@ This project runs TypeScript **directly via Node's native type-stripping support
    ```bash
    npm run deploycommands
    ```
-   (Registers guild-scoped commands, using `DISCORD_GUILD_ID` — near-instant propagation, good for development.)
+   (Registers guild-scoped commands, using `DISCORD_GUILD_ID` — near-instant propagation, good for development. Re-run this any time a command's options/subcommands change.)
 
 5. **Run the bot**
    ```bash
    npm run dev      # development, auto-restarts on file changes
    npm start        # runs the bot once, no auto-restart
    ```
+
+   On first run, `reminders.db` (a SQLite file) is created automatically in the project root — no manual database setup needed.
 
 ## Commands
 
@@ -81,8 +87,14 @@ This project runs TypeScript **directly via Node's native type-stripping support
 | `/server` | Shows the server's name and member count. |
 | `/user` | Shows the invoking user's username and server join date. |
 | `/reload <command>` | Hot-reloads a single command file's code without restarting the bot. |
-
-*(Reminder-related commands — setting interval, target channel, custom message, DM toggle — are planned but not yet implemented.)*
+| `/reminder create <label> <channel> <interval> <message>` | Creates a new server reminder. Interval must be 5–1440 minutes. Warns (but still saves) if the bot lacks permissions in the target channel. |
+| `/reminder edit <label> [channel] [interval] [message]` | Edits one or more fields of an existing reminder; unspecified fields are left unchanged. |
+| `/reminder list` | Lists the server's master toggle state, followed by every configured reminder and its status. |
+| `/reminder toggle <label> <enabled>` | Enables or disables a specific reminder. |
+| `/reminder delete <label>` | Deletes a reminder. |
+| `/reminder master <enabled>` | Server-wide kill switch — overrides all individual reminders when off. Requires **Manage Server** permission; guild-only. |
+| `/remindme [enabled] [interval] [message]` | Views (if called with no options) or updates your personal DM reminder settings. |
+| `/remindme reset:true` | Deletes your personal DM reminder settings entirely. |
 
 ## Project Structure
 
@@ -90,15 +102,16 @@ This project runs TypeScript **directly via Node's native type-stripping support
 src/
   index.ts              # client setup, command/event loading, login
   deploy-commands.ts    # registers slash commands with Discord's API
-  scheduler.ts          # [stub] will hold reminder scheduling logic
-  storage.ts            # [stub] will hold settings persistence
+  scheduler.ts          # polling loop — checks storage.ts for due reminders and sends them
+  storage.ts            # SQLite data-access layer (guild settings, guild reminders, user settings)
   types/
     command.ts           # shared Command interface
     types.d.ts            # module augmentation (adds `commands`/`cooldowns` to discord.js's Client)
   commands/
-    utility/              # current command files (ping, echo, info, server, user, reload)
+    utility/              # ping, echo, info, server, user, reload
+    reminderCore/          # reminder (guildreminder.ts), remindme
   events/
-    ready.ts               # ClientReady handler
+    ready.ts               # ClientReady handler — also starts the scheduler
     interactionCreate.ts   # routes slash command interactions, handles cooldowns + errors
 ```
 
@@ -110,26 +123,29 @@ src/
 | `npm run dev` | Runs the bot with `--watch`, auto-restarting on file changes |
 | `npm run build` | Compiles to `dist/` via `tsc` (not part of the normal run path currently) |
 | `npm run typecheck` | Type-checks the project without emitting output |
-| `npm run deploycommands` |	Registers slash commands with Discord's API |
-| `npm run zip` | Bundles the project (excluding `node_modules`, `dist`, `.env`, etc.) into a shareable zip |
+| `npm run deploycommands` | Registers slash commands with Discord's API |
+| `npm run zip` | Bundles the project (excluding `node_modules`, `dist`, `.env`, `reminders.db`, etc.) into a shareable zip |
 
 ## Deployment
 
-This bot needs to run as a long-lived process (not serverless), since it relies on in-memory or scheduled intervals once the scheduler is built. Suitable hosts include:
+This bot needs to run as a long-lived process (not serverless), since the scheduler relies on an in-process polling loop. Suitable hosts include:
 - [Railway](https://railway.app)
 - [Fly.io](https://fly.io)
 - A small VPS (DigitalOcean, Linode, etc.)
 
 Any host used for production needs to provide Node.js v23.6.0+, per the [Execution Model](#execution-model) above.
 
+> ⚠️ **Important — not yet set up:** many hosting platforms use an *ephemeral* filesystem by default, meaning `reminders.db` would be wiped on every redeploy/restart unless persistent storage (e.g. a Railway Volume or Fly.io Volume) is explicitly provisioned and the database path is pointed at it. This must be configured correctly **before** deploying anywhere beyond local development, or all configured reminders will be silently lost on the first redeploy.
+
 ## Roadmap
 
-- [ ] Build `storage.ts` — persistence layer for per-user/per-server settings
-- [ ] Build `scheduler.ts` — interval/cron logic to actually send reminders
-- [ ] Commands to configure the reminder: interval, target channel, message text, DM toggle
-- [ ] Per-server custom messages and intervals
+- [ ] Set up persistent, non-ephemeral storage for `reminders.db` on the chosen host, before deploying
+- [ ] Switch to global command registration so `/remindme` works via direct DM
+- [ ] Custom-styled embeds for reminder messages
+- [ ] True file/audio attachment support (bundled sound files, or user-uploaded)
+- [ ] Autocomplete for custom server emojis in reminder messages
 - [ ] Snooze/pause command
-- [ ] Multiple reminder types (posture, water, eyes, stretching) on independent schedules
+- [ ] Web dashboard for configuration (longer-term idea)
 
 ## License
 
