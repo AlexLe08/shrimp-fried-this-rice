@@ -125,6 +125,24 @@ export function createGuildReminder(reminder: {
 	).run(reminder.guildId, reminder.label, reminder.channelId, reminder.intervalMinutes, reminder.message);
 }
 
+// Why fetch-then-update-all-columns, instead of only updating the changed column(s): building SQL where the set of columns changes dynamically based on which options were provided is genuinely fiddly to do safely (you'd be conditionally concatenating column names into the query string). Reading the current row first and writing all three columns back — two unchanged, one new — sidesteps that complexity entirely, at the cost of a trivial extra SELECT. For a table this small, that's a good trade.
+export function updateGuildReminder(guildId: string, label: string, updates: {
+	channelId?: string;
+	intervalMinutes?: number;
+	message?: string;
+}): void {
+	const existing = getGuildReminderByLabel(guildId, label);
+	if (!existing) return;
+
+	const channelId = updates.channelId ?? existing.channel_id;
+	const intervalMinutes = updates.intervalMinutes ?? existing.interval_minutes;
+	const message = updates.message ?? existing.message;
+
+	db.prepare(
+		'UPDATE guild_reminders SET channel_id = ?, interval_minutes = ?, message = ? WHERE guild_id = ? AND reminder_label = ?',
+	).run(channelId, intervalMinutes, message, guildId, label);
+}
+
 // Updates an existing reminder to be enabled; narrowed down by guildID and label
 export function setGuildReminderEnabled(guildId: string, label: string, enabled: boolean): void {
 	db.prepare(
@@ -196,4 +214,8 @@ export function getDueUserSettings(now: number): UserSettings[] {
 			   AND (last_sent_at + interval_minutes * 60000) <= ?`,
 		)
 		.all(now) as UserSettings[];
+}
+
+export function deleteUserSettings(userId: string): void {
+	db.prepare('DELETE FROM user_settings WHERE user_id = ?').run(userId);
 }

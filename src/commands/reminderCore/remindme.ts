@@ -1,5 +1,5 @@
 import { SlashCommandBuilder, ChatInputCommandInteraction, MessageFlags } from 'discord.js';
-import { getUserSettings, upsertUserSettings, MIN_INTERVAL_MINUTES, MAX_INTERVAL_MINUTES } from '../../storage.ts';
+import { getUserSettings, upsertUserSettings, deleteUserSettings, MIN_INTERVAL_MINUTES, MAX_INTERVAL_MINUTES } from '../../storage.ts';
 
 const DEFAULT_MESSAGE = 'Time for a quick break!';
 const DEFAULT_INTERVAL = 60;
@@ -19,8 +19,21 @@ export default {
 		.addStringOption(option =>
 			option.setName('message')
 				.setDescription('The reminder text to DM you')
-				.setMaxLength(2000)),
+				.setMaxLength(2000))
+		.addBooleanOption(option =>
+			option.setName('reset')
+				.setDescription('Delete all your personal reminder settings')),
 	async execute(interaction: ChatInputCommandInteraction) {
+        const resetOption = interaction.options.getBoolean('reset');
+        if (resetOption) {
+            deleteUserSettings(interaction.user.id);
+            await interaction.reply({
+                content: 'Your DM reminder settings have been deleted.',
+                flags: MessageFlags.Ephemeral,
+            });
+            return;
+        }
+
 		const existing = getUserSettings(interaction.user.id);
 
 		const enabledOption = interaction.options.getBoolean('enabled');
