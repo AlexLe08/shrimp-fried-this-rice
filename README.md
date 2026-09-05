@@ -57,7 +57,6 @@ Slash commands are registered **globally** (via `deploycommands`), so they're av
    ```env
    DISCORD_TOKEN=your-bot-token-here
    DISCORD_CLIENT_ID=your-application-client-id
-   DISCORD_GUILD_ID=your-test-server-id
    ```
    > ⚠️ Never commit `.env` to version control. It's already listed in `.gitignore`.
 

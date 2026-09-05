@@ -41,9 +41,6 @@ if (!process.env['DISCORD_CLIENT_ID']) {
     throw new Error('DISCORD_CLIENT_ID is not defined.');
 }
 
-if (!process.env['DISCORD_GUILD_ID']) {
-    throw new Error('DISCORD_GUILD_ID is not defined.');
-}
 // Construct and prepare an instance of the REST module
 const rest = new REST().setToken(process.env['DISCORD_TOKEN']);
 

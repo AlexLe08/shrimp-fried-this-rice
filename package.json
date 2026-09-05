@@ -14,7 +14,7 @@
     "dev": "node --watch ./src/index.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "zip": "zip -X -r project-export.zip . -x 'node_modules/*' -x '.git/*' -x 'dist/*' -x '.env' -x '*.zip' -x '.DS_Store' -x '__MACOSX/*'"
+    "zip": "zip -X -r project-export.zip . -x 'node_modules/*' -x '.git/*' -x 'dist/*' -x '.env' -x '*.zip' -x '.DS_Store' -x '__MACOSX/*' -x '*.db*'"
   },
   "keywords": [],
   "author": "",
@@ -29,5 +29,8 @@
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.4.0",
     "typescript": "^7.0.2"
+  },
+  "allowScripts": {
+    "better-sqlite3": true
   }
 }
