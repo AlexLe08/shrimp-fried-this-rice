@@ -4,22 +4,25 @@ A Discord bot built with **TypeScript** and **discord.js v14** that periodically
 
 ## Status
 
-**Core feature set is complete and working end-to-end:**
-- Slash command loading and registration
+**Core feature set is complete, deployed, and running in production:**
+- Slash command loading and registration (global — works in any server the bot is invited to, plus direct DMs)
 - Event handling (`ClientReady`, `InteractionCreate`)
 - Per-command, per-user cooldowns
 - A `/reload` command for hot-reloading a single command file without restarting the bot
 - SQLite-backed persistence (`src/storage.ts`) for server and per-user settings
 - A polling scheduler (`src/scheduler.ts`) that sends reminders when they're due
 - Full CRUD management of server reminders, plus a server-wide master toggle
-- Personal opt-in DM reminders, independent of any server setting
+- Personal opt-in DM reminders, independent of any server setting — configurable directly via DM with the bot
 - A handful of utility commands (`/ping`, `/echo`, `/info`, `/server`, `/user`) used to shake out the framework
+- Deployed 24/7 on an Oracle Cloud "Always Free" VM, managed via systemd (see [Production Deployment](#production-deployment))
 
 **Deferred / future enhancements (not blocking, not started):**
 - Custom-styled Discord embeds for reminder messages (currently plain text, which still supports pasted image/GIF/YouTube/Spotify links via Discord's automatic link unfurling)
 - True file/audio attachments on reminders (bundled sound files or user-uploaded audio)
-- Global command registration, so `/remindme` can be run directly in a DM with the bot (currently guild-scoped only — see [Execution Model](#execution-model) note on command registration)
 - Autocomplete for custom server emojis in reminder messages (Discord's own slash-command input fields don't always convert a picked custom emoji into its proper renderable format — this is a Discord client limitation, not a bug in this bot; standard Unicode emojis are unaffected)
+
+**A known, deliberate design note:**
+- `/remindme` (personal DM settings) is keyed only by user ID, not per-server. If the same person is in multiple servers this bot is in, they share one set of personal DM reminder settings across all of them — this matches the original spec (a personal reminder independent of any server), not a bug.
 
 ## Tech Stack
 
@@ -29,9 +32,9 @@ A Discord bot built with **TypeScript** and **discord.js v14** that periodically
 
 ## Execution Model
 
-This project runs TypeScript **directly via Node's native type-stripping support** rather than compiling to a `dist/` folder first. This requires **Node.js v23.6.0 or later** (ideally the current LTS). There is a `build`/`dist` path available (`npm run build`) for future use (e.g. if deployment ever requires it), but it isn't part of the normal dev/run workflow.
+This project runs TypeScript **directly via Node's native type-stripping support** rather than compiling to a `dist/` folder first. This requires **Node.js v23.6.0 or later** (the production VM runs Node 24 LTS). There is a `build`/`dist` path available (`npm run build`) for local use if ever needed, but it isn't part of the normal dev/run/deploy workflow.
 
-Slash commands are currently registered **guild-scoped** (see `deploycommands` script below) for fast iteration during development. This means `/remindme` — despite delivering its reminders via DM — can currently only be *invoked* from within the configured test server, not from a direct DM with the bot. Switching to global command registration is a planned future step; see [Status](#status) above.
+Slash commands are registered **globally** (via `deploycommands`), so they're available in any server the bot is invited to, and `/remindme` can also be run directly in a DM with the bot. Global command changes can take up to an hour to propagate to all clients (in practice, often much faster).
 
 ## Prerequisites
 
@@ -39,7 +42,7 @@ Slash commands are currently registered **guild-scoped** (see `deploycommands` s
 - A Discord account and a registered application in the [Discord Developer Portal](https://discord.com/developers/applications)
 - A bot token from that application
 
-## Setup
+## Local Setup
 
 1. **Clone and install dependencies**
    ```bash
@@ -66,7 +69,7 @@ Slash commands are currently registered **guild-scoped** (see `deploycommands` s
    ```bash
    npm run deploycommands
    ```
-   (Registers guild-scoped commands, using `DISCORD_GUILD_ID` — near-instant propagation, good for development. Re-run this any time a command's options/subcommands change.)
+   Re-run this any time a command's options/subcommands change.
 
 5. **Run the bot**
    ```bash
@@ -75,6 +78,24 @@ Slash commands are currently registered **guild-scoped** (see `deploycommands` s
    ```
 
    On first run, `reminders.db` (a SQLite file) is created automatically in the project root — no manual database setup needed.
+
+## Production Deployment
+
+The bot runs continuously on an **Oracle Cloud Infrastructure "Always Free" VM** (Ampere/ARM, Ubuntu, Node 24 installed via NodeSource), managed as a `systemd` service so it survives reboots and restarts automatically on failure.
+
+Key production-specific details, for future reference:
+
+- **Persistence:** since this is a real VM (not a container-based PaaS), `reminders.db` lives on the VM's normal persistent disk — no special volume configuration needed, and it's untouched by deploys (it's git-ignored, so `git pull` never affects it).
+- **Secrets:** `.env` is created directly on the VM (never committed, never pulled from git) with the production bot token and IDs.
+- **Native module builds:** `better-sqlite3` compiles from source on first install on this ARM architecture, requiring `build-essential` and `python3` to be installed on the VM (see deployment notes/history for the full one-time VM setup steps).
+- **npm install-scripts:** `better-sqlite3`'s native build step is explicitly approved via `npm install-scripts approve better-sqlite3`, recorded in `package.json`'s `allowScripts` field — required for npm v12+'s install-script security gating.
+- **Service management:** the bot runs under a systemd unit (`discordbot.service`). Common commands:
+  ```bash
+  sudo systemctl status discordbot     # check if running
+  sudo systemctl restart discordbot    # apply a code update
+  journalctl -u discordbot -f          # view live logs
+  ```
+- **Deploying updates:** a helper script (`~/deploy.sh` on the VM, not part of this repo) runs `git pull`, `npm install`, restarts the service, and re-runs `deploycommands`, in that order (service restart before command redeployment, so a command-registration hiccup never blocks a code fix from taking effect).
 
 ## Commands
 
@@ -93,7 +114,7 @@ Slash commands are currently registered **guild-scoped** (see `deploycommands` s
 | `/reminder toggle <label> <enabled>` | Enables or disables a specific reminder. |
 | `/reminder delete <label>` | Deletes a reminder. |
 | `/reminder master <enabled>` | Server-wide kill switch — overrides all individual reminders when off. Requires **Manage Server** permission; guild-only. |
-| `/remindme [enabled] [interval] [message]` | Views (if called with no options) or updates your personal DM reminder settings. |
+| `/remindme [enabled] [interval] [message]` | Views (if called with no options) or updates your personal DM reminder settings. Can be run in a server or directly in a DM with the bot. |
 | `/remindme reset:true` | Deletes your personal DM reminder settings entirely. |
 
 ## Project Structure
@@ -101,7 +122,7 @@ Slash commands are currently registered **guild-scoped** (see `deploycommands` s
 ```
 src/
   index.ts              # client setup, command/event loading, login
-  deploy-commands.ts    # registers slash commands with Discord's API
+  deploy-commands.ts    # registers slash commands globally with Discord's API
   scheduler.ts          # polling loop — checks storage.ts for due reminders and sends them
   storage.ts            # SQLite data-access layer (guild settings, guild reminders, user settings)
   types/
@@ -121,26 +142,13 @@ src/
 |---|---|
 | `npm start` | Runs the bot once via native Node TypeScript execution |
 | `npm run dev` | Runs the bot with `--watch`, auto-restarting on file changes |
-| `npm run build` | Compiles to `dist/` via `tsc` (not part of the normal run path currently) |
+| `npm run build` | Compiles to `dist/` via `tsc` (not part of the normal run/deploy path) |
 | `npm run typecheck` | Type-checks the project without emitting output |
-| `npm run deploycommands` | Registers slash commands with Discord's API |
+| `npm run deploycommands` | Registers slash commands globally with Discord's API |
 | `npm run zip` | Bundles the project (excluding `node_modules`, `dist`, `.env`, `reminders.db`, etc.) into a shareable zip |
-
-## Deployment
-
-This bot needs to run as a long-lived process (not serverless), since the scheduler relies on an in-process polling loop. Suitable hosts include:
-- [Railway](https://railway.app)
-- [Fly.io](https://fly.io)
-- A small VPS (DigitalOcean, Linode, etc.)
-
-Any host used for production needs to provide Node.js v23.6.0+, per the [Execution Model](#execution-model) above.
-
-> ⚠️ **Important — not yet set up:** many hosting platforms use an *ephemeral* filesystem by default, meaning `reminders.db` would be wiped on every redeploy/restart unless persistent storage (e.g. a Railway Volume or Fly.io Volume) is explicitly provisioned and the database path is pointed at it. This must be configured correctly **before** deploying anywhere beyond local development, or all configured reminders will be silently lost on the first redeploy.
 
 ## Roadmap
 
-- [ ] Set up persistent, non-ephemeral storage for `reminders.db` on the chosen host, before deploying
-- [ ] Switch to global command registration so `/remindme` works via direct DM
 - [ ] Custom-styled embeds for reminder messages
 - [ ] True file/audio attachment support (bundled sound files, or user-uploaded)
 - [ ] Autocomplete for custom server emojis in reminder messages
