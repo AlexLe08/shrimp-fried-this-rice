@@ -4,6 +4,16 @@ This document captures every step taken to deploy this bot to a free, permanent 
 
 ---
 
+## 0. Before you begin: use a separate Discord Application for local development
+
+**This is not optional — we learned this the hard way.** The VM's `.env` should use a bot token from a Discord Application **dedicated to production**, entirely separate from whatever token gets used on a developer's local machine for `npm run dev`.
+
+**Why this matters:** Discord dispatches every interaction to *every* live process connected with the same bot token. If a local dev instance and the VM's production instance ever share one token, both process every command simultaneously against their own separate, silently-drifting `reminders.db` files. In practice this caused: reminders firing twice, `"Interaction has already been acknowledged"` errors, and a status embed that only updated on whichever process happened to have it tracked in its own database.
+
+**The rule going forward:** the VM only ever uses the production Discord Application's token. Any local machine doing development work uses a second, separate Discord Application created just for that purpose (see the project README's Local Setup section for the exact intents/scopes/permissions it needs). Never copy the production `.env` to a local machine for active development use.
+
+---
+
 ## 1. Account setup
 
 1. Sign up for an OCI account at Oracle's Cloud site. A payment card is required for identity verification, but as long as usage stays within "Always Free" resource limits, there is no charge.
@@ -104,10 +114,11 @@ cd your-repo-name
 nano .env
 ```
 
-Contents:
+Contents — using the **production** Discord Application's credentials specifically, never the local-dev one (see [Section 0](#0-before-you-begin-use-a-separate-discord-application-for-local-development)):
 ```env
-DISCORD_TOKEN=your-bot-token-here
-DISCORD_CLIENT_ID=your-application-client-id
+DISCORD_TOKEN=your-production-bot-token-here
+DISCORD_CLIENT_ID=your-production-application-client-id
+DISCORD_GUILD_ID=your-test-server-id
 ```
 
 Save with **Ctrl+O**, **Enter**, then exit with **Ctrl+X**.
@@ -138,6 +149,16 @@ npm's newer `allowScripts` security policy will (starting with npm v12) block a 
 
 ```bash
 npm install-scripts approve better-sqlite3
+```
+
+**If this errors with `Unknown command: "install-scripts"`:** the local npm version doesn't have this subcommand yet (this can differ from the VM's npm version). The fallback is to add the equivalent entry directly into `package.json` by hand — functionally identical, and works regardless of npm version:
+
+```json
+{
+  "allowScripts": {
+    "better-sqlite3": true
+  }
+}
 ```
 
 ### Manual test run
