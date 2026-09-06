@@ -42,6 +42,11 @@ db.exec(`
 		message TEXT NOT NULL DEFAULT 'Time for a quick break!',
 		last_sent_at INTEGER NOT NULL DEFAULT 0
 	);
+    CREATE TABLE IF NOT EXISTS guild_status_messages (
+        guild_id TEXT PRIMARY KEY,
+        channel_id TEXT NOT NULL,
+        message_id TEXT NOT NULL
+    );
 `);
 
 // prop names match SQLite's snake_case naming conventions for its columns
@@ -71,6 +76,12 @@ export interface UserSettings {
 	interval_minutes: number;
 	message: string;
 	last_sent_at: number;
+}
+
+export interface GuildStatusMessage {
+    guild_id: string;
+    channel_id: string;
+    message_id: string;
 }
 
 // Minimum 5 minutes, maximum 24 hours
@@ -175,6 +186,26 @@ export function getDueGuildReminders(now: number): GuildReminder[] {
 			   AND (gr.last_sent_at + gr.interval_minutes * 60000) <= ?`,
 		)
 		.all(now) as GuildReminder[];
+}
+
+export function setGuildStatusMessage(guildId: string, channelId: string, messageId: string): void {
+    db.prepare(
+        `INSERT INTO guild_status_messages (guild_id, channel_id, message_id)
+         VALUES (?, ?, ?)
+         ON CONFLICT(guild_id) DO UPDATE SET
+           channel_id = excluded.channel_id,
+           message_id = excluded.message_id`,
+    ).run(guildId, channelId, messageId);
+}
+
+export function getGuildStatusMessage(guildId: string): GuildStatusMessage | undefined {
+	return db
+		.prepare('SELECT * FROM guild_status_messages WHERE guild_id = ?')
+		.get(guildId) as GuildStatusMessage | undefined;
+}
+
+export function deleteGuildStatusMessage(guildId: string): void {
+	db.prepare('DELETE FROM guild_status_messages WHERE guild_id = ?').run(guildId);
 }
 
 // --- Per-user DM settings ---

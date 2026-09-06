@@ -63,18 +63,24 @@ export default {
             await command.execute(interaction);
         } catch (error) {
             console.error(error);
-            if (interaction.replied || interaction.deferred) {
-                await interaction.followUp({
-                    content: 'There was an error while executing this command!',
-                    flags: MessageFlags.Ephemeral,
-                });
-            } else {
-                await interaction.reply({
-                    content: 'There was an error while executing this command!',
-                    flags: MessageFlags.Ephemeral,
-                });
+            // catch block tried to send its own fallback error message, and that also failed (40060: already acknowledged — a race condition consequence of the first call arriving right at the token's expiry boundary)
+            // resulted unhandled promise rejection, so now the catch block has its own try/catch to handle that and log it instead of crashing the bot.
+            // If the interaction has already been replied to or deferred, we need to use followUp() instead of reply() to avoid an error. This is because you can only reply to an interaction once, and if you've already replied or deferred, you can't reply again.
+            try {
+                if (interaction.replied || interaction.deferred) {
+                    await interaction.followUp({
+                        content: 'There was an error while executing this command!',
+                        flags: MessageFlags.Ephemeral,
+                    });
+                } else {
+                    await interaction.reply({
+                        content: 'There was an error while executing this command!',
+                        flags: MessageFlags.Ephemeral,
+                    });
+                }
+            } catch (followUpError) {
+                console.error('Failed to notify the user of the earlier error:', followUpError);
             }
         }
-
     },
 };

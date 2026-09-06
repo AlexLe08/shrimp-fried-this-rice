@@ -15,9 +15,13 @@ import {
 	setGuildReminderEnabled,
 	deleteGuildReminder,
 	setGuildMasterEnabled,
+	setGuildStatusMessage,
+	getGuildStatusMessage,
 	MIN_INTERVAL_MINUTES,
 	MAX_INTERVAL_MINUTES,
 } from '../../storage.ts';
+import { buildReminderStatusEmbed } from '../../reminderEmbed.ts';
+import { refreshGuildStatusMessage } from '../../reminderEmbed.ts';
 import type { TextChannel } from 'discord.js';
 
 function checkChannelPermissions(interaction: ChatInputCommandInteraction<'cached'>, channel: TextChannel): string | null {
@@ -123,7 +127,11 @@ export default {
 				.addStringOption(option =>
 					option.setName('message')
 						.setDescription('New reminder text')
-						.setMaxLength(2000))),
+						.setMaxLength(2000)))
+		.addSubcommand(subcommand =>
+			subcommand
+				.setName('status')
+				.setDescription("Post a live-updating embed showing this server's reminders and when they'll next fire.")),
 	async execute(interaction: ChatInputCommandInteraction) {
 		if (!interaction.inCachedGuild()) {
 			await interaction.reply({
@@ -164,6 +172,7 @@ export default {
 				content: `Created reminder \`${label}\`: every ${interval} minutes in ${channel}.${permissionWarning ? `\n\n${permissionWarning}` : ''}`,
 				flags: MessageFlags.Ephemeral,
 			});
+			await refreshGuildStatusMessage(interaction.client, guildId);
 			return;
 		}
 
@@ -202,6 +211,64 @@ export default {
 				content: `Reminder \`${label}\` updated.${permissionWarning ? `\n\n${permissionWarning}` : ''}`,
 				flags: MessageFlags.Ephemeral,
 			});
+			await refreshGuildStatusMessage(interaction.client, guildId);
+			return;
+		}
+
+		if (subcommand === 'toggle') {
+			const label = interaction.options.getString('label', true).toLowerCase();
+			const enabled = interaction.options.getBoolean('enabled', true);
+
+			if (!getGuildReminderByLabel(guildId, label)) {
+				await interaction.reply({
+					content: `No reminder found with the label \`${label}\`.`,
+					flags: MessageFlags.Ephemeral,
+				});
+				return;
+			}
+
+			setGuildReminderEnabled(guildId, label, enabled);
+
+			await interaction.reply({
+				content: `Reminder \`${label}\` is now ${enabled ? 'enabled' : 'disabled'}.`,
+				flags: MessageFlags.Ephemeral,
+			});
+			await refreshGuildStatusMessage(interaction.client, guildId);
+			return;
+		}
+
+		if (subcommand === 'delete') {
+			const label = interaction.options.getString('label', true).toLowerCase();
+
+			if (!getGuildReminderByLabel(guildId, label)) {
+				await interaction.reply({
+					content: `No reminder found with the label \`${label}\`.`,
+					flags: MessageFlags.Ephemeral,
+				});
+				return;
+			}
+
+			deleteGuildReminder(guildId, label);
+
+			await interaction.reply({
+				content: `Deleted reminder \`${label}\`.`,
+				flags: MessageFlags.Ephemeral,
+			});
+			await refreshGuildStatusMessage(interaction.client, guildId);
+
+			return;
+		}
+
+		if (subcommand === 'master') {
+			const enabled = interaction.options.getBoolean('enabled', true);
+			setGuildMasterEnabled(guildId, enabled);
+
+			await interaction.reply({
+				content: `All reminders for this server are now ${enabled ? 'enabled' : 'disabled'}.`,
+				flags: MessageFlags.Ephemeral,
+			});
+			await refreshGuildStatusMessage(interaction.client, guildId);
+
 			return;
 		}
 
@@ -232,54 +299,44 @@ export default {
 			return;
 		}
 
-		if (subcommand === 'toggle') {
-			const label = interaction.options.getString('label', true).toLowerCase();
-			const enabled = interaction.options.getBoolean('enabled', true);
-
-			if (!getGuildReminderByLabel(guildId, label)) {
+		if (subcommand === 'status') {
+			if (!interaction.channel || !interaction.channel.isSendable()) {
 				await interaction.reply({
-					content: `No reminder found with the label \`${label}\`.`,
+					content: 'This command needs to be used in a text channel.',
 					flags: MessageFlags.Ephemeral,
 				});
 				return;
 			}
 
-			setGuildReminderEnabled(guildId, label, enabled);
+			// Exceeds the 3-second limit for ephemeral replies, so defer first to avoid an "interaction failed" error. 
+			// await interaction.channel.send({ embeds: [embed] }); // ← a full network round-trip
+			await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-			await interaction.reply({
-				content: `Reminder \`${label}\` is now ${enabled ? 'enabled' : 'disabled'}.`,
-				flags: MessageFlags.Ephemeral,
-			});
-			return;
-		}
-
-		if (subcommand === 'delete') {
-			const label = interaction.options.getString('label', true).toLowerCase();
-
-			if (!getGuildReminderByLabel(guildId, label)) {
-				await interaction.reply({
-					content: `No reminder found with the label \`${label}\`.`,
-					flags: MessageFlags.Ephemeral,
-				});
-				return;
+			const existingStatus = getGuildStatusMessage(guildId);
+			// If a previous status message exists, try to delete it before posting a new one. 
+			// This ensures that only one live-updating status message exists at a time, preventing confusion and clutter in the channel.
+			if (existingStatus) {
+				try {
+					// interaction.channel refers to the channel the command was run in — but the old status message might live in a completely different channel 
+					// Fetching by the stored channel_id explicitly makes deleting the correct old message work regardless of where it originally lived.
+					const oldChannel = await interaction.client.channels.fetch(existingStatus.channel_id);
+					if (oldChannel && oldChannel.isTextBased()) {
+						const oldMessage = await oldChannel.messages.fetch(existingStatus.message_id);
+						await oldMessage.delete();
+					}
+				} catch (error) {
+					// The old message/channel may already be gone — that's fine, we're replacing it anyway.
+					console.error(`Could not delete previous status message for guild ${guildId}:`, error);
+				}
 			}
 
-			deleteGuildReminder(guildId, label);
+			const embed = buildReminderStatusEmbed(guildId, interaction.guild.name);
+			const message = await interaction.channel.send({ embeds: [embed] });
+			setGuildStatusMessage(guildId, message.channelId, message.id);
 
-			await interaction.reply({
-				content: `Deleted reminder \`${label}\`.`,
-				flags: MessageFlags.Ephemeral,
-			});
-			return;
-		}
-
-		if (subcommand === 'master') {
-			const enabled = interaction.options.getBoolean('enabled', true);
-			setGuildMasterEnabled(guildId, enabled);
-
-			await interaction.reply({
-				content: `All reminders for this server are now ${enabled ? 'enabled' : 'disabled'}.`,
-				flags: MessageFlags.Ephemeral,
+			// editReply() instead of followUp() so the user sees only one ephemeral message, not two.
+			await interaction.editReply({
+				content: 'Posted! This message will keep itself updated as reminders fire.',
 			});
 			return;
 		}
