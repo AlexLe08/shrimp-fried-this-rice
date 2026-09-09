@@ -16,6 +16,10 @@ A Discord bot built with **TypeScript** and **discord.js v14** that periodically
 - Personal opt-in DM reminders, independent of any server setting — configurable directly via DM with the bot
 - A handful of utility commands (`/ping`, `/echo`, `/info`, `/server`, `/user`) used to shake out the framework
 - Deployed 24/7 on an Oracle Cloud "Always Free" VM, managed via systemd (see [Production Deployment](#production-deployment))
+- A Vitest test suite covering `storage.ts`'s core logic — CRUD operations, uniqueness constraints, upsert behavior, and the due-reminder boundary conditions for both server and personal DM reminders (see [Testing](#testing))
+
+**Notable bug caught by the test suite:**
+- `getDueGuildReminders` originally used an inner `JOIN` against `guild_settings`, which silently excluded *every* reminder belonging to a server that had never explicitly run `/reminder master` (since no row exists there until that command is used). This meant a server that created reminders but never touched the master toggle could have had them never fire, with no visible error. Fixed by switching to a `LEFT JOIN` with explicit `NULL` handling, correctly treating "no row" the same as "enabled," matching the schema's stated default.
 
 **Deferred / future enhancements (not blocking, not started):**
 - Custom-styled embeds for the periodic reminder *messages themselves* (the `/reminder status` overview already uses an embed — this item is specifically about the message a reminder actually sends when it fires, which is still plain text; it still supports pasted image/GIF/YouTube/Spotify links via Discord's automatic link unfurling)
@@ -89,6 +93,24 @@ Slash commands are registered **globally** (via `deploycommands`), so they're av
 
    On first run, `reminders.db` (a SQLite file) is created automatically in the project root — no manual database setup needed. This local database is entirely separate from the production VM's.
 
+## Testing
+
+Tests are written with [Vitest](https://vitest.dev) and cover `src/storage.ts` — the project's core persistence logic (guild reminders, user DM settings, and the due-reminder queries the scheduler depends on).
+
+```bash
+npm test          # run once and exit
+npm run test:watch   # watch mode, re-runs on file changes
+```
+
+**Test isolation:** each test run uses an in-memory SQLite database (`DB_PATH=':memory:'`, set in `test/setup.ts`), completely separate from your real local `reminders.db`. Tests never touch real dev or production data. Each test file also calls a test-only `__resetForTests()` helper between tests, exported from `storage.ts` specifically for this purpose (not used anywhere in application code).
+
+**What's covered:**
+- CRUD operations and the `UNIQUE(guild_id, reminder_label)` constraint for server reminders
+- Upsert behavior for personal DM settings (updates in place rather than duplicating, and doesn't reset `last_sent_at` on an unrelated field update)
+- The due-reminder logic for both server and personal reminders — interval boundaries, individually-disabled reminders, the server-wide master toggle (including the no-`guild_settings`-row edge case described above), and DM opt-in status
+
+**Not yet covered:** `scheduler.ts` (the actual Discord-sending logic) and the command files themselves — these involve live discord.js interaction objects and are harder to test in isolation without a mocking layer. Worth revisiting if the project's test coverage becomes a priority beyond the persistence layer.
+
 ## Production Deployment
 
 The bot runs continuously on an **Oracle Cloud Infrastructure "Always Free" VM** (Ampere/ARM, Ubuntu, Node 24 installed via NodeSource), managed as a `systemd` service so it survives reboots and restarts automatically on failure.
@@ -146,6 +168,12 @@ src/
   events/
     ready.ts               # ClientReady handler — also starts the scheduler
     interactionCreate.ts   # routes slash command interactions, handles cooldowns + errors (with a hardened, self-catching error fallback)
+test/
+  setup.ts                # points storage.ts at an in-memory DB before any test imports it
+  guildReminders.test.ts   # CRUD + uniqueness constraint tests
+  userSettings.test.ts     # upsert behavior + due-reminder tests for DM settings
+  dueReminders.test.ts     # due-reminder boundary/edge-case tests for guild reminders
+  storage.test.ts          # initial smoke test
 ```
 
 ## Available Scripts
@@ -156,6 +184,8 @@ src/
 | `npm run dev` | Runs the bot with `--watch`, auto-restarting on file changes |
 | `npm run build` | Compiles to `dist/` via `tsc` (not part of the normal run/deploy path) |
 | `npm run typecheck` | Type-checks the project without emitting output |
+| `npm test` | Runs the Vitest test suite once and exits (see [Testing](#testing)) |
+| `npm run test:watch` | Runs the test suite in watch mode |
 | `npm run deploycommands` | Registers slash commands globally with Discord's API |
 | `npm run zip` | Bundles the project (excluding `node_modules`, `dist`, `.env`, `reminders.db`, etc.) into a shareable zip |
 
