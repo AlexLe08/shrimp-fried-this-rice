@@ -6,7 +6,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Create new db or open existing one
-const dbPath = path.join(__dirname, '..', 'reminders.db');
+const dbPath = process.env['DB_PATH'] ?? path.join(__dirname, '..', 'reminders.db');
 const db = new Database(dbPath);
 
 // SQLite's write-ahead-logging mode, the standard for any app doing concurrent reads and writes (bot will be reading the scheduler loop while commands are writing settings). Without it, SQLite still works, just with more conservative locking.
@@ -176,13 +176,16 @@ export function updateGuildReminderLastSent(reminderId: number, timestamp: numbe
 // Guild's master toggle must be enabled in addition to the individual reminder's toggle
 // The last time this reminder was sent, plus its interval set by users, is less than or equal to right now, so its due to fire at this point
 // interval_minutes * 60000 converts minutes to milliseconds (last_sent_at is a millisec timestamp); math happens in SQL rather than JavaScript
+// LEFT JOIN returns all rows from the left table (guild_reminders) and the matched rows from the right table (guild_settings). 
+// This allows reminders to be due even if the guild has never touched the master toggle (no row in guild_settings yet).
+// The WHERE clause filters the results to only include reminders that are enabled, have a master toggle that is either NULL (no row) or 1 (enabled), and are due to fire based on their last sent time and interval.
 export function getDueGuildReminders(now: number): GuildReminder[] {
 	return db
 		.prepare(
 			`SELECT gr.* FROM guild_reminders gr
-			 JOIN guild_settings gs ON gs.guild_id = gr.guild_id
+			 LEFT JOIN guild_settings gs ON gs.guild_id = gr.guild_id
 			 WHERE gr.enabled = 1
-			   AND gs.master_enabled = 1
+			   AND (gs.master_enabled IS NULL OR gs.master_enabled = 1)
 			   AND (gr.last_sent_at + gr.interval_minutes * 60000) <= ?`,
 		)
 		.all(now) as GuildReminder[];
@@ -249,4 +252,14 @@ export function getDueUserSettings(now: number): UserSettings[] {
 
 export function deleteUserSettings(userId: string): void {
 	db.prepare('DELETE FROM user_settings WHERE user_id = ?').run(userId);
+}
+
+// --- Test-only function to clear all tables; useful for resetting state between tests
+export function __resetForTests(): void {
+	db.exec(`
+	DELETE FROM guild_settings;
+	DELETE FROM guild_reminders;
+	DELETE FROM user_settings;
+	DELETE FROM guild_status_messages;
+	`);
 }
