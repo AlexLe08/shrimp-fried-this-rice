@@ -1,4 +1,3 @@
-// test/storage.test.ts
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createGuildReminder, getGuildReminderByLabel, __resetForTests } from '../src/storage.ts';
 

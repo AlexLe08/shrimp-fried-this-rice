@@ -50,7 +50,7 @@ describe('getDueGuildReminders', () => {
 	});
 
 	it('treats a guild with no guild_settings row as master-enabled by default', () => {
-		// Deliberately never call setGuildMasterEnabled — simulates a guild that's never touched the master toggle.
+		// Deliberately never call setGuildMasterEnabled; simulates a guild that's never touched the master toggle.
 		createGuildReminder({ guildId: 'g1', label: 'water', channelId: 'c1', intervalMinutes: 10, message: 'hi' });
 
 		const due = getDueGuildReminders(Date.now() + 100 * ONE_MINUTE);
