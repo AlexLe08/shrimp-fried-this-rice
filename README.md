@@ -1,4 +1,4 @@
-![CI](https://github.com/your-username/your-repo-name/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/AlexLe08/shrimp-fried-this-rice/actions/workflows/ci.yml/badge.svg)
 
 # Posture & Hydration Reminder Bot
 
