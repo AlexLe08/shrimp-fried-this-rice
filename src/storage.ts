@@ -88,6 +88,17 @@ export interface GuildStatusMessage {
 export const MIN_INTERVAL_MINUTES = 5;
 export const MAX_INTERVAL_MINUTES = 1440;
 
+export const MAX_REMINDERS_PER_GUILD = 20;
+
+export function getGuildReminderCount(guildId: string): number {
+	// COUNT(*) returns a single row with a single column named "count" that contains the number of reminders for the given guildId
+	// Use this over getGuildReminders(guildId).length because it avoids fetching all the reminder rows into memory, which is more efficient for large datasets
+	const result = db
+		.prepare('SELECT COUNT(*) as count FROM guild_reminders WHERE guild_id = ?')
+		.get(guildId) as { count: number };
+	return result.count;
+}
+
 // --- Guild master toggle ---
 //.get() is specifically returning 0 or 1 result; for looking up a single server by its unique ID
 // typewise, .get() and .all() return unknown and unknown[] due to better-sqlite3 sending raw SQL string to actual SLQite engine written in C.

@@ -17,6 +17,8 @@ import {
 	setGuildMasterEnabled,
 	setGuildStatusMessage,
 	getGuildStatusMessage,
+	getGuildReminderCount,
+	MAX_REMINDERS_PER_GUILD,
 	MIN_INTERVAL_MINUTES,
 	MAX_INTERVAL_MINUTES,
 } from '../../storage.ts';
@@ -146,6 +148,15 @@ export default {
 
 		if (subcommand === 'create') {
 			const label = interaction.options.getString('label', true).toLowerCase();
+			// Check if the guild has reached the maximum number of reminders before allowing the creation of a new reminder. This prevents users from exceeding the limit and ensures that the bot can manage reminders effectively without overwhelming the server or the bot's resources.
+			if (getGuildReminderCount(guildId) >= MAX_REMINDERS_PER_GUILD) {
+				await interaction.reply({
+					content: `This server has reached the maximum of ${MAX_REMINDERS_PER_GUILD} reminders. Delete one with \`/reminder delete\` before creating another.`,
+					flags: MessageFlags.Ephemeral,
+				});
+				return;
+			}
+
 			const channel = interaction.options.getChannel('channel', true);
 			const interval = interaction.options.getInteger('interval', true);
 			const message = interaction.options.getString('message', true);

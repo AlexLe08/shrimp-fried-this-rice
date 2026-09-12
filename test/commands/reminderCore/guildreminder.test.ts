@@ -4,6 +4,7 @@ import {
 	getGuildReminderByLabel,
 	getGuildSettings,
 	setGuildStatusMessage,
+    MAX_REMINDERS_PER_GUILD,
 	__resetForTests,
 } from '../../../src/storage.ts';
 import { createMockInteraction } from '../../mockInteraction.ts';
@@ -66,6 +67,42 @@ describe('/reminder create', () => {
 			expect.objectContaining({ content: expect.not.stringContaining('⚠️') }),
 		);
 	});
+
+    it('rejects creating a reminder once the guild has reached the maximum', async () => {
+        const channel = makePermissiveChannel();
+
+        // Create the maximum number of reminders for the guild
+        for (let i = 0; i < MAX_REMINDERS_PER_GUILD; i++) {
+            const interaction = createMockInteraction({
+                inCachedGuild: true,
+                guild: makeGuild(),
+                options: {
+                    subcommand: 'create',
+                    strings: { label: `reminder-${i}`, message: 'hi' },
+                    channels: { channel },
+                    integers: { interval: 60 },
+                },
+            });
+            await guildReminderCommand.execute(interaction as never);
+        }
+
+        const interaction = createMockInteraction({
+            inCachedGuild: true,
+            guild: makeGuild(),
+            options: {
+                subcommand: 'create',
+                strings: { label: 'one-too-many', message: 'hi' },
+                channels: { channel },
+                integers: { interval: 60 },
+            },
+        });
+        await guildReminderCommand.execute(interaction as never);
+
+        expect(getGuildReminderByLabel('g1', 'one-too-many')).toBeUndefined();
+        expect(interaction.reply).toHaveBeenCalledWith(
+            expect.objectContaining({ content: expect.stringContaining('maximum') }),
+        );
+    });
 
 	it('rejects a duplicate label', async () => {
 		const channel = makePermissiveChannel();
