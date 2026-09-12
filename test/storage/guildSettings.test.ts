@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { getGuildSettings, setGuildMasterEnabled, __resetForTests } from '../src/storage.ts';
+import { getGuildSettings, setGuildMasterEnabled, __resetForTests } from '../../src/storage.ts';
 
 beforeEach(() => {
 	__resetForTests();

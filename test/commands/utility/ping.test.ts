@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import pingCommand from '../../src/commands/utility/ping.ts';
-import { createMockInteraction } from '../mockInteraction.ts';
+import pingCommand from '../../../src/commands/utility/ping.ts';
+import { createMockInteraction } from '../../mockInteraction.ts';
 
 describe('/ping', () => {
 	it('replies with Pong!', async () => {

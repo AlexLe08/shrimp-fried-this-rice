@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import echoCommand from '../../src/commands/utility/echo.ts';
-import { createMockInteraction } from '../mockInteraction.ts';
+import echoCommand from '../../../src/commands/utility/echo.ts';
+import { createMockInteraction } from '../../mockInteraction.ts';
 
 describe('/echo', () => {
 	it('rejects when not run in a cached guild', async () => {

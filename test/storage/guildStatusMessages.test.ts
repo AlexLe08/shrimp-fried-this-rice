@@ -4,7 +4,7 @@ import {
 	getGuildStatusMessage,
 	deleteGuildStatusMessage,
 	__resetForTests,
-} from '../src/storage.ts';
+} from '../../src/storage.ts';
 
 beforeEach(() => {
 	__resetForTests();

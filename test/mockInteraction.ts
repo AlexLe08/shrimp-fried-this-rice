@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import { Collection } from 'discord.js';
 
 interface MockOptionsConfig {
 	strings?: Record<string, string | null>;
@@ -17,9 +18,11 @@ interface MockInteractionConfig {
 	member?: Record<string, unknown> | null;
 	user?: { id: string; username: string };
 	channel?: unknown;
-	client?: { commands?: Map<string, unknown>; cooldowns?: Map<string, unknown> };
+	client?: { commands?: Collection<string, unknown>; cooldowns?: Collection<string, unknown> };
 	replied?: boolean;
 	deferred?: boolean;
+    isChatInputCommand?: boolean;
+    commandName?: string;
 }
 
 export function createMockInteraction(config: MockInteractionConfig = {}) {
@@ -31,9 +34,11 @@ export function createMockInteraction(config: MockInteractionConfig = {}) {
 		member: config.member ?? null,
 		user: config.user ?? { id: 'mock-user-id', username: 'mockuser' },
 		channel: config.channel ?? null,
-		client: config.client ?? { commands: new Map(), cooldowns: new Map() },
+		client: config.client ?? { commands: new Collection<string, unknown>(), cooldowns: new Collection<string, unknown>() },
 		replied: config.replied ?? false,
 		deferred: config.deferred ?? false,
+        isChatInputCommand: vi.fn(() => config.isChatInputCommand ?? true),
+        commandName: config.commandName ?? 'mock-command',
 
 		inCachedGuild: vi.fn(() => config.inCachedGuild ?? true),
 		inGuild: vi.fn(() => config.inGuild ?? config.inCachedGuild ?? true),

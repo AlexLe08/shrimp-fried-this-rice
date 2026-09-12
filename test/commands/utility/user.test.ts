@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import userCommand from '../../src/commands/utility/user.ts';
-import { createMockInteraction } from '../mockInteraction.ts';
+import userCommand from '../../../src/commands/utility/user.ts';
+import { createMockInteraction } from '../../mockInteraction.ts';
 
 describe('/user', () => {
     it('rejects when not run in a cached guild', async () => {
