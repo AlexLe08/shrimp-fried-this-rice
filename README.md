@@ -1,3 +1,5 @@
+![CI](https://github.com/your-username/your-repo-name/actions/workflows/ci.yml/badge.svg)
+
 # Posture & Hydration Reminder Bot
 
 A Discord bot built with **TypeScript** and **discord.js v14** that periodically sends a preset reminder message (e.g. "Check your posture!" or "Time to drink water!") to a server channel, and optionally as a DM to individual users who opt in.
@@ -16,19 +18,24 @@ A Discord bot built with **TypeScript** and **discord.js v14** that periodically
 - Personal opt-in DM reminders, independent of any server setting — configurable directly via DM with the bot
 - A handful of utility commands (`/ping`, `/echo`, `/info`, `/server`, `/user`) used to shake out the framework
 - Deployed 24/7 on an Oracle Cloud "Always Free" VM, managed via systemd (see [Production Deployment](#production-deployment))
-- A Vitest test suite covering `storage.ts`'s core logic — CRUD operations, uniqueness constraints, upsert behavior, and the due-reminder boundary conditions for both server and personal DM reminders (see [Testing](#testing))
+- A Vitest test suite covering **~96% of statements / ~97% of lines** across the entire codebase — persistence, scheduling, embeds, event handling, and every command (see [Testing](#testing))
+- A GitHub Actions CI workflow running type-checking and the full test suite on every push/PR (see [Continuous Integration](#continuous-integration))
 
-**Notable bug caught by the test suite:**
+**Notable bugs caught by the test suite:**
 - `getDueGuildReminders` originally used an inner `JOIN` against `guild_settings`, which silently excluded *every* reminder belonging to a server that had never explicitly run `/reminder master` (since no row exists there until that command is used). This meant a server that created reminders but never touched the master toggle could have had them never fire, with no visible error. Fixed by switching to a `LEFT JOIN` with explicit `NULL` handling, correctly treating "no row" the same as "enabled," matching the schema's stated default.
+- A dedicated test in `interactionCreate.test.ts` directly reproduces the production incident where a command's own error *and* the fallback error-reply itself both failed, which had previously crashed the whole bot process via an unhandled promise rejection. This test locks in the fix (a nested `try`/`catch` around the fallback reply) so a future refactor can't silently reintroduce that crash.
 
 **Deferred / future enhancements (not blocking, not started):**
 - Custom-styled embeds for the periodic reminder *messages themselves* (the `/reminder status` overview already uses an embed — this item is specifically about the message a reminder actually sends when it fires, which is still plain text; it still supports pasted image/GIF/YouTube/Spotify links via Discord's automatic link unfurling)
 - True file/audio attachments on reminders (bundled sound files or user-uploaded audio)
 - Autocomplete for custom server emojis in reminder messages (Discord's own slash-command input fields don't always convert a picked custom emoji into its proper renderable format — this is a Discord client limitation, not a bug in this bot; standard Unicode emojis are unaffected)
+- Enforcing a minimum coverage threshold in CI (via Vitest's `coverage.thresholds`), so a future PR that drops coverage fails the build automatically, rather than coverage being a one-time achievement
+- Publishing the HTML coverage report as a downloadable CI artifact (via `actions/upload-artifact`), so it can be browsed per-run without checking out and re-running locally
 
 **Known, deliberate design notes:**
 - `/remindme` (personal DM settings) is keyed only by user ID, not per-server. If the same person is in multiple servers this bot is in, they share one set of personal DM reminder settings across all of them — this matches the original spec (a personal reminder independent of any server), not a bug.
 - Only one status embed is tracked per server at a time. Re-running `/reminder status` deletes the previous embed (if it still exists) and posts a new one, even if run in a different channel than before.
+- `refreshGuildStatusMessage` (in `reminderEmbed.ts`) and `startScheduler` (in `scheduler.ts`) both accept a discord.js `Client`, but their test mocks only implement the handful of methods actually used (`channels.fetch`, `users.fetch`, `guilds.fetch`) rather than the full real interface. This requires a `client as unknown as Client` double-cast in the test files, since the mock doesn't structurally match discord.js's much larger `Client` type. A cleaner long-term fix would be narrowing each function's parameter type to a small custom interface describing only what it actually needs (interface segregation) — which would let the mocks satisfy the type directly with no cast at all. Deferred for now since the current approach is a standard, contained pattern for test mocks; worth revisiting if the project leans further into strict typing as a demonstrated practice.
 
 ## ⚠️ Important: never run local dev against the production bot token
 
@@ -41,6 +48,7 @@ A Discord bot built with **TypeScript** and **discord.js v14** that periodically
 - [discord.js](https://discord.js.org) v14
 - TypeScript, executed natively by Node (no compile step in the normal run path — see [Execution Model](#execution-model))
 - SQLite via `better-sqlite3` for persistence
+- [Vitest](https://vitest.dev) for testing, with `@vitest/coverage-v8` for coverage reporting
 
 ## Execution Model
 
@@ -95,21 +103,36 @@ Slash commands are registered **globally** (via `deploycommands`), so they're av
 
 ## Testing
 
-Tests are written with [Vitest](https://vitest.dev) and cover `src/storage.ts` — the project's core persistence logic (guild reminders, user DM settings, and the due-reminder queries the scheduler depends on).
+Tests are written with [Vitest](https://vitest.dev) and cover the entire codebase — persistence (`storage.ts`), the scheduler, the status embed builder, both event handlers, and every command file.
 
 ```bash
-npm test          # run once and exit
-npm run test:watch   # watch mode, re-runs on file changes
+npm test              # run once and exit
+npm run test:watch    # watch mode, re-runs on file changes
+npm run test:coverage # run once with a coverage report (terminal + HTML in coverage/)
 ```
 
-**Test isolation:** each test run uses an in-memory SQLite database (`DB_PATH=':memory:'`, set in `test/setup.ts`), completely separate from your real local `reminders.db`. Tests never touch real dev or production data. Each test file also calls a test-only `__resetForTests()` helper between tests, exported from `storage.ts` specifically for this purpose (not used anywhere in application code).
+**Current coverage:** ~96% statements / ~97% lines across the codebase (excluding `index.ts`, `deploy-commands.ts`, and `src/types/**`, which are deliberately excluded — see below).
 
-**What's covered:**
-- CRUD operations and the `UNIQUE(guild_id, reminder_label)` constraint for server reminders
-- Upsert behavior for personal DM settings (updates in place rather than duplicating, and doesn't reset `last_sent_at` on an unrelated field update)
-- The due-reminder logic for both server and personal reminders — interval boundaries, individually-disabled reminders, the server-wide master toggle (including the no-`guild_settings`-row edge case described above), and DM opt-in status
+**Test isolation:** each test run uses an in-memory SQLite database (`DB_PATH=':memory:'`, set in `test/setup.ts`), completely separate from your real local `reminders.db`. Tests never touch real dev or production data. Most test files also call a test-only `__resetForTests()` helper between tests, exported from `storage.ts` specifically for this purpose (not used anywhere in application code).
 
-**Not yet covered:** `scheduler.ts` (the actual Discord-sending logic) and the command files themselves — these involve live discord.js interaction objects and are harder to test in isolation without a mocking layer. Worth revisiting if the project's test coverage becomes a priority beyond the persistence layer.
+**Mocking approach:** rather than a mocking library, tests use Vitest's built-in `vi.fn()` to build small, purpose-built fake objects for discord.js interactions, channels, users, and clients (see `test/mocks.ts` and `test/mockInteraction.ts`). `scheduler.ts` is tested through its real public interface using Vitest's fake timers (`vi.advanceTimersByTimeAsync`) rather than exporting its private polling functions just to make them directly callable.
+
+**What's excluded from the coverage target, and why:**
+- `index.ts` and `deploy-commands.ts` — bootstrap/entrypoint scripts that scan the filesystem and immediately connect to Discord on load, with no exported functions to test in isolation. Restructuring them purely to hit a coverage number wasn't judged worthwhile; they're exercised in practice every time the bot runs.
+- `src/types/**` — interfaces and module augmentation only, no runtime logic to execute.
+
+**Known, accepted gaps within the covered files:** a handful of narrow branches remain untested — e.g. a couple of individual reply-wording branches, and the scheduler's overlap-guard "skip this tick" path (which would require a more elaborate concurrent-timer test to trigger deliberately). These were judged not worth chasing further once the suite comfortably exceeded its coverage goal; none represent untested core logic.
+
+## Continuous Integration
+
+A GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push and pull request against `main`:
+1. Checks out the repository
+2. Sets up Node.js 24
+3. Installs dependencies via `npm ci` (not `npm install` — fails loudly if the lockfile is out of sync, rather than silently reconciling)
+4. Runs `npm run typecheck`
+5. Runs `npm run test:coverage`
+
+No secrets are required — the whole suite runs against mocked/in-memory data with no real Discord connection.
 
 ## Production Deployment
 
@@ -169,11 +192,24 @@ src/
     ready.ts               # ClientReady handler — also starts the scheduler
     interactionCreate.ts   # routes slash command interactions, handles cooldowns + errors (with a hardened, self-catching error fallback)
 test/
-  setup.ts                # points storage.ts at an in-memory DB before any test imports it
-  guildReminders.test.ts   # CRUD + uniqueness constraint tests
-  userSettings.test.ts     # upsert behavior + due-reminder tests for DM settings
-  dueReminders.test.ts     # due-reminder boundary/edge-case tests for guild reminders
-  storage.test.ts          # initial smoke test
+  setup.ts                       # points storage.ts at an in-memory DB before any test imports it
+  mocks.ts                        # shared fake Client/channel/user builders (scheduler + embed tests)
+  mockInteraction.ts               # shared fake ChatInputCommandInteraction builder (command + event tests)
+  reminderEmbed.test.ts            # buildReminderStatusEmbed + refreshGuildStatusMessage tests
+  scheduler.test.ts                # scheduler tests, using fake timers
+  storage/
+    storage.test.ts                 # initial smoke test
+    guildReminders.test.ts          # CRUD + uniqueness constraint tests
+    guildSettings.test.ts           # master-toggle upsert/read tests
+    guildStatusMessages.test.ts     # status-message tracking upsert/read/delete tests
+    userSettings.test.ts            # upsert behavior + due-reminder tests for DM settings
+    dueReminders.test.ts            # due-reminder boundary/edge-case tests for guild reminders
+  commands/
+    utility/                        # ping, echo, info, server, user, reload tests
+    reminderCore/                   # guildreminder, remindme tests
+  events/
+    ready.test.ts
+    interactionCreate.test.ts        # includes a direct regression test for the production crash incident
 ```
 
 ## Available Scripts
@@ -186,6 +222,7 @@ test/
 | `npm run typecheck` | Type-checks the project without emitting output |
 | `npm test` | Runs the Vitest test suite once and exits (see [Testing](#testing)) |
 | `npm run test:watch` | Runs the test suite in watch mode |
+| `npm run test:coverage` | Runs the test suite once with a coverage report |
 | `npm run deploycommands` | Registers slash commands globally with Discord's API |
 | `npm run zip` | Bundles the project (excluding `node_modules`, `dist`, `.env`, `reminders.db`, etc.) into a shareable zip |
 
@@ -195,6 +232,9 @@ test/
 - [ ] True file/audio attachment support (bundled sound files, or user-uploaded)
 - [ ] Autocomplete for custom server emojis in reminder messages
 - [ ] Snooze/pause command
+- [ ] Enforce a minimum coverage threshold in CI
+- [ ] Publish the HTML coverage report as a CI artifact
+- [ ] Consider narrowing `refreshGuildStatusMessage`'s and `startScheduler`'s `Client` parameter to a smaller custom interface, to eliminate the `as unknown as Client` casts in test mocks
 - [ ] Web dashboard for configuration (longer-term idea)
 
 ## License

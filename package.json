@@ -12,6 +12,7 @@
     "deploycommands": "node ./src/deploy-commands.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "dev": "node --watch ./src/index.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
@@ -29,6 +30,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.4.0",
+    "@vitest/coverage-v8": "^5.0.0",
     "typescript": "^7.0.2",
     "vitest": "^5.0.0"
   },

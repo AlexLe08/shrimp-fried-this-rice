@@ -1,9 +1,14 @@
 import { defineConfig } from 'vitest/config';
 
-// 
 export default defineConfig({
 	test: {
-        // use setUpfiles to run a script before each test file, which is useful for setting up global variables or mocking certain modules.
 		setupFiles: ['./test/setup.ts'],
+		coverage: {
+			provider: 'v8',
+			reporter: ['text', 'html'],
+			include: ['src/**/*.ts'],
+            exclude: ['src/index.ts', 'src/deploy-commands.ts', 'src/types/**'],
+
+		},
 	},
 });
