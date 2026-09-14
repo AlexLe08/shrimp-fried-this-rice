@@ -265,6 +265,10 @@ export function deleteUserSettings(userId: string): void {
 	db.prepare('DELETE FROM user_settings WHERE user_id = ?').run(userId);
 }
 
+export function closeDatabase(): void {
+	db.close();
+}
+
 // --- Test-only function to clear all tables; useful for resetting state between tests
 export function __resetForTests(): void {
 	db.exec(`

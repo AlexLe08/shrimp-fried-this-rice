@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Client } from 'discord.js';
-import { startScheduler } from '../src/scheduler.ts';
+import { startScheduler, stopScheduler } from '../src/scheduler.ts';
 import { createGuildReminder, updateGuildReminderLastSent, upsertUserSettings, updateUserLastSent, getGuildReminderByLabel, getUserSettings, __resetForTests } from '../src/storage.ts';
 import { createMockClient, createMockChannel, createMockUser } from './mocks.ts';
 
@@ -67,6 +67,19 @@ describe('scheduler — guild reminders', () => {
 		await vi.advanceTimersByTimeAsync(60_000);
 
 		expect(workingChannel.send).toHaveBeenCalledWith('second');
+	});
+
+	it('stopScheduler clears the interval so no further polling occurs', async () => {
+		createGuildReminder({ guildId: 'g1', label: 'water', channelId: 'c1', intervalMinutes: 5, message: 'hi' });
+		const channel = createMockChannel();
+		const client = createMockClient({ channels: { c1: channel } });
+
+		startScheduler(client as unknown as Client<true>);
+		stopScheduler();
+
+		await vi.advanceTimersByTimeAsync(120_000);
+
+		expect(channel.send).not.toHaveBeenCalled();
 	});
 });
 

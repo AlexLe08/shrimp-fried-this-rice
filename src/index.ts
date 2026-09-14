@@ -6,6 +6,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import type { Command } from "./types/command.ts";
 
+import { shutdown } from "./shutdown.ts";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -15,6 +17,21 @@ client.commands = new Collection();
 const foldersPath = path.join(__dirname, 'commands');
 // reads the path to the directory and returns an array of all the folder names it contains
 const commandFolders = fs.readdirSync(foldersPath);
+
+function handleShutdownSignal(signal: string): void {
+	// Set a timer to force exit after 5 seconds if shutdown takes too long.
+	// Ensures process doesn't hang indefinitely if something goes wrong.
+	const forceExitTimer = setTimeout(() => {
+		console.error('Graceful shutdown timed out, forcing exit.');
+		process.exit(1);
+	}, 5000);
+	forceExitTimer.unref();
+
+	void shutdown(client, signal).then(() => {
+		clearTimeout(forceExitTimer);
+		process.exit(0);
+	});
+}
 
 //Command handler: reads the path to each folder and returns an array of all the file names they contain, then imports each command file and adds it to the client's commands collection.
 for (const folder of commandFolders) {
@@ -60,3 +77,8 @@ for (const file of eventFiles) {
 client.cooldowns = new Collection();
 
 client.login(process.env["DISCORD_TOKEN"]);
+
+// SIGTERM - systemctl stop/restart
+process.on('SIGTERM', () => handleShutdownSignal('SIGTERM'));
+// SIGINT - covers local env
+process.on('SIGINT', () => handleShutdownSignal('SIGINT'));
