@@ -44,6 +44,6 @@ jobs:
             cd ~/shrimp-fried-this-rice
             git pull
             npm install
-            sudo systemctl restart discordbot
+            sudo systemctl restart discordbotshrimp
             npm run deploycommands
-            sudo systemctl status discordbot --no-pager
+            sudo systemctl status discordbotshrimp --no-pager
