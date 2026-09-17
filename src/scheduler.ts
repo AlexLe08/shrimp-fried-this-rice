@@ -10,11 +10,12 @@ import { refreshGuildStatusMessage } from './reminderEmbed.ts'
 /** How often the scheduler checks for due reminders. Should be <= the smallest allowed interval (5 min). */
 const POLL_INTERVAL_MS = 60_000; // check every 1 minute
 
+let pollIntervalID: NodeJS.Timeout | null = null;
 let isCheckingGuildReminders = false;
 let isCheckingUserReminders = false;
 // Scheduler will only ever be started when bot is logged in; we can assume client is fully connected with no null checks.
 export function startScheduler(client: Client<true>): void {
-	setInterval(() => {
+	pollIntervalID = setInterval(() => {
 		// If a previous check is still running, skip this interval.
 		// This prevents overlapping checks if one takes longer than the poll interval.
 		if (!isCheckingGuildReminders) {
@@ -33,6 +34,14 @@ export function startScheduler(client: Client<true>): void {
 	}, POLL_INTERVAL_MS);
 
 	console.log(`Scheduler started, polling every ${POLL_INTERVAL_MS / 1000}s.`);
+}
+
+export function stopScheduler(): void {
+	if (pollIntervalID) {
+		clearInterval(pollIntervalID);
+		pollIntervalID = null;
+		console.log('Scheduler stopped.');
+	}
 }
 
 async function checkGuildReminders(client: Client<true>): Promise<void> {
