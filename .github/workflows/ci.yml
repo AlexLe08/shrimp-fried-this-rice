@@ -41,8 +41,10 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
+            set -e
             cd ~/shrimp-fried-this-rice
-            git pull
+            git fetch
+            git reset --hard origin/main
             npm install
             sudo systemctl restart discordbotshrimp
             npm run deploycommands
