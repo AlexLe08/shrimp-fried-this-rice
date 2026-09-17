@@ -13,13 +13,14 @@ A Discord bot built with **TypeScript** and **discord.js v14** that periodically
 - A `/reload` command for hot-reloading a single command file without restarting the bot
 - SQLite-backed persistence (`src/storage.ts`) for server and per-user settings
 - A polling scheduler (`src/scheduler.ts`) that sends reminders when they're due, hardened against overlapping poll ticks
-- Full CRUD management of server reminders, plus a server-wide master toggle
+- Full CRUD management of server reminders (capped at 20 per server to guard against runaway/abusive creation), plus a server-wide master toggle
 - A live-updating status embed (`/reminder status`) listing all of a server's reminders with Discord relative timestamps for their next fire time; automatically re-posts/edits itself whenever a reminder fires or its settings change (`src/reminderEmbed.ts`)
 - Personal opt-in DM reminders, independent of any server setting — configurable directly via DM with the bot
 - A handful of utility commands (`/ping`, `/echo`, `/info`, `/server`, `/user`) used to shake out the framework
+- Graceful shutdown handling (`src/shutdown.ts`) — on `SIGTERM`/`SIGINT`, the scheduler is stopped, the Discord client is cleanly destroyed, and the database connection is closed, with a 5-second force-exit safety net in case cleanup ever hangs
 - Deployed 24/7 on an Oracle Cloud "Always Free" VM, managed via systemd (see [Production Deployment](#production-deployment))
-- A Vitest test suite covering **~96% of statements / ~97% of lines** across the entire codebase — persistence, scheduling, embeds, event handling, and every command (see [Testing](#testing))
-- A GitHub Actions CI workflow running type-checking and the full test suite on every push/PR (see [Continuous Integration](#continuous-integration))
+- A Vitest test suite covering **~96% of statements / ~97% of lines** across the entire codebase — persistence, scheduling, embeds, event handling, shutdown, and every command (see [Testing](#testing))
+- A GitHub Actions CI workflow running type-checking and the full test suite on every push/PR, enforced via a branch ruleset that blocks merging into `main` unless CI passes (see [Continuous Integration](#continuous-integration))
 
 **Notable bugs caught by the test suite:**
 - `getDueGuildReminders` originally used an inner `JOIN` against `guild_settings`, which silently excluded *every* reminder belonging to a server that had never explicitly run `/reminder master` (since no row exists there until that command is used). This meant a server that created reminders but never touched the master toggle could have had them never fire, with no visible error. Fixed by switching to a `LEFT JOIN` with explicit `NULL` handling, correctly treating "no row" the same as "enabled," matching the schema's stated default.
@@ -132,7 +133,12 @@ A GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push and pu
 4. Runs `npm run typecheck`
 5. Runs `npm run test:coverage`
 
-No secrets are required — the whole suite runs against mocked/in-memory data with no real Discord connection.
+No secrets are required — the whole suite runs against mocked/in-memory data with no real Discord connection. Optional: add a status badge near the top of this README once the workflow has run at least once —
+```markdown
+![CI](https://github.com/your-username/your-repo-name/actions/workflows/ci.yml/badge.svg)
+```
+
+**Merge enforcement:** a branch ruleset on `main` (Settings → Branches → Rulesets) requires this workflow's `test` check to pass before a pull request can be merged, and requires changes to go through a pull request in the first place — so CI passing is a structural gate, not just an informational status. Rulesets were chosen over classic branch protection specifically to be ready for future contributors (per-actor bypass lists, org-wide reusability if this ever becomes a multi-repo setup) and as a deliberate opportunity to learn GitHub's newer system.
 
 ## Production Deployment
 
@@ -144,6 +150,7 @@ Key production-specific details, for future reference:
 - **Secrets:** `.env` is created directly on the VM (never committed, never pulled from git) with the production bot token and IDs — using the separate **production** Discord Application, never the local-dev one.
 - **Native module builds:** `better-sqlite3` compiles from source on first install on this ARM architecture, requiring `build-essential` and `python3` to be installed on the VM (see deployment notes/history for the full one-time VM setup steps).
 - **npm install-scripts:** `better-sqlite3`'s native build step is explicitly approved via the `allowScripts` field committed in `package.json` — required for npm v12+'s install-script security gating.
+- **Graceful shutdown:** `systemctl restart`/`stop` send `SIGTERM`, which `src/shutdown.ts` handles by stopping the scheduler, destroying the Discord client, and closing the database connection before the process exits — rather than the process being killed mid-operation. `Ctrl+C` during local `npm run dev` sends `SIGINT`, handled identically.
 - **Service management:** the bot runs under a systemd unit (`discordbot.service`). Common commands:
   ```bash
   sudo systemctl status discordbot     # check if running
@@ -163,7 +170,7 @@ Key production-specific details, for future reference:
 | `/server` | Shows the server's name and member count. |
 | `/user` | Shows the invoking user's username and server join date. |
 | `/reload <command>` | Hot-reloads a single command file's code without restarting the bot. |
-| `/reminder create <label> <channel> <interval> <message>` | Creates a new server reminder. Interval must be 5–1440 minutes. Warns (but still saves) if the bot lacks permissions in the target channel. |
+| `/reminder create <label> <channel> <interval> <message>` | Creates a new server reminder (max 20 per server). Interval must be 5–1440 minutes. Warns (but still saves) if the bot lacks permissions in the target channel. |
 | `/reminder edit <label> [channel] [interval] [message]` | Edits one or more fields of an existing reminder; unspecified fields are left unchanged. |
 | `/reminder list` | Lists the server's master toggle state, followed by every configured reminder and its status (ephemeral, text-only). |
 | `/reminder status` | Posts a public, self-updating embed listing every reminder and a live "next fire" timestamp for each. Deletes any previously-posted status embed for this server first. |
@@ -180,6 +187,7 @@ src/
   index.ts              # client setup, command/event loading, login
   deploy-commands.ts    # registers slash commands globally with Discord's API
   scheduler.ts          # polling loop — checks storage.ts for due reminders and sends them
+  shutdown.ts            # graceful SIGTERM/SIGINT handling — stops the scheduler, destroys the client, closes the database
   storage.ts            # SQLite data-access layer (guild settings, guild reminders, user settings, status message tracking)
   reminderEmbed.ts       # builds the /reminder status embed; also refreshes the tracked status message when reminders change
   types/
@@ -197,8 +205,10 @@ test/
   mockInteraction.ts               # shared fake ChatInputCommandInteraction builder (command + event tests)
   reminderEmbed.test.ts            # buildReminderStatusEmbed + refreshGuildStatusMessage tests
   scheduler.test.ts                # scheduler tests, using fake timers
+  shutdown.test.ts                  # gracefulShutdown orchestration tests (mocked scheduler + storage)
   storage/
     storage.test.ts                 # initial smoke test
+    closeDatabase.test.ts           # isolated in its own file — closing the DB connection is irreversible within a test file
     guildReminders.test.ts          # CRUD + uniqueness constraint tests
     guildSettings.test.ts           # master-toggle upsert/read tests
     guildStatusMessages.test.ts     # status-message tracking upsert/read/delete tests
@@ -235,6 +245,11 @@ test/
 - [ ] Enforce a minimum coverage threshold in CI
 - [ ] Publish the HTML coverage report as a CI artifact
 - [ ] Consider narrowing `refreshGuildStatusMessage`'s and `startScheduler`'s `Client` parameter to a smaller custom interface, to eliminate the `as unknown as Client` casts in test mocks
+- [ ] CD automation — auto-deploy to the production VM on merge to `main` (e.g. a GitHub Actions step that SSHs in and runs the existing `~/deploy.sh`)
+- [ ] Structured logging (e.g. `pino`) with real log levels, in place of plain `console.log`/`console.error`
+- [ ] `CHANGELOG.md` documenting notable changes and fixes over time
+- [ ] Confirm a real `LICENSE` file exists in the repo root, not just the mention below
+- [ ] Enable Dependabot for automated dependency vulnerability alerts
 - [ ] Web dashboard for configuration (longer-term idea)
 
 ## License

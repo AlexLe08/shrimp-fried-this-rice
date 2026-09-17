@@ -27,3 +27,23 @@ jobs:
 
       - name: Run tests with coverage
         run: npm run test:coverage
+
+  deploy:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy to production VM
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd ~/shrimp-fried-this-rice
+            git pull
+            npm install
+            sudo systemctl restart discordbot
+            npm run deploycommands
+            sudo systemctl status discordbot --no-pager
