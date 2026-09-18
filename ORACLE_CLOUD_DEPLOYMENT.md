@@ -6,7 +6,7 @@ This document captures every step taken to deploy this bot to a free, permanent 
 
 ## 0. Before you begin: use a separate Discord Application for local development
 
-**This is not optional — we learned this the hard way.** The VM's `.env` should use a bot token from a Discord Application **dedicated to production**, entirely separate from whatever token gets used on a developer's local machine for `npm run dev`.
+**This is not optional** The VM's `.env` should use a bot token from a Discord Application **dedicated to production**, entirely separate from whatever token gets used on a developer's local machine for `npm run dev`.
 
 **Why this matters:** Discord dispatches every interaction to *every* live process connected with the same bot token. If a local dev instance and the VM's production instance ever share one token, both process every command simultaneously against their own separate, silently-drifting `reminders.db` files. In practice this caused: reminders firing twice, `"Interaction has already been acknowledged"` errors, and a status embed that only updated on whichever process happened to have it tracked in its own database.
 
@@ -185,9 +185,9 @@ pwd          # while inside the project folder, e.g. /home/ubuntu/your-repo-name
 ```
 
 ### Create the service file
-
+In the example, 'discordbotshrimp' is used but this can be any name with appropraite context for the user, and should be noted for any instance of 'discordbotshrimp' that appears in this file
 ```bash
-sudo nano /etc/systemd/system/discordbot.service
+sudo nano /etc/systemd/system/discordbotshrimp.service
 ```
 
 ```ini
@@ -218,15 +218,15 @@ Key points:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable discordbot
-sudo systemctl start discordbot
+sudo systemctl enable discordbotshrimp
+sudo systemctl start discordbotshrimp
 ```
 
 ### Verify
 
 ```bash
-sudo systemctl status discordbot     # look for "active (running)"
-journalctl -u discordbot -f          # tail live logs; Ctrl+C to stop watching (bot keeps running)
+sudo systemctl status discordbotshrimp     # look for "active (running)"
+journalctl -u discordbotshrimp -f          # tail live logs; Ctrl+C to stop watching (bot keeps running)
 ```
 
 ---
@@ -253,28 +253,29 @@ Global command changes can take up to an hour to propagate (often faster in prac
 A helper script, kept on the VM itself (not part of the repo):
 
 ```bash
-nano ~/deploy.sh
+nano ~/deployshrimp.sh
 ```
 
 ```bash
 #!/bin/bash
 cd ~/your-repo-name
-git pull
+git fetch origin
+git reset --hard origin/your-main-branch
 npm install
-sudo systemctl restart discordbot
+sudo systemctl restart discordbotshrimp
 echo "Bot restarted. Redeploying slash commands..."
 npm run deploycommands
 echo "Deploy complete. Checking status..."
-sudo systemctl status discordbot --no-pager
+sudo systemctl status discordbotshrimp --no-pager
 ```
 
 ```bash
-chmod +x ~/deploy.sh
+chmod +x ~/deployshrimp.sh
 ```
 
 From then on, shipping an update is just:
 ```bash
-~/deploy.sh
+~/deployshrimp.sh
 ```
 
 **Why this order:** the bot restart happens *before* `deploycommands`, so if the command-registration step ever fails (bad definition, transient API issue), the actual code fix has already taken effect — only a manual re-run of `npm run deploycommands` would be needed afterward, rather than the whole deploy being blocked.
@@ -287,9 +288,9 @@ From then on, shipping an update is just:
 
 | Task | Command |
 |---|---|
-| Check bot status | `sudo systemctl status discordbot` |
-| Restart bot (after code changes) | `sudo systemctl restart discordbot` |
+| Check bot status | `sudo systemctl status discordbotshrimp` |
+| Restart bot (after code changes) | `sudo systemctl restart discordbotshrimp` |
 | View live logs | `journalctl -u discordbot -f` |
 | Re-register slash commands | `npm run deploycommands` |
-| Full deploy | `~/deploy.sh` |
+| Full deploy | `~/deployshrimp.sh` |
 | SSH into the VM | `ssh -i ~/Downloads/your-key-filename.key ubuntu@YOUR_PUBLIC_IP` |

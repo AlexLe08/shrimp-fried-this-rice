@@ -20,7 +20,7 @@ A Discord bot built with **TypeScript** and **discord.js v14** that periodically
 - Graceful shutdown handling (`src/shutdown.ts`) — on `SIGTERM`/`SIGINT`, the scheduler is stopped, the Discord client is cleanly destroyed, and the database connection is closed, with a 5-second force-exit safety net in case cleanup ever hangs
 - Deployed 24/7 on an Oracle Cloud "Always Free" VM, managed via systemd (see [Production Deployment](#production-deployment))
 - A Vitest test suite covering **~96% of statements / ~97% of lines** across the entire codebase — persistence, scheduling, embeds, event handling, shutdown, and every command (see [Testing](#testing))
-- A GitHub Actions CI workflow running type-checking and the full test suite on every push/PR, enforced via a branch ruleset that blocks merging into `main` unless CI passes (see [Continuous Integration](#continuous-integration))
+- A GitHub Actions CI/CD pipeline: type-checking and the full test suite run on every push/PR, enforced via a branch ruleset that blocks merging into `main` unless CI passes; merging then triggers a manual-approval-gated automated deploy straight to the production VM (see [Continuous Integration & Deployment](#continuous-integration--deployment))
 
 **Notable bugs caught by the test suite:**
 - `getDueGuildReminders` originally used an inner `JOIN` against `guild_settings`, which silently excluded *every* reminder belonging to a server that had never explicitly run `/reminder master` (since no row exists there until that command is used). This meant a server that created reminders but never touched the master toggle could have had them never fire, with no visible error. Fixed by switching to a `LEFT JOIN` with explicit `NULL` handling, correctly treating "no row" the same as "enabled," matching the schema's stated default.
@@ -124,21 +124,39 @@ npm run test:coverage # run once with a coverage report (terminal + HTML in cove
 
 **Known, accepted gaps within the covered files:** a handful of narrow branches remain untested — e.g. a couple of individual reply-wording branches, and the scheduler's overlap-guard "skip this tick" path (which would require a more elaborate concurrent-timer test to trigger deliberately). These were judged not worth chasing further once the suite comfortably exceeded its coverage goal; none represent untested core logic.
 
-## Continuous Integration
+## Continuous Integration & Deployment
 
-A GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push and pull request against `main`:
+A GitHub Actions workflow (`.github/workflows/ci.yml`) has two jobs.
+
+**`test`** runs on every push and pull request against `main`:
 1. Checks out the repository
 2. Sets up Node.js 24
 3. Installs dependencies via `npm ci` (not `npm install` — fails loudly if the lockfile is out of sync, rather than silently reconciling)
 4. Runs `npm run typecheck`
 5. Runs `npm run test:coverage`
 
-No secrets are required — the whole suite runs against mocked/in-memory data with no real Discord connection. Optional: add a status badge near the top of this README once the workflow has run at least once —
-```markdown
-![CI](https://github.com/your-username/your-repo-name/actions/workflows/ci.yml/badge.svg)
+No secrets are required for this job — the whole suite runs against mocked/in-memory data with no real Discord connection.
+
+**`deploy`** runs only on an actual push landing on `main` (never on a pull request itself), and only after `test` passes. It's gated behind a GitHub **Environment** (`production`) configured with a required reviewer — so a merge triggers the job, but it sits in a **"Waiting"** state in the Actions tab until manually approved with one click, before anything touches the live VM. This was a deliberate choice over a fully automatic deploy: it keeps almost all the automation benefit (no manual SSH, no manually re-running commands) while preserving a human checkpoint before a change reaches production, given real Discord servers depend on this bot staying up.
+
+Once approved, the job SSHs into the production VM (via [`appleboy/ssh-action`](https://github.com/appleboy/ssh-action)) using a dedicated deploy-only SSH key — separate from any personal key, so a compromised CI credential can't be used to access the VM the way a personal key could — and runs:
+```bash
+set -e
+cd ~/shrimp-fried-this-rice
+git fetch origin
+git reset --hard origin/main
+npm install
+sudo systemctl restart discordbotshrimp
+npm run deploycommands
+sudo systemctl status discordbotshrimp --no-pager
 ```
 
-**Merge enforcement:** a branch ruleset on `main` (Settings → Branches → Rulesets) requires this workflow's `test` check to pass before a pull request can be merged, and requires changes to go through a pull request in the first place — so CI passing is a structural gate, not just an informational status. Rulesets were chosen over classic branch protection specifically to be ready for future contributors (per-actor bypass lists, org-wide reusability if this ever becomes a multi-repo setup) and as a deliberate opportunity to learn GitHub's newer system.
+A few things worth understanding about this script, learned by hitting them directly:
+- **`set -e` is essential.** Without it, a multi-line script continues running subsequent commands even after an earlier one fails — the first version of this pipeline didn't have it, and a failed `git pull` step still let `npm install`/restart/`deploycommands` run afterward against stale code, without the job actually failing loudly.
+- **`git fetch` + `git reset --hard`, not `git pull`.** A production deploy target should never have independent local changes to reconcile — `git pull` tries to merge, which can fail if the VM's working directory has drifted (e.g. from `npm install` locally modifying `package-lock.json` without that change being committed). `reset --hard` unconditionally makes the VM's copy match GitHub exactly, every time, eliminating that failure mode entirely.
+- **The `sudoers` entry backing this is deliberately narrow**, granting passwordless `sudo` only for `systemctl restart`/`status` on this one service — not blanket root access — limiting what a compromised deploy key could actually do.
+
+**Merge enforcement:** a branch ruleset on `main` (Settings → Branches → Rulesets) requires the `test` check to pass before a pull request can be merged, and requires changes to go through a pull request in the first place — so CI passing is a structural gate, not just an informational status. Rulesets were chosen over classic branch protection specifically to be ready for future contributors (per-actor bypass lists, org-wide reusability if this ever becomes a multi-repo setup) and as a deliberate opportunity to learn GitHub's newer system.
 
 ## Production Deployment
 
@@ -151,13 +169,13 @@ Key production-specific details, for future reference:
 - **Native module builds:** `better-sqlite3` compiles from source on first install on this ARM architecture, requiring `build-essential` and `python3` to be installed on the VM (see deployment notes/history for the full one-time VM setup steps).
 - **npm install-scripts:** `better-sqlite3`'s native build step is explicitly approved via the `allowScripts` field committed in `package.json` — required for npm v12+'s install-script security gating.
 - **Graceful shutdown:** `systemctl restart`/`stop` send `SIGTERM`, which `src/shutdown.ts` handles by stopping the scheduler, destroying the Discord client, and closing the database connection before the process exits — rather than the process being killed mid-operation. `Ctrl+C` during local `npm run dev` sends `SIGINT`, handled identically.
-- **Service management:** the bot runs under a systemd unit (`discordbot.service`). Common commands:
+- **Service management:** the bot runs under a systemd unit (`discordbotshrimp.service` — originally named `discordbot.service`, renamed at some point; make sure any local notes/scripts you're working from reference the current name). Common commands:
   ```bash
-  sudo systemctl status discordbot     # check if running
-  sudo systemctl restart discordbot    # apply a code update
-  journalctl -u discordbot -f          # view live logs
+  sudo systemctl status discordbotshrimp     # check if running
+  sudo systemctl restart discordbotshrimp    # apply a code update
+  journalctl -u discordbotshrimp -f          # view live logs
   ```
-- **Deploying updates:** a helper script (`~/deploy.sh` on the VM, not part of this repo) runs `git pull`, `npm install`, restarts the service, and re-runs `deploycommands`, in that order (service restart before command redeployment, so a command-registration hiccup never blocks a code fix from taking effect).
+- **Deploying updates:** merging a pull request into `main` now triggers an automated deploy (see [Continuous Integration & Deployment](#continuous-integration--deployment)) — this is the primary path. A manual fallback script (`~/deploy.sh` on the VM, not part of this repo) still exists for deploying without going through GitHub (e.g. testing a local change directly against the VM); it runs the same steps: `git fetch`/`reset --hard`, `npm install`, restart the service, re-run `deploycommands`.
 
 ## Commands
 
@@ -245,7 +263,6 @@ test/
 - [ ] Enforce a minimum coverage threshold in CI
 - [ ] Publish the HTML coverage report as a CI artifact
 - [ ] Consider narrowing `refreshGuildStatusMessage`'s and `startScheduler`'s `Client` parameter to a smaller custom interface, to eliminate the `as unknown as Client` casts in test mocks
-- [ ] CD automation — auto-deploy to the production VM on merge to `main` (e.g. a GitHub Actions step that SSHs in and runs the existing `~/deploy.sh`)
 - [ ] Structured logging (e.g. `pino`) with real log levels, in place of plain `console.log`/`console.error`
 - [ ] `CHANGELOG.md` documenting notable changes and fixes over time
 - [ ] Confirm a real `LICENSE` file exists in the repo root, not just the mention below
