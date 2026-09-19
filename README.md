@@ -1,6 +1,8 @@
 ![CI](https://github.com/AlexLe08/shrimp-fried-this-rice/actions/workflows/ci.yml/badge.svg)
 
-# Posture & Hydration Reminder Bot
+![Project header](assets/shrimp-check.jpg)
+
+# Shrimp Who Fried That Rice - A Posture & Hydration Reminder Bot
 
 A Discord bot built with **TypeScript** and **discord.js v14** that periodically sends a preset reminder message (e.g. "Check your posture!" or "Time to drink water!") to a server channel, and optionally as a DM to individual users who opt in.
 
@@ -264,9 +266,6 @@ test/
 - [ ] Publish the HTML coverage report as a CI artifact
 - [ ] Consider narrowing `refreshGuildStatusMessage`'s and `startScheduler`'s `Client` parameter to a smaller custom interface, to eliminate the `as unknown as Client` casts in test mocks
 - [ ] Structured logging (e.g. `pino`) with real log levels, in place of plain `console.log`/`console.error`
-- [ ] `CHANGELOG.md` documenting notable changes and fixes over time
-- [ ] Confirm a real `LICENSE` file exists in the repo root, not just the mention below
-- [ ] Enable Dependabot for automated dependency vulnerability alerts
 - [ ] Web dashboard for configuration (longer-term idea)
 
 ## License
