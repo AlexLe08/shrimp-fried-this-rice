@@ -34,7 +34,8 @@ Adopt wol-character-panel's workflow here, adapted as above: `CLAUDE.md`,
 cleanup scripts, `<type>/<kebab-case>` branches, and small PRs
 squash-merged with a conventional-commit title.
 
-**Why:** TODO(Alex)
+**Why:**
+The wol-character-panel's Claude setup was fairly successful for me to create maintainable code. For something fairly small and personal like this discord bot, it should be enough without needing to worry about customizing much Claude settings or git practices.
 
 ## Consequences
 
