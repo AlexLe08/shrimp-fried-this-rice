@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import type { Command } from './types/command.ts';
 
 import { shutdown } from './shutdown.ts';
+import { toEventListener } from './eventListener.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -59,13 +60,7 @@ for (const file of eventFiles) {
 		default: { name: string; once: boolean; execute: (...args: unknown[]) => Promise<void> };
 	};
 	const event = eventModule.default;
-	// The emitter ignores a handler's promise, so a rejection (a cooldown reply
-	// to an expired interaction, say) would go unhandled and crash the process.
-	const listener = (...args: unknown[]): void => {
-		(async () => event.execute(...args))().catch((error: unknown) => {
-			console.error(`Unhandled error in the ${event.name} handler:`, error);
-		});
-	};
+	const listener = toEventListener(event.name, event.execute);
 	if (event.once) {
 		client.once(event.name, listener);
 	} else {

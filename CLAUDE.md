@@ -105,7 +105,7 @@ the workflow, indexed in its `README.md`.
   filters to its triggers.
 - Node 24 (`.nvmrc`, `engines`), like the VM and CI.
 - TypeScript stays on `~6.0` until typescript-eslint supports 6.1 and up
-  (8.x stops below 6.1), as in wol-character-panel.
+  (8.x stops below 6.1); wol-character-panel is on 6.0 for the same reason.
 - Adding a runtime dependency is a design decision for the owner, not an
   implementation detail.
 

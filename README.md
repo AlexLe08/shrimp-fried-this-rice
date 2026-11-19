@@ -180,6 +180,7 @@ src/
   deploy-commands.ts    # registers slash commands globally with Discord's API
   scheduler.ts          # polling loop — checks storage.ts for due reminders and sends them
   shutdown.ts            # graceful SIGTERM/SIGINT handling — stops the scheduler, destroys the client, closes the database
+  eventListener.ts      # wraps each event handler so a rejection is logged, not an unhandled crash
   storage.ts            # SQLite data-access layer (guild settings, guild reminders, user settings, status message tracking)
   reminderEmbed.ts       # builds the /reminder status embed; also refreshes the tracked status message when reminders change
   types/
@@ -198,6 +199,7 @@ test/
   scheduler.test.ts                # scheduler tests, using fake timers
   schedulerCheckFailure.test.ts    # a poll whose storage query throws is logged, not a crash (mocks storage, so its own file)
   shutdown.test.ts                  # gracefulShutdown orchestration tests (mocked scheduler + storage)
+  eventListener.test.ts            # rejected and throwing handlers are logged
   storage/
     storage.test.ts                 # initial smoke test
     closeDatabase.test.ts           # isolated in its own file — closing the DB connection is irreversible within a test file
