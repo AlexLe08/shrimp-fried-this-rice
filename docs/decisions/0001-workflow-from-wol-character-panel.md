@@ -8,7 +8,8 @@ From 2026-08-27 to 09-17 the bot went from the discord.js guide's starter
 commands to a deployed reminder bot: SQLite storage, the scheduler, the
 status embed, tests (#2, #3), graceful shutdown and a deploy job (#4), and
 two fixes to that job (#5, #6). PRs were merged with merge commits; the
-first nine commits went straight to `main` before the ruleset existed.
+first twelve commits, and one more between #3 and #4, went straight to
+`main`.
 Branches were named `feat/…` and `fix/…` (`fix/ci_v2` with an
 underscore). There was no `CLAUDE.md` or other Claude Code setup.
 

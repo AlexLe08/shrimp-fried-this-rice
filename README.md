@@ -222,6 +222,8 @@ test/
     interactionCreate.test.ts        # includes a direct regression test for the production crash incident
 ```
 
+Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `scripts/` (worktrees, `check.sh` mirroring CI, cleanup after merges) and `docs/decisions/`.
+
 ## Available Scripts
 
 | Script | Purpose |

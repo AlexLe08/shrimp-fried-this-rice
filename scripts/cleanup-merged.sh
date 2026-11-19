@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # After a PR merges: lists the local branches and worktrees it left behind,
 # and with --apply removes them. A branch qualifies only when its upstream
-# is gone (GitHub deletes the remote branch on merge here) AND it is merged
+# is gone (deleted on GitHub: by hand until the repository deletes head
+# branches on merge, decision 0001) AND it is merged
 # into origin/main. "Merged" alone isn't enough: a new branch with no
 # commits yet counts as merged too, and one never pushed has no upstream,
 # so neither is touched.

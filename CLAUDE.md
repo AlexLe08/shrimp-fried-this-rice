@@ -120,7 +120,7 @@ the workflow, indexed in its `README.md`.
   that in mind.
 - Branches are `<type>/<what-in-kebab-case>`, the type matching the PR
   title's: `feat`, `fix`, `docs`, `test`, `ci`, `refactor`, `chore`,
-  `deps`, `release`. PRs are squash-merged
+  `deps`. PRs are squash-merged
   ([decision 0001](docs/decisions/0001-workflow-from-wol-character-panel.md)):
   the PR title and body become the one commit on `main`, so write the
   title like a commit subject (`fix: …`, `docs: …`).
