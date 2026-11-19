@@ -16,7 +16,7 @@ A Discord bot built with **TypeScript** and **discord.js v14** that periodically
 - A live-updating status embed (`/reminder status`) listing all of a server's reminders with Discord relative timestamps for their next fire time; automatically re-posts/edits itself whenever a reminder fires or its settings change (`src/reminderEmbed.ts`)
 - Personal opt-in DM reminders, independent of any server setting — configurable directly via DM with the bot
 - Graceful shutdown handling (`src/shutdown.ts`) — on `SIGTERM`/`SIGINT`, the scheduler is stopped (waiting for a send already under way to finish and be recorded, so it isn't repeated after the restart), the Discord client is cleanly destroyed, and the database connection is closed, with a 5-second force-exit safety net in case cleanup ever hangs
-- Deployed 24/7 on an Oracle Cloud "Always Free" VM, managed via systemd (see [Production Deployment](#production-deployment))
+- Deployed 24/7 on an Oracle Cloud "Always Free" VM, managed via systemd, and deployed automatically by GitHub Actions on merge to `main` (see [Production Deployment](#production-deployment))
 - A Vitest test suite covering **~96% of statements / ~97% of lines** across the entire codebase — persistence, scheduling, embeds, event handling, shutdown, and every command (see [Testing](#testing))
 - A GitHub Actions CI workflow running type-checking and the full test suite on every push/PR, enforced via a branch ruleset that blocks merging into `main` unless CI passes (see [Continuous Integration](#continuous-integration))
 
@@ -82,7 +82,6 @@ Slash commands are registered **globally** (via `deploycommands`), so they're av
    ```env
    DISCORD_TOKEN=your-dev-bot-token-here
    DISCORD_CLIENT_ID=your-dev-application-client-id
-   DISCORD_GUILD_ID=your-test-server-id
    ```
    > ⚠️ Never commit `.env` to version control. It's already listed in `.gitignore`.
 
@@ -131,10 +130,7 @@ A GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push and pu
 4. Runs `npm run typecheck`
 5. Runs `npm run test:coverage`
 
-No secrets are required — the whole suite runs against mocked/in-memory data with no real Discord connection. Optional: add a status badge near the top of this README once the workflow has run at least once —
-```markdown
-![CI](https://github.com/your-username/your-repo-name/actions/workflows/ci.yml/badge.svg)
-```
+No secrets are required for the `test` job — the whole suite runs against mocked/in-memory data with no real Discord connection. On pushes to `main`, a second `deploy` job ships the result (see [Production Deployment](#production-deployment)).
 
 **Merge enforcement:** a branch ruleset on `main` (Settings → Branches → Rulesets) requires this workflow's `test` check to pass before a pull request can be merged, and requires changes to go through a pull request in the first place — so CI passing is a structural gate, not just an informational status. Rulesets were chosen over classic branch protection specifically to be ready for future contributors (per-actor bypass lists, org-wide reusability if this ever becomes a multi-repo setup) and as a deliberate opportunity to learn GitHub's newer system.
 
@@ -144,18 +140,18 @@ The bot runs continuously on an **Oracle Cloud Infrastructure "Always Free" VM**
 
 Key production-specific details, for future reference:
 
-- **Persistence:** since this is a real VM (not a container-based PaaS), `reminders.db` lives on the VM's normal persistent disk — no special volume configuration needed, and it's untouched by deploys (it's git-ignored, so `git pull` never affects it).
-- **Secrets:** `.env` is created directly on the VM (never committed, never pulled from git) with the production bot token and IDs — using the separate **production** Discord Application, never the local-dev one.
+- **Persistence:** since this is a real VM (not a container-based PaaS), `reminders.db` lives on the VM's normal persistent disk — no special volume configuration needed, and it's untouched by deploys (it's git-ignored, and the deploy's `git reset --hard` only resets tracked files).
+- **Secrets:** `.env` is created directly on the VM (never committed, never pulled from git) with the production bot token and client ID — using the separate **production** Discord Application, never the local-dev one.
 - **Native module builds:** `better-sqlite3` compiles from source on first install on this ARM architecture, requiring `build-essential` and `python3` to be installed on the VM (see deployment notes/history for the full one-time VM setup steps).
 - **npm install-scripts:** `better-sqlite3`'s native build step is explicitly approved via the `allowScripts` field committed in `package.json` — required for npm v12+'s install-script security gating.
 - **Graceful shutdown:** `systemctl restart`/`stop` send `SIGTERM`, which `src/shutdown.ts` handles by stopping the scheduler (and waiting for any send already under way), destroying the Discord client, and closing the database connection before the process exits — rather than the process being killed mid-operation. `Ctrl+C` during local `npm run dev` sends `SIGINT`, handled identically.
-- **Service management:** the bot runs under a systemd unit (`discordbot.service`). Common commands:
+- **Service management:** the bot runs under a systemd unit (`discordbotshrimp.service`). Common commands:
   ```bash
-  sudo systemctl status discordbot     # check if running
-  sudo systemctl restart discordbot    # apply a code update
-  journalctl -u discordbot -f          # view live logs
+  sudo systemctl status discordbotshrimp     # check if running
+  sudo systemctl restart discordbotshrimp    # restart (deploys do this)
+  journalctl -u discordbotshrimp -f          # view live logs
   ```
-- **Deploying updates:** a helper script (`~/deploy.sh` on the VM, not part of this repo) runs `git pull`, `npm install`, restarts the service, and re-runs `deploycommands`, in that order (service restart before command redeployment, so a command-registration hiccup never blocks a code fix from taking effect).
+- **Deploying updates:** automatic on merge to `main`. The `deploy` job in `.github/workflows/ci.yml` runs after `test` passes, waits for the owner's approval (the `production` environment), then SSHes into the VM and runs `git fetch`, `git reset --hard origin/main`, `npm install`, restarts the service, and re-runs `deploycommands`, in that order (service restart before command redeployment, so a command-registration hiccup never blocks a code fix from taking effect). Approving one run deploys whatever `main` is at that moment. Setup and secrets: [`ORACLE_CLOUD_DEPLOYMENT.md`](ORACLE_CLOUD_DEPLOYMENT.md), section 9.
 
 ## Commands
 
@@ -237,13 +233,12 @@ Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `sc
 - [ ] Enforce a minimum coverage threshold in CI
 - [ ] Publish the HTML coverage report as a CI artifact
 - [ ] Consider narrowing `refreshGuildStatusMessage`'s and `startScheduler`'s `Client` parameter to a smaller custom interface, to eliminate the `as unknown as Client` casts in test mocks
-- [ ] CD automation — auto-deploy to the production VM on merge to `main` (e.g. a GitHub Actions step that SSHs in and runs the existing `~/deploy.sh`)
+- [ ] Make the deploy fail when command registration fails (`deploy-commands.ts` exits 0 today), use `npm ci`, and check the bot actually logged in after the restart
 - [ ] Structured logging (e.g. `pino`) with real log levels, in place of plain `console.log`/`console.error`
 - [ ] `CHANGELOG.md` documenting notable changes and fixes over time
-- [ ] Confirm a real `LICENSE` file exists in the repo root, not just the mention below
-- [ ] Enable Dependabot for automated dependency vulnerability alerts
+- [ ] Dependabot version updates (`.github/dependabot.yml`); security updates are already on
 - [ ] Web dashboard for configuration (longer-term idea)
 
 ## License
 
-MIT
+MIT, see [LICENSE](LICENSE).
