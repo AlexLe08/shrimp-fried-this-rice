@@ -51,4 +51,7 @@ try {
 	console.log(`Successfully reloaded ${data.length} application (/) commands.`);
 } catch (error) {
 	console.error(error);
+	// The deploy job runs this after restarting the bot; a nonzero exit fails
+	// the job, so a registration that didn't happen can't pass as a green deploy.
+	process.exitCode = 1;
 }
