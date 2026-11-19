@@ -23,3 +23,4 @@ section.
 | --- | --- | --- |
 | [0001](0001-workflow-from-wol-character-panel.md) | Work the way wol-character-panel does: worktrees, small squash-merged PRs, a reviewer pass | Accepted · 2026-11-19 |
 | [0002](0002-schema-migrations-with-user-version.md) | Schema migrations in `storage.ts`, versioned by SQLite's `user_version`, applied on startup | Accepted · 2026-11-19 |
+| [0003](0003-pre-release-schema-resets.md) | Before the bot has users, a breaking schema change may reset the database instead of migrating | Accepted · 2026-11-19 |

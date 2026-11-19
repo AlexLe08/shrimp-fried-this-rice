@@ -68,8 +68,13 @@ the workflow, indexed in its `README.md`.
   to the list, never an edit to a `CREATE TABLE` or to a merged migration,
   since production's `reminders.db` has run them. One that isn't additive
   (renames, drops, retypes a column) needs a plan agreed with the owner
-  first. Row interfaces mirror the columns by hand; change both in the
-  same commit.
+  first. While the bot is pre-release (README's Status says so), that
+  plan may be a reset instead: rewrite the `CREATE TABLE`s, empty
+  `MIGRATIONS`, and the PR's Deploys line asks the owner to delete
+  production's `reminders.db` before approving
+  ([decision 0003](docs/decisions/0003-pre-release-schema-resets.md)).
+  Row interfaces mirror the columns by hand; change both in the same
+  commit.
 - `src/snooze.ts` holds what `/reminder snooze` and `/remindme` share: the
   duration and after-snooze choices, and how a snooze is described.
 - Commands: one file per command under `src/commands/<category>/`,

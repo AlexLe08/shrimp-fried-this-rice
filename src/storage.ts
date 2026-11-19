@@ -48,7 +48,8 @@ db.exec(`
 
 // Migration n (from 0) takes PRAGMA user_version from n to n + 1. Append
 // only: production's database has already run the ones here
-// (docs/decisions/0002-schema-migrations-with-user-version.md).
+// (docs/decisions/0002-schema-migrations-with-user-version.md), except a
+// pre-release reset that deletes that database (decision 0003).
 const MIGRATIONS = [
 	// snoozed_until: epoch ms; a reminder isn't sent before it. 0 = not snoozed.
 	`ALTER TABLE guild_reminders ADD COLUMN snoozed_until INTEGER NOT NULL DEFAULT 0;

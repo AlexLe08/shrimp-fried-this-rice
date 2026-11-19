@@ -6,6 +6,8 @@ A Discord bot built with **TypeScript** and **discord.js v14** that periodically
 
 ## Status
 
+**Pre-release:** the bot has no users yet, so a breaking schema change may reset production's database instead of migrating it ([decision 0003](docs/decisions/0003-pre-release-schema-resets.md)). Removing this line ends that; from then on every schema change is a migration.
+
 **Core feature set is complete, deployed, and running in production:**
 - Slash command loading and registration (global — works in any server the bot is invited to, plus direct DMs)
 - Event handling (`ClientReady`, `InteractionCreate`)
