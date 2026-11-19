@@ -243,7 +243,7 @@ What it needs, set up once:
 - The `production` environment (Settings → Environments) with the owner as required reviewer.
 - `sudo systemctl` usable without a password prompt for that user (Ubuntu's default `ubuntu` user on OCI has passwordless sudo).
 
-**Why this order:** the bot restarts *before* `deploycommands`, so if command registration fails (a bad definition, a transient API error), the code fix has already taken effect, and only `npm run deploycommands` needs re-running. Note that `deploy-commands.ts` currently logs a failed registration and still exits 0, so the job stays green: check its log for `Successfully reloaded N application (/) commands.`
+**Why this order:** the bot restarts *before* `deploycommands`, so if command registration fails (a bad definition, a transient API error), the code fix has already taken effect, and only `npm run deploycommands` needs re-running. A failed registration exits nonzero, so the job goes red even though the new code is already running; `set -e` then skips the final `systemctl status`.
 
 **Why `reminders.db` is never at risk:** it's git-ignored, and `git reset --hard` only resets tracked files, so the database (and `.env`) survive every deploy. Anything edited by hand in tracked files on the VM is discarded, though: change code only through a PR.
 
