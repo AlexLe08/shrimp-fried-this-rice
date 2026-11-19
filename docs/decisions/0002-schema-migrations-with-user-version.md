@@ -36,7 +36,9 @@ transaction on startup. Migration 0 adds `snoozed_until INTEGER NOT NULL
 DEFAULT 0` to `guild_reminders` and `user_settings`. There are no down
 migrations.
 
-**Why:** TODO(Alex)
+**Why:**
+
+Necessary to edit existing tables when we previously had no methods to do so. 
 
 ## Consequences
 
