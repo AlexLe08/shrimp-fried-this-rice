@@ -239,7 +239,7 @@ Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `sc
 - [ ] Enforce a minimum coverage threshold in CI
 - [ ] Publish the HTML coverage report as a CI artifact
 - [ ] Consider narrowing `refreshGuildStatusMessage`'s and `startScheduler`'s `Client` parameter to a smaller custom interface, to eliminate the `as unknown as Client` casts in test mocks
-- [ ] Make the deploy check the bot actually logged in after the restart (a failed command registration already fails the deploy, and it installs with `npm ci`)
+- [ ] Make the deploy check the bot actually logged in after the restart (a failed command registration already fails the deploy)
 - [ ] Structured logging (e.g. `pino`) with real log levels, in place of plain `console.log`/`console.error`
 - [ ] `CHANGELOG.md` documenting notable changes and fixes over time
 - [ ] Dependabot version updates (`.github/dependabot.yml`); security updates are already on
