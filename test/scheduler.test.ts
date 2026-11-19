@@ -4,7 +4,6 @@ import { startScheduler, stopScheduler } from '../src/scheduler.ts';
 import { createGuildReminder, updateGuildReminder, setGuildStatusMessage, updateGuildReminderLastSent, upsertUserSettings, updateUserLastSent, getGuildReminderByLabel, getUserSettings, __resetForTests } from '../src/storage.ts';
 import { createMockClient, createMockChannel, createMockUser } from './mocks.ts';
 
-// Using fake timers to control the passage of time in tests
 beforeEach(() => {
 	__resetForTests();
 	vi.useFakeTimers();
@@ -26,7 +25,6 @@ describe('scheduler — guild reminders', () => {
 		const channel = createMockChannel();
 		const client = createMockClient({ channels: { c1: channel } });
 
-        // checkGuildReminders is async, so we need to await the scheduler's execution after advancing the timersh
 		startScheduler(client as unknown as Client<true>);
 		await vi.advanceTimersByTimeAsync(60_000);
 

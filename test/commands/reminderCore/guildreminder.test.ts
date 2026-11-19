@@ -16,7 +16,6 @@ beforeEach(() => {
 
 function makePermissiveChannel() {
 	const channel = createMockChannel();
-    // Mock the permissionsFor method to always return an object with a has method that returns true
 	(channel as Record<string, unknown>)['permissionsFor'] = vi.fn(() => ({ has: () => true }));
 	return channel;
 }
@@ -71,7 +70,6 @@ describe('/reminder create', () => {
     it('rejects creating a reminder once the guild has reached the maximum', async () => {
         const channel = makePermissiveChannel();
 
-        // Create the maximum number of reminders for the guild
         for (let i = 0; i < MAX_REMINDERS_PER_GUILD; i++) {
             const interaction = createMockInteraction({
                 inCachedGuild: true,
@@ -117,11 +115,9 @@ describe('/reminder create', () => {
 			},
 		});
 
-        // First execution should succeed, second execution with the same label should be rejected
 		await guildReminderCommand.execute(interaction as never);
 		await guildReminderCommand.execute(interaction as never);
 
-        // We expect the second execution to have been rejected with a message indicating that the label already exists
 		expect(interaction.reply).toHaveBeenLastCalledWith(
 			expect.objectContaining({ content: expect.stringContaining('already exists') }),
 		);

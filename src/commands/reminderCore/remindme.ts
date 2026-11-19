@@ -40,7 +40,6 @@ export default {
 		const intervalOption = interaction.options.getInteger('interval');
 		const messageOption = interaction.options.getString('message');
 
-        // If the user didn't provide any options, show their current settings or a message indicating they haven't set up reminders yet.
 		if (enabledOption === null && intervalOption === null && messageOption === null) {
 			if (!existing) {
 				await interaction.reply({
@@ -57,7 +56,7 @@ export default {
 			return;
 		}
 
-        // If the user provided any options, update their settings accordingly. If an option wasn't provided, keep the existing value or use a default if no existing value is present.
+        // An option left out keeps its saved value, or the default for a new user.
         const dmEnabled = enabledOption ?? (existing?.dm_enabled === 1);
 		const intervalMinutes = intervalOption ?? existing?.interval_minutes ?? DEFAULT_INTERVAL;
 		const message = messageOption ?? existing?.message ?? DEFAULT_MESSAGE;

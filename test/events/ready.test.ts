@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock the scheduler module to prevent it from starting during tests
 vi.mock('../../src/scheduler.ts', () => ({
 	startScheduler: vi.fn(),
 }));

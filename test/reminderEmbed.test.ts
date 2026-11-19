@@ -1,4 +1,3 @@
-// test/reminderEmbed.test.ts
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { DiscordAPIError, type Client } from 'discord.js';
 import { buildReminderStatusEmbed, refreshGuildStatusMessage } from '../src/reminderEmbed.ts';
@@ -77,8 +76,6 @@ describe('refreshGuildStatusMessage', () => {
 			guilds: { 'guild-1': { name: 'Test Server' } },
 		});
 
-        // refreshGuildStatusMessage is async, so we need to await it to ensure the edit has been called
-        // double type cast to satisfy the Client type, since our mock doesn't implement all methods
 		await refreshGuildStatusMessage(client as unknown as Client, 'guild-1');
 
 		expect(editMock).toHaveBeenCalledTimes(1);

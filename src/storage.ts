@@ -5,19 +5,15 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Create new db or open existing one
 const dbPath = process.env['DB_PATH'] ?? path.join(__dirname, '..', 'reminders.db');
 const db = new Database(dbPath);
 
-// SQLite's write-ahead-logging mode, the standard for any app doing concurrent reads and writes (bot will be reading the scheduler loop while commands are writing settings). Without it, SQLite still works, just with more conservative locking.
+// WAL: the scheduler reads while commands write.
 db.pragma('journal_mode = WAL');
 
-// Make tables if they don't exist already,
-// use guild_id as primary key because unique identifier already; a 'one row per server' schema
-// master_enabled - integer 0/1 because no real bool type with SQL; it uses 0/1 instead
-// UNIQUE(guild_id, reminder_label) compound constraint: the combination of two columns must be unique, even though neither column alone is. So guild_id=111, reminder_label="water" and guild_id=222, reminder_label="water" are both fine (different servers, same label) — but two "water" labels in the same server would be rejected by SQLite. 
-// CAUTION: be mindful when adding new columns to table as well as renaming columns, update interfaces to reflect any column changes within the same commit; TypeScript cannot flag any mistakes between TypeScript and schema mismatches
-
+// No migrations yet: CREATE TABLE IF NOT EXISTS never alters an existing
+// table, and production's already has rows. Booleans are INTEGER 0/1; labels
+// are unique per server.
 db.exec(`
 	CREATE TABLE IF NOT EXISTS guild_settings (
 		guild_id TEXT PRIMARY KEY,
@@ -49,11 +45,8 @@ db.exec(`
     );
 `);
 
-// prop names match SQLite's snake_case naming conventions for its columns
-// TypeScript has no way to look in a string of SQL text and know what columns the query will return. Any SQL operation could return any shape object
-// Use type assertion when calling .get(), .all(); using as GuildSettings | undefined, etc; 
-// TypeScript does not verify this assertion against anything real; trust me bro moment
-// CAUTION: be mindful when adding new columns to table as well as renaming columns, update interfaces to reflect any column changes within the same commit; TypeScript cannot flag any mistakes between TypeScript and schema mismatches
+// Row shapes, written by hand: query results are cast to these unchecked,
+// so a column change updates its interface in the same commit.
 export interface GuildSettings {
 	guild_id: string;
 	master_enabled: number;
@@ -84,15 +77,12 @@ export interface GuildStatusMessage {
     message_id: string;
 }
 
-// Minimum 5 minutes, maximum 24 hours
 export const MIN_INTERVAL_MINUTES = 5;
 export const MAX_INTERVAL_MINUTES = 1440;
 
 export const MAX_REMINDERS_PER_GUILD = 20;
 
 export function getGuildReminderCount(guildId: string): number {
-	// COUNT(*) returns a single row with a single column named "count" that contains the number of reminders for the given guildId
-	// Use this over getGuildReminders(guildId).length because it avoids fetching all the reminder rows into memory, which is more efficient for large datasets
 	const result = db
 		.prepare('SELECT COUNT(*) as count FROM guild_reminders WHERE guild_id = ?')
 		.get(guildId) as { count: number };
@@ -100,16 +90,14 @@ export function getGuildReminderCount(guildId: string): number {
 }
 
 // --- Guild master toggle ---
-//.get() is specifically returning 0 or 1 result; for looking up a single server by its unique ID
-// typewise, .get() and .all() return unknown and unknown[] due to better-sqlite3 sending raw SQL string to actual SLQite engine written in C.
 export function getGuildSettings(guildId: string): GuildSettings | undefined {
 	return db
 		.prepare('SELECT * FROM guild_settings WHERE guild_id = ?')
 		.get(guildId) as GuildSettings | undefined;
 }
 
-// Upsert: insert new row but if guildID CONFLICTs (same), update it instead; creates the row on first use, updates it on every call after.
-// .excluded.master_enabled iis the valeu that would have been inserted; the ?
+// No row means enabled (the column's default): the row exists only once
+// /reminder master has been used.
 export function setGuildMasterEnabled(guildId: string, enabled: boolean): void {
 	db.prepare(
 		`INSERT INTO guild_settings (guild_id, master_enabled)
@@ -119,21 +107,17 @@ export function setGuildMasterEnabled(guildId: string, enabled: boolean): void {
 }
 
 // --- Guild reminders (multiple per guild) ---
-// .all() returns more than 1 row; servers can have multiple reminders 
 export function getGuildReminders(guildId: string): GuildReminder[] {
 	return db
 		.prepare('SELECT * FROM guild_reminders WHERE guild_id = ?')
 		.all(guildId) as GuildReminder[];
 }
-// Grabs a specific reminder in a guild based on label
 export function getGuildReminderByLabel(guildId: string, label: string): GuildReminder | undefined {
 	return db
 		.prepare('SELECT * FROM guild_reminders WHERE guild_id = ? AND reminder_label = ?')
 		.get(guildId, label) as GuildReminder | undefined;
 }
 
-// Adds new row. The ? placeholders line up with columns. 
-// .run() used for insert/update/delete opertions, returns nothing
 export function createGuildReminder(reminder: {
 	guildId: string;
 	label: string;
@@ -147,7 +131,8 @@ export function createGuildReminder(reminder: {
 	).run(reminder.guildId, reminder.label, reminder.channelId, reminder.intervalMinutes, reminder.message);
 }
 
-// Why fetch-then-update-all-columns, instead of only updating the changed column(s): building SQL where the set of columns changes dynamically based on which options were provided is genuinely fiddly to do safely (you'd be conditionally concatenating column names into the query string). Reading the current row first and writing all three columns back — two unchanged, one new — sidesteps that complexity entirely, at the cost of a trivial extra SELECT. For a table this small, that's a good trade.
+// Writes all three columns back, merged with the current row, rather than
+// building the SET clause from whichever options were given.
 export function updateGuildReminder(guildId: string, label: string, updates: {
 	channelId?: string;
 	intervalMinutes?: number;
@@ -165,7 +150,6 @@ export function updateGuildReminder(guildId: string, label: string, updates: {
 	).run(channelId, intervalMinutes, message, guildId, label);
 }
 
-// Updates an existing reminder to be enabled; narrowed down by guildID and label
 export function setGuildReminderEnabled(guildId: string, label: string, enabled: boolean): void {
 	db.prepare(
 		'UPDATE guild_reminders SET enabled = ? WHERE guild_id = ? AND reminder_label = ?',
@@ -193,14 +177,9 @@ export function updateGuildReminderLastSentForChannel(reminderId: number, channe
 	db.prepare('UPDATE guild_reminders SET last_sent_at = ? WHERE id = ? AND channel_id = ?').run(timestamp, reminderId, channelId);
 }
 
-// Reminders that are individually enabled and are due to fire.
-// for every reminder row, find the matching guild_settings row where the guild_id values are equal, and treat them as one combined row for this query.
-// Guild's master toggle must be enabled in addition to the individual reminder's toggle
-// The last time this reminder was sent, plus its interval set by users, is less than or equal to right now, so its due to fire at this point
-// interval_minutes * 60000 converts minutes to milliseconds (last_sent_at is a millisec timestamp); math happens in SQL rather than JavaScript
-// LEFT JOIN returns all rows from the left table (guild_reminders) and the matched rows from the right table (guild_settings). 
-// This allows reminders to be due even if the guild has never touched the master toggle (no row in guild_settings yet).
-// The WHERE clause filters the results to only include reminders that are enabled, have a master toggle that is either NULL (no row) or 1 (enabled), and are due to fire based on their last sent time and interval.
+// Enabled reminders whose interval has passed, in servers whose master toggle
+// is on. LEFT JOIN, not JOIN: a server that never used /reminder master has no
+// guild_settings row, and an inner join silently never fired its reminders.
 export function getDueGuildReminders(now: number): GuildReminder[] {
 	return db
 		.prepare(
@@ -280,7 +259,7 @@ export function closeDatabase(): void {
 	db.close();
 }
 
-// --- Test-only function to clear all tables; useful for resetting state between tests
+// Test-only: clears every table between tests.
 export function __resetForTests(): void {
 	db.exec(`
 	DELETE FROM guild_settings;

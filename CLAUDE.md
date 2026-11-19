@@ -86,8 +86,7 @@ the workflow, indexed in its `README.md`.
   Test-only helpers are exported as `__…ForTests` and never used in `src/`.
 - Comments say why, not what: the reason, the constraint, the incident
   behind a choice. Don't add comments that explain the language or the
-  discord.js API, or commented-out code. Older code still has both; clean
-  them up in their own PR, not in passing.
+  discord.js API, or commented-out code.
 
 ## Hard constraints
 
