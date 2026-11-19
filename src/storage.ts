@@ -182,6 +182,17 @@ export function updateGuildReminderLastSent(reminderId: number, timestamp: numbe
 	db.prepare('UPDATE guild_reminders SET last_sent_at = ? WHERE id = ?').run(timestamp, reminderId);
 }
 
+// The scheduler's outcomes for a send that failed. Both match on the channel
+// the scheduler tried: if the reminder was edited to another channel (or
+// deleted and re-created) while that send was failing, the edit wins.
+export function disableGuildReminderForChannel(reminderId: number, channelId: string): void {
+	db.prepare('UPDATE guild_reminders SET enabled = 0 WHERE id = ? AND channel_id = ?').run(reminderId, channelId);
+}
+
+export function updateGuildReminderLastSentForChannel(reminderId: number, channelId: string, timestamp: number): void {
+	db.prepare('UPDATE guild_reminders SET last_sent_at = ? WHERE id = ? AND channel_id = ?').run(timestamp, reminderId, channelId);
+}
+
 // Reminders that are individually enabled and are due to fire.
 // for every reminder row, find the matching guild_settings row where the guild_id values are equal, and treat them as one combined row for this query.
 // Guild's master toggle must be enabled in addition to the individual reminder's toggle
