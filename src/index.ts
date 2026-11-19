@@ -57,16 +57,27 @@ for (const file of eventFiles) {
 	const filePath = path.join(eventsPath, file);
 	const eventModule = await import(filePath) as { default: { name: string; once: boolean; execute: (...args: unknown[]) => Promise<void> } };
 	const event = eventModule.default;
+	// The emitter ignores a handler's promise, so a rejection (a cooldown reply
+	// to an expired interaction, say) would go unhandled and crash the process.
+	const listener = (...args: unknown[]): void => {
+		(async () => event.execute(...args))().catch((error: unknown) => {
+			console.error(`Unhandled error in the ${event.name} handler:`, error);
+		});
+	};
 	if (event.once) {
-		client.once(event.name, (...args) => event.execute(...args));
+		client.once(event.name, listener);
 	} else {
-		client.on(event.name, (...args) => event.execute(...args));
+		client.on(event.name, listener);
 	}
 }
 
 client.cooldowns = new Collection();
 
-client.login(process.env["DISCORD_TOKEN"]);
+// A failed login (bad token, Discord down) exits nonzero; systemd restarts it.
+client.login(process.env["DISCORD_TOKEN"]).catch((error: unknown) => {
+	console.error('Login failed:', error);
+	process.exit(1);
+});
 
 // SIGTERM: systemctl stop/restart (every deploy). SIGINT: Ctrl+C locally.
 process.on('SIGTERM', () => handleShutdownSignal('SIGTERM'));
