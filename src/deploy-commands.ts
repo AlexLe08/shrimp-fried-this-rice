@@ -15,10 +15,8 @@ const foldersPath = path.join(__dirname, 'commands');
 const commandFolders = fs.readdirSync(foldersPath);
 
 for (const folder of commandFolders) {
-    // Grab all the command files from the commands directory you created earlier
     const commandsPath = path.join(foldersPath, folder);
     const commandFiles = fs.readdirSync(commandsPath).filter((file) => file.endsWith('.ts'))
-	// Grab the SlashCommandBuilder#toJSON() output of each command's data for deployment
     for (const file of commandFiles) {
         const filePath = path.join(commandsPath, file);
         const commandModule = await import(pathToFileURL(filePath).href) as { default: Command};
@@ -32,7 +30,6 @@ for (const folder of commandFolders) {
     }
 }
 
-//TODO: Move error handling to separate file for export and import into this file.
 if (!process.env['DISCORD_TOKEN']) {
     throw new Error('DISCORD_TOKEN is not defined.');
 }
@@ -41,13 +38,12 @@ if (!process.env['DISCORD_CLIENT_ID']) {
     throw new Error('DISCORD_CLIENT_ID is not defined.');
 }
 
-// Construct and prepare an instance of the REST module
 const rest = new REST().setToken(process.env['DISCORD_TOKEN']);
 
-// Deploy your commands
 try {
     console.log(`Started refreshing ${commands.length} application (/) commands.`);
-	// The put method is used to fully refresh all commands in the guild with the current set
+	// PUT replaces the whole global set, so a command deleted from the code
+	// disappears for users too.
     const data = await rest.put(
         Routes.applicationCommands(process.env['DISCORD_CLIENT_ID']),
         { body: commands },

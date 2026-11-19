@@ -8,14 +8,12 @@ import {
 	__resetForTests,
 } from '../../src/storage.ts';
 
-// Reset the database before each test
 beforeEach(() => {
 	__resetForTests();
 });
 
 const ONE_MINUTE = 60_000;
 
-// Helper function to create a user with default settings, allowing overrides for specific fields
 function makeUser(overrides: Partial<Parameters<typeof upsertUserSettings>[0]> = {}) {
 	upsertUserSettings({
 		userId: 'user-1',

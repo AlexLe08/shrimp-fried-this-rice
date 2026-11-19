@@ -5,7 +5,7 @@ import { closeDatabase } from './storage.ts';
 let isShuttingDown = false;
 
 export async function shutdown(client: Client, signal: string): Promise<void> {
-	// Prevent multiple shutdown attempts if multiple signals are received in quick succession.
+	// A second signal (Ctrl+C twice, or SIGTERM during SIGINT) is ignored.
     if (isShuttingDown) return;
 	isShuttingDown = true;
 
@@ -16,15 +16,13 @@ export async function shutdown(client: Client, signal: string): Promise<void> {
 	// again after the restart.
 	await stopScheduler();
 
-    // Destroy the Discord client to close the WebSocket connection and clean up resources.
-    // Use two try/catch blocks to ensure that if one fails, the other still runs, allowing for a more complete shutdown.
+    // Separate try blocks: the database still closes if destroying the client fails.
 	try {
 		await client.destroy();
 	} catch (error) {
 		console.error('Error while destroying the Discord client:', error);
 	}
 
-    // Close the database connection to ensure all pending writes are flushed and resources are released.
 	try {
 		closeDatabase();
 	} catch (error) {

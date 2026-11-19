@@ -27,9 +27,10 @@ import { refreshGuildStatusMessage } from '../../reminderEmbed.ts';
 import type { TextChannel } from 'discord.js';
 
 function checkChannelPermissions(interaction: ChatInputCommandInteraction<'cached'>, channel: TextChannel): string | null {
-	// Rare cases (e.g. right after startup, before full caching completes) the bot's own member object might not be immediately available. Rather than throwing or blocking the command on that edge case, silently skipping the check (return null) means the command still succeeds normally — worst case, the warning just doesn't fire that one time
+	// The bot's own member can be uncached right after startup. Skipping the
+	// check costs only the warning; the reminder is saved either way.
 	const me = interaction.guild.members.me;
-	if (!me) return null; // can't verify — skip silently rather than block
+	if (!me) return null;
 
 	const perms = channel.permissionsFor(me);
 	if (!perms) return null;
@@ -39,13 +40,12 @@ function checkChannelPermissions(interaction: ChatInputCommandInteraction<'cache
 	if (!perms.has(PermissionFlagsBits.SendMessages)) missing.push('Send Messages');
 
 	if (missing.length === 0) return null;
-	// warn-but-still-save behavior, rather than refusing to create the reminder at all. Reasoning: an admin might reasonably set up a reminder for a channel the bot doesn't have access to yet, intending to grant permissions right after — blocking creation entirely would force them to redo the whole command once permissions are sorted, for no real benefit.
+	// Warn but still save: an admin may set the reminder up first and grant the
+	// permissions after, and refusing would make them redo the whole command.
 	return `⚠️ I'm missing these permissions in that channel: ${missing.join(', ')}. The reminder was saved, but it won't send until I have them.`;
 }
 
-// setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild) ensures that only users with the "Manage Server" permission can use this command. This is important because reminders can be disruptive if misused, and we want to restrict their management to trusted users.
-//.setContexts(InteractionContextType.Guild) — restricts /reminder to only be usable inside a server, never in a DM with the bot 
-
+// Manage Server only: reminders post publicly in the server's channels.
 export default {
 	data: new SlashCommandBuilder()
 		.setName('reminder')
@@ -148,7 +148,6 @@ export default {
 
 		if (subcommand === 'create') {
 			const label = interaction.options.getString('label', true).toLowerCase();
-			// Check if the guild has reached the maximum number of reminders before allowing the creation of a new reminder. This prevents users from exceeding the limit and ensures that the bot can manage reminders effectively without overwhelming the server or the bot's resources.
 			if (getGuildReminderCount(guildId) >= MAX_REMINDERS_PER_GUILD) {
 				await interaction.reply({
 					content: `This server has reached the maximum of ${MAX_REMINDERS_PER_GUILD} reminders. Delete one with \`/reminder delete\` before creating another.`,
@@ -285,9 +284,8 @@ export default {
 
 		if (subcommand === 'list') {
 			const settings = getGuildSettings(guildId);
-			// ternary mirrors the DEFAULT 1 behavior baked into CREATE TABLE statement; keeping the command's displayed value in sync with the database's actual default
-			// getGuildSettings(guildId) returning undefined does not mean "master toggle is off" — it means "nobody has ever touched this setting, so the schema's default applies."
-			const masterEnabled = settings ? settings.master_enabled === 1 : true; // defaults to on if never set
+			// No row means /reminder master was never used: on, the column's default.
+			const masterEnabled = settings ? settings.master_enabled === 1 : true;
 
 			const reminders = getGuildReminders(guildId);
 
@@ -319,24 +317,22 @@ export default {
 				return;
 			}
 
-			// Exceeds the 3-second limit for ephemeral replies, so defer first to avoid an "interaction failed" error. 
-			// await interaction.channel.send({ embeds: [embed] }); // ← a full network round-trip
+			// Deleting the old embed and posting the new one can outlast Discord's
+			// 3-second window to answer an interaction, so defer first.
 			await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
 			const existingStatus = getGuildStatusMessage(guildId);
-			// If a previous status message exists, try to delete it before posting a new one. 
-			// This ensures that only one live-updating status message exists at a time, preventing confusion and clutter in the channel.
+			// One status embed per server: the previous one goes first.
 			if (existingStatus) {
 				try {
-					// interaction.channel refers to the channel the command was run in — but the old status message might live in a completely different channel 
-					// Fetching by the stored channel_id explicitly makes deleting the correct old message work regardless of where it originally lived.
+					// The old embed may be in another channel than this command's.
 					const oldChannel = await interaction.client.channels.fetch(existingStatus.channel_id);
 					if (oldChannel && oldChannel.isTextBased()) {
 						const oldMessage = await oldChannel.messages.fetch(existingStatus.message_id);
 						await oldMessage.delete();
 					}
 				} catch (error) {
-					// The old message/channel may already be gone — that's fine, we're replacing it anyway.
+					// Already deleted is fine: it's being replaced.
 					console.error(`Could not delete previous status message for guild ${guildId}:`, error);
 				}
 			}
@@ -345,7 +341,6 @@ export default {
 			const message = await interaction.channel.send({ embeds: [embed] });
 			setGuildStatusMessage(guildId, message.channelId, message.id);
 
-			// editReply() instead of followUp() so the user sees only one ephemeral message, not two.
 			await interaction.editReply({
 				content: 'Posted! This message will keep itself updated as reminders fire.',
 			});

@@ -11,7 +11,7 @@ import {
 import { refreshGuildStatusMessage } from './reminderEmbed.ts'
 
 /** How often the scheduler checks for due reminders. Should be <= the smallest allowed interval (5 min). */
-const POLL_INTERVAL_MS = 60_000; // check every 1 minute
+const POLL_INTERVAL_MS = 60_000;
 
 // Discord error code for a channel that no longer exists.
 const UNKNOWN_CHANNEL = 10003;
@@ -43,7 +43,7 @@ function runCheck(name: string, check: () => Promise<void>): Promise<void> {
 	});
 }
 
-// Scheduler will only ever be started when bot is logged in; we can assume client is fully connected with no null checks.
+// Started from the ClientReady event, so the client is logged in.
 export function startScheduler(client: Client<true>): void {
 	stopping = false;
 	pollIntervalID = setInterval(() => {
@@ -73,14 +73,11 @@ async function checkGuildReminders(client: Client<true>): Promise<void> {
 	const now = Date.now();
 	const dueReminders = getDueGuildReminders(now);
 
-    // if reminder #1 fails (bad channel ID, missing permissions, etc.), reminders #2 and #3 in the same batch should still go out.
-    // Wrapping the whole function in one try/catch would mean a single bad reminder silently kills every other reminder due in that same poll cycle.
+	// One try per reminder: a failed send must not stop the rest of the batch.
 	for (const reminder of dueReminders) {
 		if (stopping) break;
 		try {
-            // fetch() will reach out to discord's API if channel isn't already cached; 
-            // .cache.get() will only check the cache and return undefined if not found. 
-            // fetch() is more reliable for reminders that may have been set in a channel that isn't frequently used, so it may not be cached.
+			// fetch, not cache.get: a quiet channel may not be cached.
 			const channel = await client.channels.fetch(reminder.channel_id);
 
 			// isSendable() checks the channel's type, not the bot's permissions.

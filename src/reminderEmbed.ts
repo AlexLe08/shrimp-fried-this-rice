@@ -57,10 +57,10 @@ export async function refreshGuildStatusMessage(client: Client, guildId: string)
 		const embed = buildReminderStatusEmbed(guildId, guild.name);
 		await message.edit({ embeds: [embed] });
 	} catch (error) {
-        // Only the specific, permanent failure modes (the message or its channel genuinely no longer exists — Discord error codes 10008/10003) warrant giving up and clearing the stored reference; 
-        // anything else just logs and tries again on the next relevant fire.
+		// Only a deleted message or channel (10008 Unknown Message, 10003 Unknown
+		// Channel) clears the stored reference; anything else may be transient,
+		// so it's logged and tried again on the next refresh.
 		if (error instanceof DiscordAPIError && (error.code === 10008 || error.code === 10003)) {
-			// Unknown Message / Unknown Channel — the tracked message or its channel was deleted.
 			deleteGuildStatusMessage(guildId);
 		} else {
 			console.error(`Failed to refresh status message for guild ${guildId}:`, error);
