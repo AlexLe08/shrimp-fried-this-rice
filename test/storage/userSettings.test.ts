@@ -34,7 +34,6 @@ describe('upsertUserSettings', () => {
 		expect(settings?.interval_minutes).toBe(60);
 		expect(settings?.message).toBe('Drink water!');
 	});
-    // calling upsertUserSettings twice for the same user should silently succeed and overwrite, never throw
 	it('updates the existing row in place, rather than creating a duplicate', () => {
 		makeUser({ intervalMinutes: 60, message: 'first' });
 		makeUser({ intervalMinutes: 30, message: 'second' });
@@ -44,7 +43,6 @@ describe('upsertUserSettings', () => {
 		expect(settings?.message).toBe('second');
 	});
 
-    // When upserting an existing user, the last_sent_at timestamp should not be reset to 0; it should remain whatever it was before the upsert.
 	it('does not reset last_sent_at when re-upserting', () => {
 		makeUser();
 		const now = Date.now();

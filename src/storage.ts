@@ -77,7 +77,6 @@ export interface GuildStatusMessage {
     message_id: string;
 }
 
-// Minimum 5 minutes, maximum 24 hours
 export const MIN_INTERVAL_MINUTES = 5;
 export const MAX_INTERVAL_MINUTES = 1440;
 

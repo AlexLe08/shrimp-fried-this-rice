@@ -341,6 +341,7 @@ export default {
 			const message = await interaction.channel.send({ embeds: [embed] });
 			setGuildStatusMessage(guildId, message.channelId, message.id);
 
+			// editReply, not followUp: one ephemeral message for the user, not two.
 			await interaction.editReply({
 				content: 'Posted! This message will keep itself updated as reminders fire.',
 			});

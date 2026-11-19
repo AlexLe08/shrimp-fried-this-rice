@@ -18,8 +18,8 @@ const foldersPath = path.join(__dirname, 'commands');
 const commandFolders = fs.readdirSync(foldersPath);
 
 function handleShutdownSignal(signal: string): void {
-	// systemd waits on the process; a hung cleanup (a stuck Discord call)
-	// must not keep a restart, and so a deploy, waiting indefinitely.
+	// A stuck cleanup (a Discord call hanging) would otherwise hold up a restart,
+	// and so a deploy, until systemd's 90-second stop timeout kills the process.
 	const forceExitTimer = setTimeout(() => {
 		console.error('Graceful shutdown timed out, forcing exit.');
 		process.exit(1);
