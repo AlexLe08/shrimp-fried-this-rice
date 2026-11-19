@@ -152,7 +152,7 @@ Key production-specific details, for future reference:
   sudo systemctl restart discordbotshrimp    # restart (deploys do this)
   journalctl -u discordbotshrimp -f          # view live logs
   ```
-- **Deploying updates:** automatic on merge to `main`. The `deploy` job in `.github/workflows/ci.yml` runs after `test` passes, waits for the owner's approval (the `production` environment), then SSHes into the VM and runs `git fetch`, `git reset --hard origin/main`, `npm install`, restarts the service, and re-runs `deploycommands`, in that order (service restart before command redeployment, so a command-registration hiccup never blocks a code fix from taking effect; a failed registration still turns the job red). Approving one run deploys whatever `main` is at that moment. Setup and secrets: [`ORACLE_CLOUD_DEPLOYMENT.md`](ORACLE_CLOUD_DEPLOYMENT.md), section 9.
+- **Deploying updates:** automatic on merge to `main`. The `deploy` job in `.github/workflows/ci.yml` runs after `test` passes, waits for the owner's approval (the `production` environment), then SSHes into the VM and runs `git fetch`, `git reset --hard origin/main`, `npm ci`, restarts the service, and re-runs `deploycommands`, in that order (service restart before command redeployment, so a command-registration hiccup never blocks a code fix from taking effect; a failed registration still turns the job red). Approving one run deploys whatever `main` is at that moment. Setup and secrets: [`ORACLE_CLOUD_DEPLOYMENT.md`](ORACLE_CLOUD_DEPLOYMENT.md), section 9.
 
 ## Commands
 
@@ -239,7 +239,7 @@ Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `sc
 - [ ] Enforce a minimum coverage threshold in CI
 - [ ] Publish the HTML coverage report as a CI artifact
 - [ ] Consider narrowing `refreshGuildStatusMessage`'s and `startScheduler`'s `Client` parameter to a smaller custom interface, to eliminate the `as unknown as Client` casts in test mocks
-- [ ] Make the deploy use `npm ci`, and check the bot actually logged in after the restart (a failed command registration already fails the deploy)
+- [ ] Make the deploy check the bot actually logged in after the restart (a failed command registration already fails the deploy, and it installs with `npm ci`)
 - [ ] Structured logging (e.g. `pino`) with real log levels, in place of plain `console.log`/`console.error`
 - [ ] `CHANGELOG.md` documenting notable changes and fixes over time
 - [ ] Dependabot version updates (`.github/dependabot.yml`); security updates are already on

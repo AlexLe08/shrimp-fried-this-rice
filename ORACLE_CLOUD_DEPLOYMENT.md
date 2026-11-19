@@ -231,7 +231,7 @@ set -e
 cd ~/shrimp-fried-this-rice
 git fetch
 git reset --hard origin/main
-npm install
+npm ci
 sudo systemctl restart discordbotshrimp
 npm run deploycommands
 sudo systemctl status discordbotshrimp --no-pager
@@ -244,6 +244,8 @@ What it needs, set up once:
 - `sudo systemctl` usable without a password prompt for that user (Ubuntu's default `ubuntu` user on OCI has passwordless sudo).
 
 **Why this order:** the bot restarts *before* `deploycommands`, so if command registration fails (a bad definition, a transient API error), the code fix has already taken effect, and only `npm run deploycommands` needs re-running. A failed registration exits nonzero, so the job goes red even though the new code is already running; `set -e` then skips the final `systemctl status`.
+
+**Why `npm ci`:** it installs exactly what `package-lock.json` pins, the same install CI tested, and fails if the lockfile and `package.json` disagree; `npm install` could resolve newer versions on the VM than CI ever ran. It deletes `node_modules` first, so `better-sqlite3` is compiled from source on every deploy (a minute or two on this ARM VM, with the build tools from section 6). The old bot keeps running through the install, on the modules it has already loaded, until the restart right after.
 
 **Why `reminders.db` is never at risk:** it's git-ignored, and `git reset --hard` only resets tracked files, so the database (and `.env`) survive every deploy. Anything edited by hand in tracked files on the VM is discarded, though: change code only through a PR.
 
