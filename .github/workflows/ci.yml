@@ -52,6 +52,21 @@ jobs:
             git fetch
             git reset --hard origin/main
             npm ci
+            restarted_at=$(date '+%Y-%m-%d %H:%M:%S')
             sudo systemctl restart discordbotshrimp
             npm run deploycommands
+            # A bot that can't log in still shows as active until it exits,
+            # and Restart=on-failure brings it back, so wait for ready.ts's line.
+            for attempt in $(seq 1 30); do
+              if sudo journalctl -u discordbotshrimp --since "$restarted_at" --no-pager -o cat | grep -q '^Ready! Logged in as'; then
+                echo "Bot logged in."
+                break
+              fi
+              if [ "$attempt" -eq 30 ]; then
+                echo "Bot did not log in within 60 s of the restart. Its log since then:"
+                sudo journalctl -u discordbotshrimp --since "$restarted_at" --no-pager
+                exit 1
+              fi
+              sleep 2
+            done
             sudo systemctl status discordbotshrimp --no-pager

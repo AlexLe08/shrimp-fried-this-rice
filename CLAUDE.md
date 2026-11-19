@@ -121,7 +121,8 @@ the workflow, indexed in its `README.md`.
 - Merging deploys: the `deploy` job runs after `test` on every push to
   `main`, waits for the owner's approval (the `production` environment),
   then on the VM resets to `origin/main`, runs `npm ci`, restarts the
-  service and re-registers commands. Write each PR's Deploys line with
+  service, re-registers commands and waits up to 60 s for the bot to log
+  in (the `Ready! Logged in as` line). Write each PR's Deploys line with
   that in mind.
 - Branches are `<type>/<what-in-kebab-case>`, the type matching the PR
   title's: `feat`, `fix`, `docs`, `test`, `ci`, `refactor`, `chore`,
