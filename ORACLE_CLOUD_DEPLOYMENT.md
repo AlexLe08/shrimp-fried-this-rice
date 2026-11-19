@@ -102,8 +102,8 @@ npm --version
 
 ```bash
 git --version   # confirm git is available; usually preinstalled on Ubuntu cloud images
-git clone https://github.com/your-username/your-repo-name.git
-cd your-repo-name
+git clone https://github.com/AlexLe08/shrimp-fried-this-rice.git
+cd shrimp-fried-this-rice
 ```
 
 ### Create the production `.env` file directly on the VM
@@ -118,7 +118,6 @@ Contents — using the **production** Discord Application's credentials specific
 ```env
 DISCORD_TOKEN=your-production-bot-token-here
 DISCORD_CLIENT_ID=your-production-application-client-id
-DISCORD_GUILD_ID=your-test-server-id
 ```
 
 Save with **Ctrl+O**, **Enter**, then exit with **Ctrl+X**.
@@ -145,21 +144,7 @@ npm install
 
 ### Approve `better-sqlite3`'s native build script
 
-npm's newer `allowScripts` security policy will (starting with npm v12) block a package's install-time build scripts unless explicitly approved. Run this once so it's recorded in `package.json` and travels with the repo:
-
-```bash
-npm install-scripts approve better-sqlite3
-```
-
-**If this errors with `Unknown command: "install-scripts"`:** the local npm version doesn't have this subcommand yet (this can differ from the VM's npm version). The fallback is to add the equivalent entry directly into `package.json` by hand — functionally identical, and works regardless of npm version:
-
-```json
-{
-  "allowScripts": {
-    "better-sqlite3": true
-  }
-}
-```
+npm's `allowScripts` security policy (npm v12 and up) blocks a package's install-time build scripts unless approved. The approval for `better-sqlite3` is already committed in `package.json` (`"allowScripts": { "better-sqlite3": true }`), so nothing needs doing on the VM. Don't run `npm install-scripts approve` there: it edits a tracked file, which the next deploy's `git reset --hard` discards.
 
 ### Manual test run
 
@@ -167,7 +152,7 @@ npm install-scripts approve better-sqlite3
 npm start
 ```
 
-Confirm the bot shows online in Discord and responds to a test command (e.g. `/reminder list` or `/remindme`). Stop with **Ctrl+C** once confirmed — this is expected to take the bot offline, since Phase 7 below is what keeps it running permanently.
+Confirm the bot shows online in Discord and responds to a test command (e.g. `/reminder list` or `/remindme`). Stop with **Ctrl+C** once confirmed — this is expected to take the bot offline, since section 7 below is what keeps it running permanently.
 
 **Firewall note:** no inbound firewall/security list changes are needed. The bot only makes outbound connections to Discord; nothing needs to connect into the VM.
 
@@ -181,13 +166,13 @@ This keeps the bot running permanently in the background, restarts it automatica
 
 ```bash
 which node   # e.g. /usr/bin/node
-pwd          # while inside the project folder, e.g. /home/ubuntu/your-repo-name
+pwd          # while inside the project folder, e.g. /home/ubuntu/shrimp-fried-this-rice
 ```
 
 ### Create the service file
 
 ```bash
-sudo nano /etc/systemd/system/discordbot.service
+sudo nano /etc/systemd/system/discordbotshrimp.service
 ```
 
 ```ini
@@ -197,8 +182,8 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/ubuntu/your-repo-name
-EnvironmentFile=/home/ubuntu/your-repo-name/.env
+WorkingDirectory=/home/ubuntu/shrimp-fried-this-rice
+EnvironmentFile=/home/ubuntu/shrimp-fried-this-rice/.env
 ExecStart=/usr/bin/node ./src/index.ts
 Restart=on-failure
 RestartSec=5
@@ -218,68 +203,51 @@ Key points:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable discordbot
-sudo systemctl start discordbot
+sudo systemctl enable discordbotshrimp
+sudo systemctl start discordbotshrimp
 ```
 
 ### Verify
 
 ```bash
-sudo systemctl status discordbot     # look for "active (running)"
-journalctl -u discordbot -f          # tail live logs; Ctrl+C to stop watching (bot keeps running)
+sudo systemctl status discordbotshrimp     # look for "active (running)"
+journalctl -u discordbotshrimp -f          # tail live logs; Ctrl+C to stop watching (bot keeps running)
 ```
 
 ---
 
-## 8. Switching to global slash commands
+## 8. Slash commands are global
 
-Needed once the bot is invited to more than one server — guild-scoped commands only appear in the single configured `DISCORD_GUILD_ID` server.
-
-In `deploy-commands.ts`:
-```typescript
-// Before (guild-scoped):
-await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
-
-// After (global):
-await rest.put(Routes.applicationCommands(clientId), { body: commands });
-```
-
-Global command changes can take up to an hour to propagate (often faster in practice). This also enables `/remindme` to be run directly in a DM with the bot, not just from within a server.
+`deploy-commands.ts` registers every command globally (`Routes.applicationCommands`), so they appear in every server the bot is in, and `/remindme` also works in a DM with the bot. Global changes can take up to an hour to reach every client (often much less). Earlier versions registered commands to one server through `DISCORD_GUILD_ID`; that variable is no longer used.
 
 ---
 
-## 9. Ongoing deployment workflow
+## 9. Ongoing deployment: GitHub Actions on merge to `main`
 
-A helper script, kept on the VM itself (not part of the repo):
-
-```bash
-nano ~/deploy.sh
-```
+Deploys are automatic. The `deploy` job in `.github/workflows/ci.yml` runs after the `test` job on every push to `main` (in practice, every merged PR). It waits for the owner's approval through the repository's `production` environment, then SSHes into the VM and runs:
 
 ```bash
-#!/bin/bash
-cd ~/your-repo-name
-git pull
+set -e
+cd ~/shrimp-fried-this-rice
+git fetch
+git reset --hard origin/main
 npm install
-sudo systemctl restart discordbot
-echo "Bot restarted. Redeploying slash commands..."
+sudo systemctl restart discordbotshrimp
 npm run deploycommands
-echo "Deploy complete. Checking status..."
-sudo systemctl status discordbot --no-pager
+sudo systemctl status discordbotshrimp --no-pager
 ```
 
-```bash
-chmod +x ~/deploy.sh
-```
+What it needs, set up once:
+- The repository cloned at `~/shrimp-fried-this-rice` in `DEPLOY_USER`'s home on the VM (section 5), with its `.env`.
+- Repository secrets `DEPLOY_HOST` (the VM's public IP), `DEPLOY_USER` (the VM user that owns the clone, `ubuntu` in this setup) and `DEPLOY_SSH_KEY` (a private key whose public half is in that user's `~/.ssh/authorized_keys`).
+- The `production` environment (Settings → Environments) with the owner as required reviewer.
+- `sudo systemctl` usable without a password prompt for that user (Ubuntu's default `ubuntu` user on OCI has passwordless sudo).
 
-From then on, shipping an update is just:
-```bash
-~/deploy.sh
-```
+**Why this order:** the bot restarts *before* `deploycommands`, so if command registration fails (a bad definition, a transient API error), the code fix has already taken effect, and only `npm run deploycommands` needs re-running. Note that `deploy-commands.ts` currently logs a failed registration and still exits 0, so the job stays green: check its log for `Successfully reloaded N application (/) commands.`
 
-**Why this order:** the bot restart happens *before* `deploycommands`, so if the command-registration step ever fails (bad definition, transient API issue), the actual code fix has already taken effect — only a manual re-run of `npm run deploycommands` would be needed afterward, rather than the whole deploy being blocked.
+**Why `reminders.db` is never at risk:** it's git-ignored, and `git reset --hard` only resets tracked files, so the database (and `.env`) survive every deploy. Anything edited by hand in tracked files on the VM is discarded, though: change code only through a PR.
 
-**Why `reminders.db` is never at risk:** it's git-ignored, so `git pull` never touches, overwrites, or conflicts with it — the bot's actual data survives every future deploy untouched.
+**Deploying by hand** (if Actions is down): SSH in and run the same commands as above.
 
 ---
 
@@ -287,9 +255,9 @@ From then on, shipping an update is just:
 
 | Task | Command |
 |---|---|
-| Check bot status | `sudo systemctl status discordbot` |
-| Restart bot (after code changes) | `sudo systemctl restart discordbot` |
-| View live logs | `journalctl -u discordbot -f` |
+| Check bot status | `sudo systemctl status discordbotshrimp` |
+| Restart bot (after code changes) | `sudo systemctl restart discordbotshrimp` |
+| View live logs | `journalctl -u discordbotshrimp -f` |
 | Re-register slash commands | `npm run deploycommands` |
-| Full deploy | `~/deploy.sh` |
+| Full deploy | merge a PR to `main`, then approve the `production` deployment |
 | SSH into the VM | `ssh -i ~/Downloads/your-key-filename.key ubuntu@YOUR_PUBLIC_IP` |
