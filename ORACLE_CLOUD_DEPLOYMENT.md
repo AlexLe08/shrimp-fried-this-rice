@@ -144,21 +144,7 @@ npm install
 
 ### Approve `better-sqlite3`'s native build script
 
-npm's newer `allowScripts` security policy will (starting with npm v12) block a package's install-time build scripts unless explicitly approved. Run this once so it's recorded in `package.json` and travels with the repo:
-
-```bash
-npm install-scripts approve better-sqlite3
-```
-
-**If this errors with `Unknown command: "install-scripts"`:** the local npm version doesn't have this subcommand yet (this can differ from the VM's npm version). The fallback is to add the equivalent entry directly into `package.json` by hand — functionally identical, and works regardless of npm version:
-
-```json
-{
-  "allowScripts": {
-    "better-sqlite3": true
-  }
-}
-```
+npm's `allowScripts` security policy (npm v12 and up) blocks a package's install-time build scripts unless approved. The approval for `better-sqlite3` is already committed in `package.json` (`"allowScripts": { "better-sqlite3": true }`), so nothing needs doing on the VM. Don't run `npm install-scripts approve` there: it edits a tracked file, which the next deploy's `git reset --hard` discards.
 
 ### Manual test run
 
@@ -166,7 +152,7 @@ npm install-scripts approve better-sqlite3
 npm start
 ```
 
-Confirm the bot shows online in Discord and responds to a test command (e.g. `/reminder list` or `/remindme`). Stop with **Ctrl+C** once confirmed — this is expected to take the bot offline, since Phase 7 below is what keeps it running permanently.
+Confirm the bot shows online in Discord and responds to a test command (e.g. `/reminder list` or `/remindme`). Stop with **Ctrl+C** once confirmed — this is expected to take the bot offline, since section 7 below is what keeps it running permanently.
 
 **Firewall note:** no inbound firewall/security list changes are needed. The bot only makes outbound connections to Discord; nothing needs to connect into the VM.
 
@@ -252,8 +238,8 @@ sudo systemctl status discordbotshrimp --no-pager
 ```
 
 What it needs, set up once:
-- The repository cloned at `~/shrimp-fried-this-rice` on the VM (section 5), with its `.env`.
-- Repository secrets `DEPLOY_HOST` (the VM's public IP), `DEPLOY_USER` (`ubuntu`) and `DEPLOY_SSH_KEY` (a private key whose public half is in that user's `~/.ssh/authorized_keys`).
+- The repository cloned at `~/shrimp-fried-this-rice` in `DEPLOY_USER`'s home on the VM (section 5), with its `.env`.
+- Repository secrets `DEPLOY_HOST` (the VM's public IP), `DEPLOY_USER` (the VM user that owns the clone, `ubuntu` in this setup) and `DEPLOY_SSH_KEY` (a private key whose public half is in that user's `~/.ssh/authorized_keys`).
 - The `production` environment (Settings → Environments) with the owner as required reviewer.
 - `sudo systemctl` usable without a password prompt for that user (Ubuntu's default `ubuntu` user on OCI has passwordless sudo).
 
