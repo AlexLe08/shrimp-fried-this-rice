@@ -72,9 +72,9 @@ export interface UserSettings {
 }
 
 export interface GuildStatusMessage {
-    guild_id: string;
-    channel_id: string;
-    message_id: string;
+	guild_id: string;
+	channel_id: string;
+	message_id: string;
 }
 
 export const MIN_INTERVAL_MINUTES = 5;
@@ -83,17 +83,15 @@ export const MAX_INTERVAL_MINUTES = 1440;
 export const MAX_REMINDERS_PER_GUILD = 20;
 
 export function getGuildReminderCount(guildId: string): number {
-	const result = db
-		.prepare('SELECT COUNT(*) as count FROM guild_reminders WHERE guild_id = ?')
-		.get(guildId) as { count: number };
+	const result = db.prepare('SELECT COUNT(*) as count FROM guild_reminders WHERE guild_id = ?').get(guildId) as {
+		count: number;
+	};
 	return result.count;
 }
 
 // --- Guild master toggle ---
 export function getGuildSettings(guildId: string): GuildSettings | undefined {
-	return db
-		.prepare('SELECT * FROM guild_settings WHERE guild_id = ?')
-		.get(guildId) as GuildSettings | undefined;
+	return db.prepare('SELECT * FROM guild_settings WHERE guild_id = ?').get(guildId) as GuildSettings | undefined;
 }
 
 // No row means enabled (the column's default): the row exists only once
@@ -108,14 +106,11 @@ export function setGuildMasterEnabled(guildId: string, enabled: boolean): void {
 
 // --- Guild reminders (multiple per guild) ---
 export function getGuildReminders(guildId: string): GuildReminder[] {
-	return db
-		.prepare('SELECT * FROM guild_reminders WHERE guild_id = ?')
-		.all(guildId) as GuildReminder[];
+	return db.prepare('SELECT * FROM guild_reminders WHERE guild_id = ?').all(guildId) as GuildReminder[];
 }
 export function getGuildReminderByLabel(guildId: string, label: string): GuildReminder | undefined {
-	return db
-		.prepare('SELECT * FROM guild_reminders WHERE guild_id = ? AND reminder_label = ?')
-		.get(guildId, label) as GuildReminder | undefined;
+	return db.prepare('SELECT * FROM guild_reminders WHERE guild_id = ? AND reminder_label = ?').get(guildId, label) as
+		GuildReminder | undefined;
 }
 
 export function createGuildReminder(reminder: {
@@ -133,11 +128,15 @@ export function createGuildReminder(reminder: {
 
 // Writes all three columns back, merged with the current row, rather than
 // building the SET clause from whichever options were given.
-export function updateGuildReminder(guildId: string, label: string, updates: {
-	channelId?: string;
-	intervalMinutes?: number;
-	message?: string;
-}): void {
+export function updateGuildReminder(
+	guildId: string,
+	label: string,
+	updates: {
+		channelId?: string;
+		intervalMinutes?: number;
+		message?: string;
+	},
+): void {
 	const existing = getGuildReminderByLabel(guildId, label);
 	if (!existing) return;
 
@@ -151,15 +150,15 @@ export function updateGuildReminder(guildId: string, label: string, updates: {
 }
 
 export function setGuildReminderEnabled(guildId: string, label: string, enabled: boolean): void {
-	db.prepare(
-		'UPDATE guild_reminders SET enabled = ? WHERE guild_id = ? AND reminder_label = ?',
-	).run(enabled ? 1 : 0, guildId, label);
+	db.prepare('UPDATE guild_reminders SET enabled = ? WHERE guild_id = ? AND reminder_label = ?').run(
+		enabled ? 1 : 0,
+		guildId,
+		label,
+	);
 }
 
 export function deleteGuildReminder(guildId: string, label: string): void {
-	db.prepare(
-		'DELETE FROM guild_reminders WHERE guild_id = ? AND reminder_label = ?',
-	).run(guildId, label);
+	db.prepare('DELETE FROM guild_reminders WHERE guild_id = ? AND reminder_label = ?').run(guildId, label);
 }
 
 export function updateGuildReminderLastSent(reminderId: number, timestamp: number): void {
@@ -174,7 +173,11 @@ export function disableGuildReminderForChannel(reminderId: number, channelId: st
 }
 
 export function updateGuildReminderLastSentForChannel(reminderId: number, channelId: string, timestamp: number): void {
-	db.prepare('UPDATE guild_reminders SET last_sent_at = ? WHERE id = ? AND channel_id = ?').run(timestamp, reminderId, channelId);
+	db.prepare('UPDATE guild_reminders SET last_sent_at = ? WHERE id = ? AND channel_id = ?').run(
+		timestamp,
+		reminderId,
+		channelId,
+	);
 }
 
 // Enabled reminders whose interval has passed, in servers whose master toggle
@@ -193,19 +196,18 @@ export function getDueGuildReminders(now: number): GuildReminder[] {
 }
 
 export function setGuildStatusMessage(guildId: string, channelId: string, messageId: string): void {
-    db.prepare(
-        `INSERT INTO guild_status_messages (guild_id, channel_id, message_id)
+	db.prepare(
+		`INSERT INTO guild_status_messages (guild_id, channel_id, message_id)
          VALUES (?, ?, ?)
          ON CONFLICT(guild_id) DO UPDATE SET
            channel_id = excluded.channel_id,
            message_id = excluded.message_id`,
-    ).run(guildId, channelId, messageId);
+	).run(guildId, channelId, messageId);
 }
 
 export function getGuildStatusMessage(guildId: string): GuildStatusMessage | undefined {
-	return db
-		.prepare('SELECT * FROM guild_status_messages WHERE guild_id = ?')
-		.get(guildId) as GuildStatusMessage | undefined;
+	return db.prepare('SELECT * FROM guild_status_messages WHERE guild_id = ?').get(guildId) as
+		GuildStatusMessage | undefined;
 }
 
 export function deleteGuildStatusMessage(guildId: string): void {
@@ -215,9 +217,7 @@ export function deleteGuildStatusMessage(guildId: string): void {
 // --- Per-user DM settings ---
 
 export function getUserSettings(userId: string): UserSettings | undefined {
-	return db
-		.prepare('SELECT * FROM user_settings WHERE user_id = ?')
-		.get(userId) as UserSettings | undefined;
+	return db.prepare('SELECT * FROM user_settings WHERE user_id = ?').get(userId) as UserSettings | undefined;
 }
 
 export function upsertUserSettings(settings: {

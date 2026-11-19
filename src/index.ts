@@ -1,12 +1,13 @@
-import { Client, Collection, GatewayIntentBits } from "discord.js";
+import { Client, Collection, GatewayIntentBits } from 'discord.js';
 import 'dotenv/config';
 
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
-import type { Command } from "./types/command.ts";
+import type { Command } from './types/command.ts';
 
-import { shutdown } from "./shutdown.ts";
+import { shutdown } from './shutdown.ts';
+import { toEventListener } from './eventListener.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,11 +37,11 @@ function handleShutdownSignal(signal: string): void {
 // registers the same set).
 for (const folder of commandFolders) {
 	const commandsPath = path.join(foldersPath, folder);
-	const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.ts'));
+	const commandFiles = fs.readdirSync(commandsPath).filter((file) => file.endsWith('.ts'));
 
 	for (const file of commandFiles) {
 		const filePath = path.join(commandsPath, file);
-		const commandModule = await import(filePath) as { default: Command };
+		const commandModule = (await import(filePath)) as { default: Command };
 		const command = commandModule.default;
 		if (command && 'data' in command && 'execute' in command) {
 			client.commands.set(command.data.name, command);
@@ -51,22 +52,29 @@ for (const folder of commandFolders) {
 }
 
 const eventsPath = path.join(__dirname, 'events');
-const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.ts'));
+const eventFiles = fs.readdirSync(eventsPath).filter((file) => file.endsWith('.ts'));
 
 for (const file of eventFiles) {
 	const filePath = path.join(eventsPath, file);
-	const eventModule = await import(filePath) as { default: { name: string; once: boolean; execute: (...args: unknown[]) => Promise<void> } };
+	const eventModule = (await import(filePath)) as {
+		default: { name: string; once: boolean; execute: (...args: unknown[]) => Promise<void> };
+	};
 	const event = eventModule.default;
+	const listener = toEventListener(event.name, event.execute);
 	if (event.once) {
-		client.once(event.name, (...args) => event.execute(...args));
+		client.once(event.name, listener);
 	} else {
-		client.on(event.name, (...args) => event.execute(...args));
+		client.on(event.name, listener);
 	}
 }
 
 client.cooldowns = new Collection();
 
-client.login(process.env["DISCORD_TOKEN"]);
+// A failed login (bad token, Discord down) exits nonzero; systemd restarts it.
+client.login(process.env['DISCORD_TOKEN']).catch((error: unknown) => {
+	console.error('Login failed:', error);
+	process.exit(1);
+});
 
 // SIGTERM: systemctl stop/restart (every deploy). SIGINT: Ctrl+C locally.
 process.on('SIGTERM', () => handleShutdownSignal('SIGTERM'));

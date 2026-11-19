@@ -1,0 +1,7 @@
+# Hand-wrapped prose; Prettier would rewrap it.
+*.md
+coverage/
+dist/
+.logs/
+.claude/
+package-lock.json

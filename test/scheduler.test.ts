@@ -1,7 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DiscordAPIError, type Client } from 'discord.js';
 import { startScheduler, stopScheduler } from '../src/scheduler.ts';
-import { createGuildReminder, updateGuildReminder, setGuildStatusMessage, updateGuildReminderLastSent, upsertUserSettings, updateUserLastSent, getGuildReminderByLabel, getUserSettings, __resetForTests } from '../src/storage.ts';
+import {
+	createGuildReminder,
+	updateGuildReminder,
+	setGuildStatusMessage,
+	upsertUserSettings,
+	getGuildReminderByLabel,
+	getUserSettings,
+	__resetForTests,
+} from '../src/storage.ts';
 import { createMockClient, createMockChannel, createMockUser } from './mocks.ts';
 
 beforeEach(() => {
@@ -20,7 +28,13 @@ function discordError(code: number, status: number): DiscordAPIError {
 
 describe('scheduler — guild reminders', () => {
 	it('sends a due reminder to its channel and updates last_sent_at', async () => {
-		createGuildReminder({ guildId: 'g1', label: 'water', channelId: 'c1', intervalMinutes: 5, message: 'Drink water!' });
+		createGuildReminder({
+			guildId: 'g1',
+			label: 'water',
+			channelId: 'c1',
+			intervalMinutes: 5,
+			message: 'Drink water!',
+		});
 
 		const channel = createMockChannel();
 		const client = createMockClient({ channels: { c1: channel } });
@@ -33,7 +47,13 @@ describe('scheduler — guild reminders', () => {
 	});
 
 	it('logs an error and does not throw when the channel is not found', async () => {
-		createGuildReminder({ guildId: 'g1', label: 'water', channelId: 'missing-channel', intervalMinutes: 5, message: 'hi' });
+		createGuildReminder({
+			guildId: 'g1',
+			label: 'water',
+			channelId: 'missing-channel',
+			intervalMinutes: 5,
+			message: 'hi',
+		});
 		const client = createMockClient({ channels: { 'missing-channel': null } });
 		const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -135,7 +155,11 @@ describe('scheduler — guild reminders', () => {
 		createGuildReminder({ guildId: 'g1', label: 'water', channelId: 'c1', intervalMinutes: 5, message: 'hi' });
 		const client = createMockClient();
 		let failFetch!: (error: unknown) => void;
-		client.channels.fetch.mockReturnValueOnce(new Promise((_resolve, reject) => { failFetch = reject; }));
+		client.channels.fetch.mockReturnValueOnce(
+			new Promise((_resolve, reject) => {
+				failFetch = reject;
+			}),
+		);
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 
 		startScheduler(client as unknown as Client<true>);
@@ -187,7 +211,11 @@ describe('scheduler — guild reminders', () => {
 		createGuildReminder({ guildId: 'g1', label: 'water', channelId: 'c1', intervalMinutes: 5, message: 'hi' });
 		const channel = createMockChannel();
 		let finishSend!: () => void;
-		channel.send.mockReturnValue(new Promise<void>((resolve) => { finishSend = resolve; }));
+		channel.send.mockReturnValue(
+			new Promise<void>((resolve) => {
+				finishSend = resolve;
+			}),
+		);
 		const client = createMockClient({ channels: { c1: channel } });
 
 		startScheduler(client as unknown as Client<true>);
@@ -195,7 +223,9 @@ describe('scheduler — guild reminders', () => {
 		expect(channel.send).toHaveBeenCalledTimes(1);
 
 		let stopped = false;
-		const stopping = stopScheduler().then(() => { stopped = true; });
+		const stopping = stopScheduler().then(() => {
+			stopped = true;
+		});
 		await vi.advanceTimersByTimeAsync(0);
 		expect(stopped).toBe(false);
 
@@ -209,7 +239,11 @@ describe('scheduler — guild reminders', () => {
 		createGuildReminder({ guildId: 'g1', label: 'posture', channelId: 'c2', intervalMinutes: 5, message: 'second' });
 		const first = createMockChannel();
 		let finishSend!: () => void;
-		first.send.mockReturnValue(new Promise<void>((resolve) => { finishSend = resolve; }));
+		first.send.mockReturnValue(
+			new Promise<void>((resolve) => {
+				finishSend = resolve;
+			}),
+		);
 		const second = createMockChannel();
 		const client = createMockClient({ channels: { c1: first, c2: second } });
 
@@ -224,12 +258,16 @@ describe('scheduler — guild reminders', () => {
 		expect(getGuildReminderByLabel('g1', 'posture')?.last_sent_at).toBe(0);
 	});
 
-	it('stopScheduler doesn\'t wait for a status embed refresh after the send', async () => {
+	it("stopScheduler doesn't wait for a status embed refresh after the send", async () => {
 		createGuildReminder({ guildId: 'g1', label: 'water', channelId: 'c1', intervalMinutes: 5, message: 'hi' });
 		setGuildStatusMessage('g1', 'status-channel', 'status-message');
 		const channel = createMockChannel();
 		let finishSend!: () => void;
-		channel.send.mockReturnValue(new Promise<void>((resolve) => { finishSend = resolve; }));
+		channel.send.mockReturnValue(
+			new Promise<void>((resolve) => {
+				finishSend = resolve;
+			}),
+		);
 		const client = createMockClient({ channels: { c1: channel }, guilds: { g1: { name: 'Test Guild' } } });
 
 		startScheduler(client as unknown as Client<true>);
@@ -319,7 +357,11 @@ describe('scheduler — user DM reminders', () => {
 		upsertUserSettings({ userId: 'u2', dmEnabled: true, intervalMinutes: 5, message: 'second' });
 		const first = createMockUser();
 		let finishSend!: () => void;
-		first.send.mockReturnValue(new Promise<void>((resolve) => { finishSend = resolve; }));
+		first.send.mockReturnValue(
+			new Promise<void>((resolve) => {
+				finishSend = resolve;
+			}),
+		);
 		const second = createMockUser();
 		const client = createMockClient({ users: { u1: first, u2: second } });
 

@@ -30,6 +30,10 @@ the workflow, indexed in its `README.md`.
 ## Commands
 
 - Install: `npm ci` (builds `better-sqlite3`'s native module)
+- `npm run lint`: ESLint with typescript-eslint's recommended rules, and
+  `no-floating-promises`/`no-misused-promises` (type-aware) on `src/`
+- `npm run format` / `npm run format:check`: Prettier (tabs, single quotes,
+  120 columns; JSON at 2 spaces; Markdown not formatted)
 - `npm run typecheck`: `tsc --noEmit` over `src/`
 - `npm test`: Vitest, `test/**/*.test.ts`, against an in-memory SQLite
   (`test/setup.ts` sets `DB_PATH=':memory:'`); `npm run test:coverage`
@@ -100,6 +104,8 @@ the workflow, indexed in its `README.md`.
   requires that check by name, so don't rename it. Don't add `paths:`
   filters to its triggers.
 - Node 24 (`.nvmrc`, `engines`), like the VM and CI.
+- TypeScript stays on `~6.0` until typescript-eslint supports 6.1 and up
+  (8.x stops below 6.1); wol-character-panel is on 6.0 for the same reason.
 - Adding a runtime dependency is a design decision for the owner, not an
   implementation detail.
 

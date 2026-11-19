@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The checks CI runs (.github/workflows/ci.yml, the `test` job): type-check,
-# then the tests with coverage. No Discord connection or secrets needed.
+# The checks CI runs (.github/workflows/ci.yml, the `test` job): lint,
+# formatting, type-check, then the tests with coverage. No Discord connection or secrets needed.
 # Prints one line per step; the full output of each goes to
 # .logs/<step>.log, and a failing step also prints its last 30 lines.
 #
@@ -27,6 +27,8 @@ run() {
   fi
 }
 
+run lint npm run lint
+run format npm run format:check
 run typecheck npm run typecheck
 run test npm run test:coverage
 

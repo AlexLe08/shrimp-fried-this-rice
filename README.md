@@ -45,7 +45,7 @@ A Discord bot built with **TypeScript** and **discord.js v14** that periodically
 ## Tech Stack
 
 - [discord.js](https://discord.js.org) v14
-- TypeScript, executed natively by Node (no compile step in the normal run path — see [Execution Model](#execution-model))
+- TypeScript 6.0 (pinned for typescript-eslint), executed natively by Node (no compile step in the normal run path — see [Execution Model](#execution-model))
 - SQLite via `better-sqlite3` for persistence
 - [Vitest](https://vitest.dev) for testing, with `@vitest/coverage-v8` for coverage reporting
 
@@ -127,8 +127,9 @@ A GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push and pu
 1. Checks out the repository
 2. Sets up Node.js 24
 3. Installs dependencies via `npm ci` (not `npm install` — fails loudly if the lockfile is out of sync, rather than silently reconciling)
-4. Runs `npm run typecheck`
-5. Runs `npm run test:coverage`
+4. Runs `npm run lint` and `npm run format:check`
+5. Runs `npm run typecheck`
+6. Runs `npm run test:coverage`
 
 No secrets are required for the `test` job — the whole suite runs against mocked/in-memory data with no real Discord connection. On pushes to `main`, a second `deploy` job ships the result (see [Production Deployment](#production-deployment)).
 
@@ -175,6 +176,7 @@ src/
   deploy-commands.ts    # registers slash commands globally with Discord's API
   scheduler.ts          # polling loop — checks storage.ts for due reminders and sends them
   shutdown.ts            # graceful SIGTERM/SIGINT handling — stops the scheduler, destroys the client, closes the database
+  eventListener.ts      # wraps each event handler so a rejection is logged, not an unhandled crash
   storage.ts            # SQLite data-access layer (guild settings, guild reminders, user settings, status message tracking)
   reminderEmbed.ts       # builds the /reminder status embed; also refreshes the tracked status message when reminders change
   types/
@@ -193,6 +195,7 @@ test/
   scheduler.test.ts                # scheduler tests, using fake timers
   schedulerCheckFailure.test.ts    # a poll whose storage query throws is logged, not a crash (mocks storage, so its own file)
   shutdown.test.ts                  # gracefulShutdown orchestration tests (mocked scheduler + storage)
+  eventListener.test.ts            # rejected and throwing handlers are logged
   storage/
     storage.test.ts                 # initial smoke test
     closeDatabase.test.ts           # isolated in its own file — closing the DB connection is irreversible within a test file
@@ -217,6 +220,8 @@ Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `sc
 | `npm start` | Runs the bot once via native Node TypeScript execution |
 | `npm run dev` | Runs the bot with `--watch`, auto-restarting on file changes |
 | `npm run build` | Compiles to `dist/` via `tsc` (not part of the normal run/deploy path) |
+| `npm run lint` | ESLint (typescript-eslint), including unhandled-promise checks on `src/` |
+| `npm run format` / `format:check` | Formats with Prettier / checks formatting (CI runs the check) |
 | `npm run typecheck` | Type-checks the project without emitting output |
 | `npm test` | Runs the Vitest test suite once and exits (see [Testing](#testing)) |
 | `npm run test:watch` | Runs the test suite in watch mode |

@@ -8,7 +8,7 @@ import {
 	updateUserLastSent,
 	type GuildReminder,
 } from './storage.ts';
-import { refreshGuildStatusMessage } from './reminderEmbed.ts'
+import { refreshGuildStatusMessage } from './reminderEmbed.ts';
 
 /** How often the scheduler checks for due reminders. Should be <= the smallest allowed interval (5 min). */
 const POLL_INTERVAL_MS = 60_000;
@@ -94,7 +94,7 @@ async function checkGuildReminders(client: Client<true>): Promise<void> {
 			// time is still right after the restart. Refreshing it would only
 			// spend more of the 5 seconds before index.ts forces an exit.
 			if (stopping) break;
-            await refreshGuildStatusMessage(client, reminder.guild_id);
+			await refreshGuildStatusMessage(client, reminder.guild_id);
 		} catch (error) {
 			console.error(`Failed to send guild reminder "${reminder.reminder_label}":`, error);
 
