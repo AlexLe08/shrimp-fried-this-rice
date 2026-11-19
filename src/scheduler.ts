@@ -2,7 +2,8 @@ import { DiscordAPIError, type Client } from 'discord.js';
 import {
 	getDueGuildReminders,
 	updateGuildReminderLastSent,
-	setGuildReminderEnabled,
+	disableGuildReminderForChannel,
+	updateGuildReminderLastSentForChannel,
 	getDueUserSettings,
 	updateUserLastSent,
 	type GuildReminder,
@@ -16,8 +17,10 @@ const POLL_INTERVAL_MS = 60_000; // check every 1 minute
 const UNKNOWN_CHANNEL = 10003;
 
 // Discord answered and refused (missing access or permissions, DMs closed):
-// the same send would fail again on the next poll. Rate limits (429) and
-// server or network errors are worth retrying sooner.
+// the same send would fail again on the next poll. discord.js raises
+// DiscordAPIError only for 4xx answers and queues rate limits itself; 5xx
+// and timeouts arrive as other errors, after its own retries, and are
+// worth trying again on the next poll.
 function isRefusedByDiscord(error: unknown): error is DiscordAPIError {
 	return error instanceof DiscordAPIError && error.status >= 400 && error.status < 500 && error.status !== 429;
 }
@@ -88,7 +91,7 @@ async function checkGuildReminders(client: Client<true>): Promise<void> {
 			} else if (isRefusedByDiscord(error)) {
 				// Missing permissions can be granted later (/reminder create warns
 				// but saves), so keep the reminder and try again after its interval.
-				updateGuildReminderLastSent(reminder.id, now);
+				updateGuildReminderLastSentForChannel(reminder.id, reminder.channel_id, now);
 			}
 		}
 	}
@@ -96,7 +99,7 @@ async function checkGuildReminders(client: Client<true>): Promise<void> {
 
 async function disableGuildReminder(client: Client<true>, reminder: GuildReminder, reason: string): Promise<void> {
 	console.error(`Disabling reminder "${reminder.reminder_label}" (guild ${reminder.guild_id}): ${reason}.`);
-	setGuildReminderEnabled(reminder.guild_id, reminder.reminder_label, false);
+	disableGuildReminderForChannel(reminder.id, reminder.channel_id);
 	await refreshGuildStatusMessage(client, reminder.guild_id);
 }
 
