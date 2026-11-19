@@ -12,7 +12,7 @@ A Discord bot built with **TypeScript** and **discord.js v14** that periodically
 - Per-command, per-user cooldowns
 - A `/reload` command for hot-reloading a single command file without restarting the bot
 - SQLite-backed persistence (`src/storage.ts`) for server and per-user settings
-- A polling scheduler (`src/scheduler.ts`) that sends reminders when they're due, hardened against overlapping poll ticks
+- A polling scheduler (`src/scheduler.ts`) that sends reminders when they're due, hardened against overlapping poll ticks. A reminder whose channel was deleted (or can't take messages) is disabled, and shows as disabled in `/reminder status`; re-enable it with `/reminder edit` to a new channel, then `/reminder toggle`. A send Discord refuses (missing permissions, DMs closed) is retried after the reminder's own interval rather than every minute; network and Discord server errors are retried on the next minute's poll.
 - Full CRUD management of server reminders (capped at 20 per server to guard against runaway/abusive creation), plus a server-wide master toggle
 - A live-updating status embed (`/reminder status`) listing all of a server's reminders with Discord relative timestamps for their next fire time; automatically re-posts/edits itself whenever a reminder fires or its settings change (`src/reminderEmbed.ts`)
 - Personal opt-in DM reminders, independent of any server setting — configurable directly via DM with the bot
