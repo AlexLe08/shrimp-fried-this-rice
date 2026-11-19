@@ -236,10 +236,9 @@ Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `sc
 - [ ] Make the deploy fail when command registration fails (`deploy-commands.ts` exits 0 today), use `npm ci`, and check the bot actually logged in after the restart
 - [ ] Structured logging (e.g. `pino`) with real log levels, in place of plain `console.log`/`console.error`
 - [ ] `CHANGELOG.md` documenting notable changes and fixes over time
-- [ ] Confirm a real `LICENSE` file exists in the repo root, not just the mention below
 - [ ] Dependabot version updates (`.github/dependabot.yml`); security updates are already on
 - [ ] Web dashboard for configuration (longer-term idea)
 
 ## License
 
-MIT
+MIT, see [LICENSE](LICENSE).
