@@ -45,7 +45,7 @@ A Discord bot built with **TypeScript** and **discord.js v14** that periodically
 ## Tech Stack
 
 - [discord.js](https://discord.js.org) v14
-- TypeScript, executed natively by Node (no compile step in the normal run path — see [Execution Model](#execution-model))
+- TypeScript 6.0 (pinned for typescript-eslint), executed natively by Node (no compile step in the normal run path — see [Execution Model](#execution-model))
 - SQLite via `better-sqlite3` for persistence
 - [Vitest](https://vitest.dev) for testing, with `@vitest/coverage-v8` for coverage reporting
 
@@ -128,8 +128,9 @@ A GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push and pu
 1. Checks out the repository
 2. Sets up Node.js 24
 3. Installs dependencies via `npm ci` (not `npm install` — fails loudly if the lockfile is out of sync, rather than silently reconciling)
-4. Runs `npm run typecheck`
-5. Runs `npm run test:coverage`
+4. Runs `npm run lint` and `npm run format:check`
+5. Runs `npm run typecheck`
+6. Runs `npm run test:coverage`
 
 No secrets are required — the whole suite runs against mocked/in-memory data with no real Discord connection. Optional: add a status badge near the top of this README once the workflow has run at least once —
 ```markdown
@@ -221,6 +222,8 @@ Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `sc
 | `npm start` | Runs the bot once via native Node TypeScript execution |
 | `npm run dev` | Runs the bot with `--watch`, auto-restarting on file changes |
 | `npm run build` | Compiles to `dist/` via `tsc` (not part of the normal run/deploy path) |
+| `npm run lint` | ESLint (typescript-eslint), including unhandled-promise checks on `src/` |
+| `npm run format` / `format:check` | Formats with Prettier / checks formatting (CI runs the check) |
 | `npm run typecheck` | Type-checks the project without emitting output |
 | `npm test` | Runs the Vitest test suite once and exits (see [Testing](#testing)) |
 | `npm run test:watch` | Runs the test suite in watch mode |
