@@ -6,10 +6,11 @@ import {
 	updateGuildReminder,
 	setGuildReminderEnabled,
 	deleteGuildReminder,
+	disableGuildReminderForChannel,
+	updateGuildReminderLastSentForChannel,
 	__resetForTests,
 } from '../../src/storage.ts';
 
-// Reset the database before each test
 beforeEach(() => {
 	__resetForTests();
 });
@@ -49,15 +50,15 @@ describe('getGuildReminders', () => {
 });
 
 describe('updateGuildReminder', () => {
-    it('updates only the specified fields, leaving others untouched', () => {
-        makeReminder(); // baseline: interval 60, message 'Drink water!'
+	it('updates only the specified fields, leaving others untouched', () => {
+		makeReminder(); // baseline: interval 60, message 'Drink water!'
 
-        updateGuildReminder('guild-1', 'water', { intervalMinutes: 30 });
+		updateGuildReminder('guild-1', 'water', { intervalMinutes: 30 });
 
-        const updated = getGuildReminderByLabel('guild-1', 'water');
-        expect(updated?.interval_minutes).toBe(30);
-        expect(updated?.message).toBe('Drink water!'); // unchanged
-    });
+		const updated = getGuildReminderByLabel('guild-1', 'water');
+		expect(updated?.interval_minutes).toBe(30);
+		expect(updated?.message).toBe('Drink water!'); // unchanged
+	});
 
 	it('does nothing if the reminder does not exist', () => {
 		expect(() => updateGuildReminder('guild-1', 'nonexistent', { intervalMinutes: 10 })).not.toThrow();
@@ -76,5 +77,31 @@ describe('setGuildReminderEnabled / deleteGuildReminder', () => {
 		makeReminder();
 		deleteGuildReminder('guild-1', 'water');
 		expect(getGuildReminderByLabel('guild-1', 'water')).toBeUndefined();
+	});
+});
+describe('disableGuildReminderForChannel / updateGuildReminderLastSentForChannel', () => {
+	it('change the reminder while it still points at the given channel', () => {
+		makeReminder();
+		const { id, channel_id } = getGuildReminderByLabel('guild-1', 'water')!;
+
+		updateGuildReminderLastSentForChannel(id, channel_id, 1234);
+		disableGuildReminderForChannel(id, channel_id);
+
+		const after = getGuildReminderByLabel('guild-1', 'water')!;
+		expect(after.last_sent_at).toBe(1234);
+		expect(after.enabled).toBe(0);
+	});
+
+	it('leave the reminder alone once it was moved to another channel', () => {
+		makeReminder();
+		const { id, channel_id } = getGuildReminderByLabel('guild-1', 'water')!;
+		updateGuildReminder('guild-1', 'water', { channelId: 'another-channel' });
+
+		updateGuildReminderLastSentForChannel(id, channel_id, 1234);
+		disableGuildReminderForChannel(id, channel_id);
+
+		const after = getGuildReminderByLabel('guild-1', 'water')!;
+		expect(after.last_sent_at).toBe(0);
+		expect(after.enabled).toBe(1);
 	});
 });

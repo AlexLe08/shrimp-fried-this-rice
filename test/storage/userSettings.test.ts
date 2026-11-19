@@ -8,14 +8,12 @@ import {
 	__resetForTests,
 } from '../../src/storage.ts';
 
-// Reset the database before each test
 beforeEach(() => {
 	__resetForTests();
 });
 
 const ONE_MINUTE = 60_000;
 
-// Helper function to create a user with default settings, allowing overrides for specific fields
 function makeUser(overrides: Partial<Parameters<typeof upsertUserSettings>[0]> = {}) {
 	upsertUserSettings({
 		userId: 'user-1',
@@ -36,7 +34,6 @@ describe('upsertUserSettings', () => {
 		expect(settings?.interval_minutes).toBe(60);
 		expect(settings?.message).toBe('Drink water!');
 	});
-    // calling upsertUserSettings twice for the same user should silently succeed and overwrite, never throw
 	it('updates the existing row in place, rather than creating a duplicate', () => {
 		makeUser({ intervalMinutes: 60, message: 'first' });
 		makeUser({ intervalMinutes: 30, message: 'second' });
@@ -46,7 +43,6 @@ describe('upsertUserSettings', () => {
 		expect(settings?.message).toBe('second');
 	});
 
-    // When upserting an existing user, the last_sent_at timestamp should not be reset to 0; it should remain whatever it was before the upsert.
 	it('does not reset last_sent_at when re-upserting', () => {
 		makeUser();
 		const now = Date.now();
@@ -120,6 +116,6 @@ describe('getDueUserSettings', () => {
 
 		const due = getDueUserSettings(1_000_000 + 100 * ONE_MINUTE);
 		expect(due).toHaveLength(2);
-		expect(due.map(u => u.user_id).sort()).toEqual(['user-1', 'user-2']);
+		expect(due.map((u) => u.user_id).sort()).toEqual(['user-1', 'user-2']);
 	});
 });

@@ -22,6 +22,26 @@ describe('shutdown function', () => {
 		expect(closeDatabase).toHaveBeenCalled();
 	});
 
+	it('waits for the scheduler to stop before destroying the client and closing the database', async () => {
+		let finishStopping!: () => void;
+		vi.mocked(stopScheduler).mockReturnValueOnce(
+			new Promise<void>((resolve) => {
+				finishStopping = resolve;
+			}),
+		);
+		const destroy = vi.fn().mockResolvedValue(undefined);
+
+		const done = shutdown({ destroy } as never, 'SIGTERM');
+		await Promise.resolve();
+		expect(destroy).not.toHaveBeenCalled();
+		expect(closeDatabase).not.toHaveBeenCalled();
+
+		finishStopping();
+		await done;
+		expect(destroy).toHaveBeenCalled();
+		expect(closeDatabase).toHaveBeenCalled();
+	});
+
 	it('still closes the database even if destroying the client fails', async () => {
 		const destroy = vi.fn().mockRejectedValue(new Error('destroy failed'));
 		const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});

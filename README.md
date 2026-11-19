@@ -9,16 +9,14 @@ A Discord bot built with **TypeScript** and **discord.js v14** that periodically
 **Core feature set is complete, deployed, and running in production:**
 - Slash command loading and registration (global — works in any server the bot is invited to, plus direct DMs)
 - Event handling (`ClientReady`, `InteractionCreate`)
-- Per-command, per-user cooldowns
-- A `/reload` command for hot-reloading a single command file without restarting the bot
+- Per-command, per-user cooldowns (3 seconds by default)
 - SQLite-backed persistence (`src/storage.ts`) for server and per-user settings
-- A polling scheduler (`src/scheduler.ts`) that sends reminders when they're due, hardened against overlapping poll ticks
+- A polling scheduler (`src/scheduler.ts`) that sends reminders when they're due, hardened against overlapping poll ticks. A reminder whose channel was deleted (or can't take messages) is disabled, and shows as disabled in `/reminder status`; re-enable it with `/reminder edit` to a new channel, then `/reminder toggle`. A send Discord refuses (missing permissions, DMs closed) is retried after the reminder's own interval rather than every minute; network and Discord server errors are retried on the next minute's poll.
 - Full CRUD management of server reminders (capped at 20 per server to guard against runaway/abusive creation), plus a server-wide master toggle
 - A live-updating status embed (`/reminder status`) listing all of a server's reminders with Discord relative timestamps for their next fire time; automatically re-posts/edits itself whenever a reminder fires or its settings change (`src/reminderEmbed.ts`)
 - Personal opt-in DM reminders, independent of any server setting — configurable directly via DM with the bot
-- A handful of utility commands (`/ping`, `/echo`, `/info`, `/server`, `/user`) used to shake out the framework
-- Graceful shutdown handling (`src/shutdown.ts`) — on `SIGTERM`/`SIGINT`, the scheduler is stopped, the Discord client is cleanly destroyed, and the database connection is closed, with a 5-second force-exit safety net in case cleanup ever hangs
-- Deployed 24/7 on an Oracle Cloud "Always Free" VM, managed via systemd (see [Production Deployment](#production-deployment))
+- Graceful shutdown handling (`src/shutdown.ts`) — on `SIGTERM`/`SIGINT`, the scheduler is stopped (waiting for a send already under way to finish and be recorded, so it isn't repeated after the restart), the Discord client is cleanly destroyed, and the database connection is closed, with a 5-second force-exit safety net in case cleanup ever hangs
+- Deployed 24/7 on an Oracle Cloud "Always Free" VM, managed via systemd, and deployed automatically by GitHub Actions on merge to `main` (see [Production Deployment](#production-deployment))
 - A Vitest test suite covering **~96% of statements / ~97% of lines** across the entire codebase — persistence, scheduling, embeds, event handling, shutdown, and every command (see [Testing](#testing))
 - A GitHub Actions CI workflow running type-checking and the full test suite on every push/PR, enforced via a branch ruleset that blocks merging into `main` unless CI passes (see [Continuous Integration](#continuous-integration))
 
@@ -47,7 +45,7 @@ A Discord bot built with **TypeScript** and **discord.js v14** that periodically
 ## Tech Stack
 
 - [discord.js](https://discord.js.org) v14
-- TypeScript, executed natively by Node (no compile step in the normal run path — see [Execution Model](#execution-model))
+- TypeScript 6.0 (pinned for typescript-eslint), executed natively by Node (no compile step in the normal run path — see [Execution Model](#execution-model))
 - SQLite via `better-sqlite3` for persistence
 - [Vitest](https://vitest.dev) for testing, with `@vitest/coverage-v8` for coverage reporting
 
@@ -84,7 +82,6 @@ Slash commands are registered **globally** (via `deploycommands`), so they're av
    ```env
    DISCORD_TOKEN=your-dev-bot-token-here
    DISCORD_CLIENT_ID=your-dev-application-client-id
-   DISCORD_GUILD_ID=your-test-server-id
    ```
    > ⚠️ Never commit `.env` to version control. It's already listed in `.gitignore`.
 
@@ -130,13 +127,11 @@ A GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push and pu
 1. Checks out the repository
 2. Sets up Node.js 24
 3. Installs dependencies via `npm ci` (not `npm install` — fails loudly if the lockfile is out of sync, rather than silently reconciling)
-4. Runs `npm run typecheck`
-5. Runs `npm run test:coverage`
+4. Runs `npm run lint` and `npm run format:check`
+5. Runs `npm run typecheck`
+6. Runs `npm run test:coverage`
 
-No secrets are required — the whole suite runs against mocked/in-memory data with no real Discord connection. Optional: add a status badge near the top of this README once the workflow has run at least once —
-```markdown
-![CI](https://github.com/your-username/your-repo-name/actions/workflows/ci.yml/badge.svg)
-```
+No secrets are required for the `test` job — the whole suite runs against mocked/in-memory data with no real Discord connection. On pushes to `main`, a second `deploy` job ships the result (see [Production Deployment](#production-deployment)).
 
 **Merge enforcement:** a branch ruleset on `main` (Settings → Branches → Rulesets) requires this workflow's `test` check to pass before a pull request can be merged, and requires changes to go through a pull request in the first place — so CI passing is a structural gate, not just an informational status. Rulesets were chosen over classic branch protection specifically to be ready for future contributors (per-actor bypass lists, org-wide reusability if this ever becomes a multi-repo setup) and as a deliberate opportunity to learn GitHub's newer system.
 
@@ -146,30 +141,23 @@ The bot runs continuously on an **Oracle Cloud Infrastructure "Always Free" VM**
 
 Key production-specific details, for future reference:
 
-- **Persistence:** since this is a real VM (not a container-based PaaS), `reminders.db` lives on the VM's normal persistent disk — no special volume configuration needed, and it's untouched by deploys (it's git-ignored, so `git pull` never affects it).
-- **Secrets:** `.env` is created directly on the VM (never committed, never pulled from git) with the production bot token and IDs — using the separate **production** Discord Application, never the local-dev one.
+- **Persistence:** since this is a real VM (not a container-based PaaS), `reminders.db` lives on the VM's normal persistent disk — no special volume configuration needed, and it's untouched by deploys (it's git-ignored, and the deploy's `git reset --hard` only resets tracked files).
+- **Secrets:** `.env` is created directly on the VM (never committed, never pulled from git) with the production bot token and client ID — using the separate **production** Discord Application, never the local-dev one.
 - **Native module builds:** `better-sqlite3` compiles from source on first install on this ARM architecture, requiring `build-essential` and `python3` to be installed on the VM (see deployment notes/history for the full one-time VM setup steps).
 - **npm install-scripts:** `better-sqlite3`'s native build step is explicitly approved via the `allowScripts` field committed in `package.json` — required for npm v12+'s install-script security gating.
-- **Graceful shutdown:** `systemctl restart`/`stop` send `SIGTERM`, which `src/shutdown.ts` handles by stopping the scheduler, destroying the Discord client, and closing the database connection before the process exits — rather than the process being killed mid-operation. `Ctrl+C` during local `npm run dev` sends `SIGINT`, handled identically.
-- **Service management:** the bot runs under a systemd unit (`discordbot.service`). Common commands:
+- **Graceful shutdown:** `systemctl restart`/`stop` send `SIGTERM`, which `src/shutdown.ts` handles by stopping the scheduler (and waiting for any send already under way), destroying the Discord client, and closing the database connection before the process exits — rather than the process being killed mid-operation. `Ctrl+C` during local `npm run dev` sends `SIGINT`, handled identically.
+- **Service management:** the bot runs under a systemd unit (`discordbotshrimp.service`). Common commands:
   ```bash
-  sudo systemctl status discordbot     # check if running
-  sudo systemctl restart discordbot    # apply a code update
-  journalctl -u discordbot -f          # view live logs
+  sudo systemctl status discordbotshrimp     # check if running
+  sudo systemctl restart discordbotshrimp    # restart (deploys do this)
+  journalctl -u discordbotshrimp -f          # view live logs
   ```
-- **Deploying updates:** a helper script (`~/deploy.sh` on the VM, not part of this repo) runs `git pull`, `npm install`, restarts the service, and re-runs `deploycommands`, in that order (service restart before command redeployment, so a command-registration hiccup never blocks a code fix from taking effect).
+- **Deploying updates:** automatic on merge to `main`. The `deploy` job in `.github/workflows/ci.yml` runs after `test` passes, waits for the owner's approval (the `production` environment), then SSHes into the VM and runs `git fetch`, `git reset --hard origin/main`, `npm install`, restarts the service, and re-runs `deploycommands`, in that order (service restart before command redeployment, so a command-registration hiccup never blocks a code fix from taking effect). Approving one run deploys whatever `main` is at that moment. Setup and secrets: [`ORACLE_CLOUD_DEPLOYMENT.md`](ORACLE_CLOUD_DEPLOYMENT.md), section 9.
 
 ## Commands
 
 | Command | Description |
 |---|---|
-| `/ping` | Replies with "Pong!" — basic connectivity check. Has a 5-second cooldown. |
-| `/echo` | Sends your input message to a chosen text channel, optionally ephemeral. |
-| `/info user [target]` | Shows info about a server member (or yourself, if no target given). |
-| `/info server` | Shows basic info about the current server. |
-| `/server` | Shows the server's name and member count. |
-| `/user` | Shows the invoking user's username and server join date. |
-| `/reload <command>` | Hot-reloads a single command file's code without restarting the bot. |
 | `/reminder create <label> <channel> <interval> <message>` | Creates a new server reminder (max 20 per server). Interval must be 5–1440 minutes. Warns (but still saves) if the bot lacks permissions in the target channel. |
 | `/reminder edit <label> [channel] [interval] [message]` | Edits one or more fields of an existing reminder; unspecified fields are left unchanged. |
 | `/reminder list` | Lists the server's master toggle state, followed by every configured reminder and its status (ephemeral, text-only). |
@@ -188,13 +176,13 @@ src/
   deploy-commands.ts    # registers slash commands globally with Discord's API
   scheduler.ts          # polling loop — checks storage.ts for due reminders and sends them
   shutdown.ts            # graceful SIGTERM/SIGINT handling — stops the scheduler, destroys the client, closes the database
+  eventListener.ts      # wraps each event handler so a rejection is logged, not an unhandled crash
   storage.ts            # SQLite data-access layer (guild settings, guild reminders, user settings, status message tracking)
   reminderEmbed.ts       # builds the /reminder status embed; also refreshes the tracked status message when reminders change
   types/
     command.ts           # shared Command interface
     types.d.ts            # module augmentation (adds `commands`/`cooldowns` to discord.js's Client)
   commands/
-    utility/              # ping, echo, info, server, user, reload
     reminderCore/          # reminder (guildreminder.ts), remindme
   events/
     ready.ts               # ClientReady handler — also starts the scheduler
@@ -205,7 +193,9 @@ test/
   mockInteraction.ts               # shared fake ChatInputCommandInteraction builder (command + event tests)
   reminderEmbed.test.ts            # buildReminderStatusEmbed + refreshGuildStatusMessage tests
   scheduler.test.ts                # scheduler tests, using fake timers
+  schedulerCheckFailure.test.ts    # a poll whose storage query throws is logged, not a crash (mocks storage, so its own file)
   shutdown.test.ts                  # gracefulShutdown orchestration tests (mocked scheduler + storage)
+  eventListener.test.ts            # rejected and throwing handlers are logged
   storage/
     storage.test.ts                 # initial smoke test
     closeDatabase.test.ts           # isolated in its own file — closing the DB connection is irreversible within a test file
@@ -215,12 +205,13 @@ test/
     userSettings.test.ts            # upsert behavior + due-reminder tests for DM settings
     dueReminders.test.ts            # due-reminder boundary/edge-case tests for guild reminders
   commands/
-    utility/                        # ping, echo, info, server, user, reload tests
     reminderCore/                   # guildreminder, remindme tests
   events/
     ready.test.ts
     interactionCreate.test.ts        # includes a direct regression test for the production crash incident
 ```
+
+Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `scripts/` (worktrees, `check.sh` mirroring CI, cleanup after merges) and `docs/decisions/`.
 
 ## Available Scripts
 
@@ -229,6 +220,8 @@ test/
 | `npm start` | Runs the bot once via native Node TypeScript execution |
 | `npm run dev` | Runs the bot with `--watch`, auto-restarting on file changes |
 | `npm run build` | Compiles to `dist/` via `tsc` (not part of the normal run/deploy path) |
+| `npm run lint` | ESLint (typescript-eslint), including unhandled-promise checks on `src/` |
+| `npm run format` / `format:check` | Formats with Prettier / checks formatting (CI runs the check) |
 | `npm run typecheck` | Type-checks the project without emitting output |
 | `npm test` | Runs the Vitest test suite once and exits (see [Testing](#testing)) |
 | `npm run test:watch` | Runs the test suite in watch mode |
@@ -245,13 +238,12 @@ test/
 - [ ] Enforce a minimum coverage threshold in CI
 - [ ] Publish the HTML coverage report as a CI artifact
 - [ ] Consider narrowing `refreshGuildStatusMessage`'s and `startScheduler`'s `Client` parameter to a smaller custom interface, to eliminate the `as unknown as Client` casts in test mocks
-- [ ] CD automation — auto-deploy to the production VM on merge to `main` (e.g. a GitHub Actions step that SSHs in and runs the existing `~/deploy.sh`)
+- [ ] Make the deploy fail when command registration fails (`deploy-commands.ts` exits 0 today), use `npm ci`, and check the bot actually logged in after the restart
 - [ ] Structured logging (e.g. `pino`) with real log levels, in place of plain `console.log`/`console.error`
 - [ ] `CHANGELOG.md` documenting notable changes and fixes over time
-- [ ] Confirm a real `LICENSE` file exists in the repo root, not just the mention below
-- [ ] Enable Dependabot for automated dependency vulnerability alerts
+- [ ] Dependabot version updates (`.github/dependabot.yml`); security updates are already on
 - [ ] Web dashboard for configuration (longer-term idea)
 
 ## License
 
-MIT
+MIT, see [LICENSE](LICENSE).
