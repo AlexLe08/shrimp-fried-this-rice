@@ -26,37 +26,47 @@ function isRefusedByDiscord(error: unknown): error is DiscordAPIError {
 }
 
 let pollIntervalID: NodeJS.Timeout | null = null;
-let isCheckingGuildReminders = false;
-let isCheckingUserReminders = false;
+// The check started by an earlier poll, while it runs. A poll that finds
+// one still running skips it, so checks never overlap, and stopScheduler
+// waits for them so shutdown doesn't close the database under a send.
+let guildCheck: Promise<void> | null = null;
+let userCheck: Promise<void> | null = null;
+// Set by stopScheduler: a running check finishes the send it's on and
+// skips the rest of its batch; they're still due after the restart.
+let stopping = false;
+
+// A check that throws (the database failing, say) is logged rather than
+// left as an unhandled rejection, which would crash the process.
+function runCheck(name: string, check: () => Promise<void>): Promise<void> {
+	return check().catch((error: unknown) => {
+		console.error(`${name} check failed:`, error);
+	});
+}
+
 // Scheduler will only ever be started when bot is logged in; we can assume client is fully connected with no null checks.
 export function startScheduler(client: Client<true>): void {
+	stopping = false;
 	pollIntervalID = setInterval(() => {
-		// If a previous check is still running, skip this interval.
-		// This prevents overlapping checks if one takes longer than the poll interval.
-		if (!isCheckingGuildReminders) {
-			isCheckingGuildReminders = true;
-			checkGuildReminders(client).finally(() => {
-				isCheckingGuildReminders = false;
-			})
-		}
-
-		if (!isCheckingUserReminders) {
-			isCheckingUserReminders = true;
-			checkUserReminders(client).finally(() => {
-				isCheckingUserReminders = false;
-			})
-		}
+		guildCheck ??= runCheck('Guild reminder', () => checkGuildReminders(client)).finally(() => {
+			guildCheck = null;
+		});
+		userCheck ??= runCheck('DM reminder', () => checkUserReminders(client)).finally(() => {
+			userCheck = null;
+		});
 	}, POLL_INTERVAL_MS);
 
 	console.log(`Scheduler started, polling every ${POLL_INTERVAL_MS / 1000}s.`);
 }
 
-export function stopScheduler(): void {
+/** Stops polling, then resolves once any check already running has finished. */
+export async function stopScheduler(): Promise<void> {
+	stopping = true;
 	if (pollIntervalID) {
 		clearInterval(pollIntervalID);
 		pollIntervalID = null;
-		console.log('Scheduler stopped.');
 	}
+	await Promise.all([guildCheck, userCheck]);
+	console.log('Scheduler stopped.');
 }
 
 async function checkGuildReminders(client: Client<true>): Promise<void> {
@@ -66,6 +76,7 @@ async function checkGuildReminders(client: Client<true>): Promise<void> {
     // if reminder #1 fails (bad channel ID, missing permissions, etc.), reminders #2 and #3 in the same batch should still go out.
     // Wrapping the whole function in one try/catch would mean a single bad reminder silently kills every other reminder due in that same poll cycle.
 	for (const reminder of dueReminders) {
+		if (stopping) break;
 		try {
             // fetch() will reach out to discord's API if channel isn't already cached; 
             // .cache.get() will only check the cache and return undefined if not found. 
@@ -82,6 +93,10 @@ async function checkGuildReminders(client: Client<true>): Promise<void> {
 
 			await channel.send(reminder.message);
 			updateGuildReminderLastSent(reminder.id, now);
+			// Shutting down: the send is recorded, and the embed's next-fire
+			// time is still right after the restart. Refreshing it would only
+			// spend more of the 5 seconds before index.ts forces an exit.
+			if (stopping) break;
             await refreshGuildStatusMessage(client, reminder.guild_id);
 		} catch (error) {
 			console.error(`Failed to send guild reminder "${reminder.reminder_label}":`, error);
@@ -108,6 +123,7 @@ async function checkUserReminders(client: Client<true>): Promise<void> {
 	const dueUsers = getDueUserSettings(now);
 
 	for (const userSettings of dueUsers) {
+		if (stopping) break;
 		try {
 			const user = await client.users.fetch(userSettings.user_id);
 			await user.send(userSettings.message);
