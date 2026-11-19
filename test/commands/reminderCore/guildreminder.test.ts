@@ -4,7 +4,7 @@ import {
 	getGuildReminderByLabel,
 	getGuildSettings,
 	setGuildStatusMessage,
-    MAX_REMINDERS_PER_GUILD,
+	MAX_REMINDERS_PER_GUILD,
 	__resetForTests,
 } from '../../../src/storage.ts';
 import { createMockInteraction } from '../../mockInteraction.ts';
@@ -31,18 +31,18 @@ function makeGuild(membersMe: unknown = {}) {
 }
 
 async function createBaseline() {
-    const channel = makePermissiveChannel();
-    const interaction = createMockInteraction({
-        inCachedGuild: true,
-        guild: makeGuild(),
-        options: {
-            subcommand: 'create',
-            strings: { label: 'water', message: 'original' },
-            channels: { channel },
-            integers: { interval: 60 },
-        },
-    });
-    await guildReminderCommand.execute(interaction as never);
+	const channel = makePermissiveChannel();
+	const interaction = createMockInteraction({
+		inCachedGuild: true,
+		guild: makeGuild(),
+		options: {
+			subcommand: 'create',
+			strings: { label: 'water', message: 'original' },
+			channels: { channel },
+			integers: { interval: 60 },
+		},
+	});
+	await guildReminderCommand.execute(interaction as never);
 }
 
 describe('/reminder create', () => {
@@ -67,40 +67,40 @@ describe('/reminder create', () => {
 		);
 	});
 
-    it('rejects creating a reminder once the guild has reached the maximum', async () => {
-        const channel = makePermissiveChannel();
+	it('rejects creating a reminder once the guild has reached the maximum', async () => {
+		const channel = makePermissiveChannel();
 
-        for (let i = 0; i < MAX_REMINDERS_PER_GUILD; i++) {
-            const interaction = createMockInteraction({
-                inCachedGuild: true,
-                guild: makeGuild(),
-                options: {
-                    subcommand: 'create',
-                    strings: { label: `reminder-${i}`, message: 'hi' },
-                    channels: { channel },
-                    integers: { interval: 60 },
-                },
-            });
-            await guildReminderCommand.execute(interaction as never);
-        }
+		for (let i = 0; i < MAX_REMINDERS_PER_GUILD; i++) {
+			const interaction = createMockInteraction({
+				inCachedGuild: true,
+				guild: makeGuild(),
+				options: {
+					subcommand: 'create',
+					strings: { label: `reminder-${i}`, message: 'hi' },
+					channels: { channel },
+					integers: { interval: 60 },
+				},
+			});
+			await guildReminderCommand.execute(interaction as never);
+		}
 
-        const interaction = createMockInteraction({
-            inCachedGuild: true,
-            guild: makeGuild(),
-            options: {
-                subcommand: 'create',
-                strings: { label: 'one-too-many', message: 'hi' },
-                channels: { channel },
-                integers: { interval: 60 },
-            },
-        });
-        await guildReminderCommand.execute(interaction as never);
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: makeGuild(),
+			options: {
+				subcommand: 'create',
+				strings: { label: 'one-too-many', message: 'hi' },
+				channels: { channel },
+				integers: { interval: 60 },
+			},
+		});
+		await guildReminderCommand.execute(interaction as never);
 
-        expect(getGuildReminderByLabel('g1', 'one-too-many')).toBeUndefined();
-        expect(interaction.reply).toHaveBeenCalledWith(
-            expect.objectContaining({ content: expect.stringContaining('maximum') }),
-        );
-    });
+		expect(getGuildReminderByLabel('g1', 'one-too-many')).toBeUndefined();
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining('maximum') }),
+		);
+	});
 
 	it('rejects a duplicate label', async () => {
 		const channel = makePermissiveChannel();
@@ -237,7 +237,7 @@ describe('/reminder toggle', () => {
 		);
 	});
 
-    it('enables/disables the reminder and confirms', async () => {
+	it('enables/disables the reminder and confirms', async () => {
 		await createBaseline();
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
@@ -269,7 +269,7 @@ describe('/reminder delete', () => {
 		);
 	});
 
-    it('removes the reminder and confirms', async () => {
+	it('removes the reminder and confirms', async () => {
 		await createBaseline();
 		const interaction = createMockInteraction({
 			inCachedGuild: true,

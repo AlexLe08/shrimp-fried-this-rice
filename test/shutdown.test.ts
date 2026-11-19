@@ -24,7 +24,11 @@ describe('shutdown function', () => {
 
 	it('waits for the scheduler to stop before destroying the client and closing the database', async () => {
 		let finishStopping!: () => void;
-		vi.mocked(stopScheduler).mockReturnValueOnce(new Promise<void>((resolve) => { finishStopping = resolve; }));
+		vi.mocked(stopScheduler).mockReturnValueOnce(
+			new Promise<void>((resolve) => {
+				finishStopping = resolve;
+			}),
+		);
 		const destroy = vi.fn().mockResolvedValue(undefined);
 
 		const done = shutdown({ destroy } as never, 'SIGTERM');

@@ -116,6 +116,6 @@ describe('getDueUserSettings', () => {
 
 		const due = getDueUserSettings(1_000_000 + 100 * ONE_MINUTE);
 		expect(due).toHaveLength(2);
-		expect(due.map(u => u.user_id).sort()).toEqual(['user-1', 'user-2']);
+		expect(due.map((u) => u.user_id).sort()).toEqual(['user-1', 'user-2']);
 	});
 });

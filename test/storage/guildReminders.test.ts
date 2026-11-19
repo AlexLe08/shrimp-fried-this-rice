@@ -50,15 +50,15 @@ describe('getGuildReminders', () => {
 });
 
 describe('updateGuildReminder', () => {
-    it('updates only the specified fields, leaving others untouched', () => {
-        makeReminder(); // baseline: interval 60, message 'Drink water!'
+	it('updates only the specified fields, leaving others untouched', () => {
+		makeReminder(); // baseline: interval 60, message 'Drink water!'
 
-        updateGuildReminder('guild-1', 'water', { intervalMinutes: 30 });
+		updateGuildReminder('guild-1', 'water', { intervalMinutes: 30 });
 
-        const updated = getGuildReminderByLabel('guild-1', 'water');
-        expect(updated?.interval_minutes).toBe(30);
-        expect(updated?.message).toBe('Drink water!'); // unchanged
-    });
+		const updated = getGuildReminderByLabel('guild-1', 'water');
+		expect(updated?.interval_minutes).toBe(30);
+		expect(updated?.message).toBe('Drink water!'); // unchanged
+	});
 
 	it('does nothing if the reminder does not exist', () => {
 		expect(() => updateGuildReminder('guild-1', 'nonexistent', { intervalMinutes: 10 })).not.toThrow();

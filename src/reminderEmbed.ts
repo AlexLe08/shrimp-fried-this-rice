@@ -17,27 +17,27 @@ export function buildReminderStatusEmbed(guildId: string, guildName: string): Em
 		return embed;
 	}
 
-    const now = Date.now();
+	const now = Date.now();
 
-    const lines = reminders.map((r) => {
-        const base = `• \`${r.reminder_label}\` — every ${r.interval_minutes}m in <#${r.channel_id}>`;
+	const lines = reminders.map((r) => {
+		const base = `• \`${r.reminder_label}\` — every ${r.interval_minutes}m in <#${r.channel_id}>`;
 
-        if (!masterEnabled) {
-            return `${base} — ⏸ paused (server master toggle is off)`;
-        }
-        if (!r.enabled) {
-            return `${base} — ⏸ disabled`;
-        }
+		if (!masterEnabled) {
+			return `${base} — ⏸ paused (server master toggle is off)`;
+		}
+		if (!r.enabled) {
+			return `${base} — ⏸ disabled`;
+		}
 
-        const nextFireMs = r.last_sent_at + r.interval_minutes * 60_000;
+		const nextFireMs = r.last_sent_at + r.interval_minutes * 60_000;
 
-        if (r.last_sent_at === 0 || nextFireMs <= now) {
-            return `${base} — due on next check`;
-        }
+		if (r.last_sent_at === 0 || nextFireMs <= now) {
+			return `${base} — due on next check`;
+		}
 
-        const nextFireSeconds = Math.floor(nextFireMs / 1000);
-        return `${base} — next <t:${nextFireSeconds}:R>`;
-    });
+		const nextFireSeconds = Math.floor(nextFireMs / 1000);
+		return `${base} — next <t:${nextFireSeconds}:R>`;
+	});
 
 	embed.setDescription(lines.join('\n'));
 	return embed;

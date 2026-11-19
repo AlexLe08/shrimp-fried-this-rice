@@ -6,7 +6,7 @@ let isShuttingDown = false;
 
 export async function shutdown(client: Client, signal: string): Promise<void> {
 	// A second signal (Ctrl+C twice, or SIGTERM during SIGINT) is ignored.
-    if (isShuttingDown) return;
+	if (isShuttingDown) return;
 	isShuttingDown = true;
 
 	console.log(`\nReceived ${signal}, shutting down gracefully...`);
@@ -16,7 +16,7 @@ export async function shutdown(client: Client, signal: string): Promise<void> {
 	// again after the restart.
 	await stopScheduler();
 
-    // Separate try blocks: the database still closes if destroying the client fails.
+	// Separate try blocks: the database still closes if destroying the client fails.
 	try {
 		await client.destroy();
 	} catch (error) {

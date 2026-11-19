@@ -24,7 +24,9 @@ afterEach(async () => {
 describe('scheduler — a check that throws', () => {
 	it('logs the error and keeps polling', async () => {
 		vi.mocked(getDueGuildReminders)
-			.mockImplementationOnce(() => { throw new Error('database is locked'); })
+			.mockImplementationOnce(() => {
+				throw new Error('database is locked');
+			})
 			.mockReturnValue([]);
 		const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 

@@ -26,7 +26,10 @@ import { buildReminderStatusEmbed } from '../../reminderEmbed.ts';
 import { refreshGuildStatusMessage } from '../../reminderEmbed.ts';
 import type { TextChannel } from 'discord.js';
 
-function checkChannelPermissions(interaction: ChatInputCommandInteraction<'cached'>, channel: TextChannel): string | null {
+function checkChannelPermissions(
+	interaction: ChatInputCommandInteraction<'cached'>,
+	channel: TextChannel,
+): string | null {
 	// The bot's own member can be uncached right after startup. Skipping the
 	// check costs only the warning; the reminder is saved either way.
 	const me = interaction.guild.members.me;
@@ -52,88 +55,90 @@ export default {
 		.setDescription("Manage this server's periodic reminders.")
 		.setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
 		.setContexts(InteractionContextType.Guild)
-		.addSubcommand(subcommand =>
+		.addSubcommand((subcommand) =>
 			subcommand
 				.setName('create')
 				.setDescription('Create a new reminder.')
-				.addStringOption(option =>
-					option.setName('label')
+				.addStringOption((option) =>
+					option
+						.setName('label')
 						.setDescription('A short name for this reminder (e.g. "water")')
 						.setRequired(true)
-						.setMaxLength(50))
-				.addChannelOption(option =>
-					option.setName('channel')
+						.setMaxLength(50),
+				)
+				.addChannelOption((option) =>
+					option
+						.setName('channel')
 						.setDescription('The channel to post this reminder in')
 						.addChannelTypes(ChannelType.GuildText)
-						.setRequired(true))
-				.addIntegerOption(option =>
-					option.setName('interval')
+						.setRequired(true),
+				)
+				.addIntegerOption((option) =>
+					option
+						.setName('interval')
 						.setDescription('How often to send this reminder, in minutes')
 						.setMinValue(MIN_INTERVAL_MINUTES)
 						.setMaxValue(MAX_INTERVAL_MINUTES)
-						.setRequired(true))
-				.addStringOption(option =>
-					option.setName('message')
-						.setDescription('The reminder text to send')
-						.setMaxLength(2000)
-						.setRequired(true)))
-		.addSubcommand(subcommand =>
-			subcommand
-				.setName('list')
-				.setDescription('List all reminders configured for this server.'))
-		.addSubcommand(subcommand =>
+						.setRequired(true),
+				)
+				.addStringOption((option) =>
+					option.setName('message').setDescription('The reminder text to send').setMaxLength(2000).setRequired(true),
+				),
+		)
+		.addSubcommand((subcommand) =>
+			subcommand.setName('list').setDescription('List all reminders configured for this server.'),
+		)
+		.addSubcommand((subcommand) =>
 			subcommand
 				.setName('toggle')
 				.setDescription('Enable or disable a specific reminder.')
-				.addStringOption(option =>
-					option.setName('label')
-						.setDescription("The reminder's label")
-						.setRequired(true))
-				.addBooleanOption(option =>
-					option.setName('enabled')
-						.setDescription('Whether this reminder should be active')
-						.setRequired(true)))
-		.addSubcommand(subcommand =>
+				.addStringOption((option) => option.setName('label').setDescription("The reminder's label").setRequired(true))
+				.addBooleanOption((option) =>
+					option.setName('enabled').setDescription('Whether this reminder should be active').setRequired(true),
+				),
+		)
+		.addSubcommand((subcommand) =>
 			subcommand
 				.setName('delete')
 				.setDescription('Delete a reminder.')
-				.addStringOption(option =>
-					option.setName('label')
-						.setDescription("The reminder's label")
-						.setRequired(true)))
-		.addSubcommand(subcommand =>
+				.addStringOption((option) => option.setName('label').setDescription("The reminder's label").setRequired(true)),
+		)
+		.addSubcommand((subcommand) =>
 			subcommand
 				.setName('master')
 				.setDescription('Turn all reminders for this server on or off at once.')
-				.addBooleanOption(option =>
-					option.setName('enabled')
+				.addBooleanOption((option) =>
+					option
+						.setName('enabled')
 						.setDescription('Whether reminders should be active for this server')
-						.setRequired(true)))
-		.addSubcommand(subcommand =>
+						.setRequired(true),
+				),
+		)
+		.addSubcommand((subcommand) =>
 			subcommand
 				.setName('edit')
 				.setDescription('Edit an existing reminder.')
-				.addStringOption(option =>
-					option.setName('label')
-						.setDescription("The reminder's label")
-						.setRequired(true))
-				.addChannelOption(option =>
-					option.setName('channel')
+				.addStringOption((option) => option.setName('label').setDescription("The reminder's label").setRequired(true))
+				.addChannelOption((option) =>
+					option
+						.setName('channel')
 						.setDescription('New channel to post this reminder in')
-						.addChannelTypes(ChannelType.GuildText))
-				.addIntegerOption(option =>
-					option.setName('interval')
+						.addChannelTypes(ChannelType.GuildText),
+				)
+				.addIntegerOption((option) =>
+					option
+						.setName('interval')
 						.setDescription('New interval in minutes')
 						.setMinValue(MIN_INTERVAL_MINUTES)
-						.setMaxValue(MAX_INTERVAL_MINUTES))
-				.addStringOption(option =>
-					option.setName('message')
-						.setDescription('New reminder text')
-						.setMaxLength(2000)))
-		.addSubcommand(subcommand =>
+						.setMaxValue(MAX_INTERVAL_MINUTES),
+				)
+				.addStringOption((option) => option.setName('message').setDescription('New reminder text').setMaxLength(2000)),
+		)
+		.addSubcommand((subcommand) =>
 			subcommand
 				.setName('status')
-				.setDescription("Post a live-updating embed showing this server's reminders and when they'll next fire.")),
+				.setDescription("Post a live-updating embed showing this server's reminders and when they'll next fire."),
+		),
 	async execute(interaction: ChatInputCommandInteraction) {
 		if (!interaction.inCachedGuild()) {
 			await interaction.reply({
@@ -297,8 +302,9 @@ export default {
 				return;
 			}
 
-			const lines = reminders.map(r =>
-				`• \`${r.reminder_label}\` — every ${r.interval_minutes}m in <#${r.channel_id}> — ${r.enabled ? 'enabled' : 'disabled'}`,
+			const lines = reminders.map(
+				(r) =>
+					`• \`${r.reminder_label}\` — every ${r.interval_minutes}m in <#${r.channel_id}> — ${r.enabled ? 'enabled' : 'disabled'}`,
 			);
 
 			await interaction.reply({
