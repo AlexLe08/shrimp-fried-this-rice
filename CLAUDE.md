@@ -29,7 +29,8 @@ the workflow, indexed in its `README.md`.
 
 ## Commands
 
-- Install: `npm ci` (builds `better-sqlite3`'s native module)
+- Install: `npm ci` (`better-sqlite3` 13 ships prebuilt binaries, so it
+  compiles only on a platform without one)
 - `npm run lint`: ESLint with typescript-eslint's recommended rules, and
   `no-floating-promises`/`no-misused-promises` (type-aware) on `src/`
 - `npm run format` / `npm run format:check`: Prettier (tabs, single quotes,
@@ -59,12 +60,18 @@ the workflow, indexed in its `README.md`.
   properties). ESM only.
 - `src/storage.ts` is the only module that touches SQLite. It opens the
   database on import (`DB_PATH`, else `reminders.db` in the project root),
-  creates the tables with `CREATE TABLE IF NOT EXISTS`, and owns the
-  limits (`MIN_INTERVAL_MINUTES`, `MAX_INTERVAL_MINUTES`,
-  `MAX_REMINDERS_PER_GUILD`). There are no migrations yet: a change to an
-  existing table needs a migration plan agreed with the owner first, since
-  production's `reminders.db` already has rows. Row interfaces mirror the
-  columns by hand; change both in the same commit.
+  creates the tables with `CREATE TABLE IF NOT EXISTS`, applies pending
+  `MIGRATIONS` (versioned by `PRAGMA user_version`, one transaction, on
+  startup; [decision 0002](docs/decisions/0002-schema-migrations-with-user-version.md)),
+  and owns the limits (`MIN_INTERVAL_MINUTES`, `MAX_INTERVAL_MINUTES`,
+  `MAX_REMINDERS_PER_GUILD`). A schema change is a new migration appended
+  to the list, never an edit to a `CREATE TABLE` or to a merged migration,
+  since production's `reminders.db` has run them. One that isn't additive
+  (renames, drops, retypes a column) needs a plan agreed with the owner
+  first. Row interfaces mirror the columns by hand; change both in the
+  same commit.
+- `src/snooze.ts` holds what `/reminder snooze` and `/remindme` share: the
+  duration and after-snooze choices, and how a snooze is described.
 - Commands: one file per command under `src/commands/<category>/`,
   default-exporting `{ data, execute, cooldown? }` (`src/types/command.ts`).
   `index.ts` and `deploy-commands.ts` load every `.ts` file there. A
