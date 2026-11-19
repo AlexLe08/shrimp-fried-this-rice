@@ -4,3 +4,12 @@ dist/
 coverage/
 *.db*
 *.zip
+.DS_Store
+
+# Claude Code personal files
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/worktrees/
+
+# scripts/check.sh logs and scratch files
+.logs/
