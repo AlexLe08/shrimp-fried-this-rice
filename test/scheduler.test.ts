@@ -10,8 +10,8 @@ beforeEach(() => {
 	vi.useFakeTimers();
 });
 
-afterEach(() => {
-	stopScheduler();
+afterEach(async () => {
+	await stopScheduler();
 	vi.useRealTimers();
 });
 
@@ -183,6 +183,47 @@ describe('scheduler — guild reminders', () => {
 
 		expect(channel.send).toHaveBeenCalledTimes(2);
 		expect(getGuildReminderByLabel('g1', 'water')?.enabled).toBe(1);
+	});
+
+	it('stopScheduler waits for a send already under way, and records it', async () => {
+		createGuildReminder({ guildId: 'g1', label: 'water', channelId: 'c1', intervalMinutes: 5, message: 'hi' });
+		const channel = createMockChannel();
+		let finishSend!: () => void;
+		channel.send.mockReturnValue(new Promise<void>((resolve) => { finishSend = resolve; }));
+		const client = createMockClient({ channels: { c1: channel } });
+
+		startScheduler(client as unknown as Client<true>);
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(channel.send).toHaveBeenCalledTimes(1);
+
+		let stopped = false;
+		const stopping = stopScheduler().then(() => { stopped = true; });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(stopped).toBe(false);
+
+		finishSend();
+		await stopping;
+		expect(getGuildReminderByLabel('g1', 'water')?.last_sent_at).toBeGreaterThan(0);
+	});
+
+	it('stopScheduler skips the rest of a batch once the current send finishes', async () => {
+		createGuildReminder({ guildId: 'g1', label: 'water', channelId: 'c1', intervalMinutes: 5, message: 'first' });
+		createGuildReminder({ guildId: 'g1', label: 'posture', channelId: 'c2', intervalMinutes: 5, message: 'second' });
+		const first = createMockChannel();
+		let finishSend!: () => void;
+		first.send.mockReturnValue(new Promise<void>((resolve) => { finishSend = resolve; }));
+		const second = createMockChannel();
+		const client = createMockClient({ channels: { c1: first, c2: second } });
+
+		startScheduler(client as unknown as Client<true>);
+		await vi.advanceTimersByTimeAsync(60_000);
+		const stopping = stopScheduler();
+		finishSend();
+		await stopping;
+		await vi.advanceTimersByTimeAsync(0); // let a loop that didn't stop reach the next send
+
+		expect(second.send).not.toHaveBeenCalled();
+		expect(getGuildReminderByLabel('g1', 'posture')?.last_sent_at).toBe(0);
 	});
 
 	it('stopScheduler clears the interval so no further polling occurs', async () => {

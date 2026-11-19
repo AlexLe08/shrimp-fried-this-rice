@@ -17,7 +17,7 @@ A Discord bot built with **TypeScript** and **discord.js v14** that periodically
 - A live-updating status embed (`/reminder status`) listing all of a server's reminders with Discord relative timestamps for their next fire time; automatically re-posts/edits itself whenever a reminder fires or its settings change (`src/reminderEmbed.ts`)
 - Personal opt-in DM reminders, independent of any server setting — configurable directly via DM with the bot
 - A handful of utility commands (`/ping`, `/echo`, `/info`, `/server`, `/user`) used to shake out the framework
-- Graceful shutdown handling (`src/shutdown.ts`) — on `SIGTERM`/`SIGINT`, the scheduler is stopped, the Discord client is cleanly destroyed, and the database connection is closed, with a 5-second force-exit safety net in case cleanup ever hangs
+- Graceful shutdown handling (`src/shutdown.ts`) — on `SIGTERM`/`SIGINT`, the scheduler is stopped (waiting for a send already under way to finish and be recorded, so it isn't repeated after the restart), the Discord client is cleanly destroyed, and the database connection is closed, with a 5-second force-exit safety net in case cleanup ever hangs
 - Deployed 24/7 on an Oracle Cloud "Always Free" VM, managed via systemd (see [Production Deployment](#production-deployment))
 - A Vitest test suite covering **~96% of statements / ~97% of lines** across the entire codebase — persistence, scheduling, embeds, event handling, shutdown, and every command (see [Testing](#testing))
 - A GitHub Actions CI workflow running type-checking and the full test suite on every push/PR, enforced via a branch ruleset that blocks merging into `main` unless CI passes (see [Continuous Integration](#continuous-integration))
@@ -150,7 +150,7 @@ Key production-specific details, for future reference:
 - **Secrets:** `.env` is created directly on the VM (never committed, never pulled from git) with the production bot token and IDs — using the separate **production** Discord Application, never the local-dev one.
 - **Native module builds:** `better-sqlite3` compiles from source on first install on this ARM architecture, requiring `build-essential` and `python3` to be installed on the VM (see deployment notes/history for the full one-time VM setup steps).
 - **npm install-scripts:** `better-sqlite3`'s native build step is explicitly approved via the `allowScripts` field committed in `package.json` — required for npm v12+'s install-script security gating.
-- **Graceful shutdown:** `systemctl restart`/`stop` send `SIGTERM`, which `src/shutdown.ts` handles by stopping the scheduler, destroying the Discord client, and closing the database connection before the process exits — rather than the process being killed mid-operation. `Ctrl+C` during local `npm run dev` sends `SIGINT`, handled identically.
+- **Graceful shutdown:** `systemctl restart`/`stop` send `SIGTERM`, which `src/shutdown.ts` handles by stopping the scheduler (and waiting for any send already under way), destroying the Discord client, and closing the database connection before the process exits — rather than the process being killed mid-operation. `Ctrl+C` during local `npm run dev` sends `SIGINT`, handled identically.
 - **Service management:** the bot runs under a systemd unit (`discordbot.service`). Common commands:
   ```bash
   sudo systemctl status discordbot     # check if running
@@ -205,6 +205,7 @@ test/
   mockInteraction.ts               # shared fake ChatInputCommandInteraction builder (command + event tests)
   reminderEmbed.test.ts            # buildReminderStatusEmbed + refreshGuildStatusMessage tests
   scheduler.test.ts                # scheduler tests, using fake timers
+  schedulerCheckFailure.test.ts    # a poll whose storage query throws is logged, not a crash (mocks storage, so its own file)
   shutdown.test.ts                  # gracefulShutdown orchestration tests (mocked scheduler + storage)
   storage/
     storage.test.ts                 # initial smoke test
