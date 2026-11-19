@@ -51,7 +51,7 @@ jobs:
             cd ~/shrimp-fried-this-rice
             git fetch
             git reset --hard origin/main
-            npm install
+            npm ci
             sudo systemctl restart discordbotshrimp
             npm run deploycommands
             sudo systemctl status discordbotshrimp --no-pager
