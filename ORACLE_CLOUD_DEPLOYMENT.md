@@ -232,18 +232,25 @@ cd ~/shrimp-fried-this-rice
 git fetch
 git reset --hard origin/main
 npm ci
+restarted_at=$(date +%s)
 sudo systemctl restart discordbotshrimp
-npm run deploycommands
+npm run deploycommands || registration_failed=1
+# then, until 60 s after the restart: wait for "Ready! Logged in as" in the service's journal since $restarted_at
 sudo systemctl status discordbotshrimp --no-pager
+# fail if the bot didn't log in or registration failed
 ```
+
+(Abridged; the full script is in `ci.yml`.)
 
 What it needs, set up once:
 - The repository cloned at `~/shrimp-fried-this-rice` in `DEPLOY_USER`'s home on the VM (section 5), with its `.env`.
 - Repository secrets `DEPLOY_HOST` (the VM's public IP), `DEPLOY_USER` (the VM user that owns the clone, `ubuntu` in this setup) and `DEPLOY_SSH_KEY` (a private key whose public half is in that user's `~/.ssh/authorized_keys`).
 - The `production` environment (Settings → Environments) with the owner as required reviewer.
-- `sudo systemctl` usable without a password prompt for that user (Ubuntu's default `ubuntu` user on OCI has passwordless sudo).
+- `sudo systemctl` and `sudo journalctl` usable without a password prompt for that user (Ubuntu's default `ubuntu` user on OCI has passwordless sudo).
 
-**Why this order:** the bot restarts *before* `deploycommands`, so if command registration fails (a bad definition, a transient API error), the code fix has already taken effect, and only `npm run deploycommands` needs re-running. A failed registration exits nonzero, so the job goes red even though the new code is already running; `set -e` then skips the final `systemctl status`.
+**Why this order:** the bot restarts *before* `deploycommands`, so if command registration fails (a bad definition, a transient API error), the code fix has already taken effect, and only `npm run deploycommands` needs re-running. A failed registration exits nonzero; the job still waits for the login and shows `systemctl status`, then goes red, so its log says both that registration failed and whether the new code is running.
+
+**Why wait for the login:** `systemctl restart` returns as soon as the process starts, and a bot that then fails to log in (a bad token in `.env`, Discord down) still shows as active until it exits, after which `Restart=on-failure` starts it again. So the job polls `journalctl` every 2 s for the line `src/events/ready.ts` logs once the bot is logged in, counting only lines since the restart (`--since @<epoch seconds>`, so the VM's time zone doesn't matter). If it hasn't appeared 60 s after the restart, the job prints the bot's log since the restart and fails. The bot may still be retrying; check `journalctl -u discordbotshrimp -f`. The check is that the bot logged in once: a bot that logs in and then crashes still passes it. Changing that log line means changing the deploy too.
 
 **Why `npm ci`:** it installs exactly what `package-lock.json` pins, the same install CI tested. Where the lockfile and `package.json` disagree, `npm install` would quietly reconcile them and install versions CI never ran; `npm ci` fails instead. It deletes `node_modules` and reinstalls everything; `better-sqlite3` 13 ships a prebuilt `linux-arm64` binary, so nothing is compiled. The old bot should keep running through the install, on the modules it loaded at startup, until the restart right after.
 
