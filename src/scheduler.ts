@@ -93,6 +93,10 @@ async function checkGuildReminders(client: Client<true>): Promise<void> {
 
 			await channel.send(reminder.message);
 			updateGuildReminderLastSent(reminder.id, now);
+			// Shutting down: the send is recorded, and the embed's next-fire
+			// time is still right after the restart. Refreshing it would only
+			// spend more of the 5 seconds before index.ts forces an exit.
+			if (stopping) break;
             await refreshGuildStatusMessage(client, reminder.guild_id);
 		} catch (error) {
 			console.error(`Failed to send guild reminder "${reminder.reminder_label}":`, error);
