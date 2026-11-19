@@ -240,10 +240,9 @@ Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `sc
 - [ ] CD automation — auto-deploy to the production VM on merge to `main` (e.g. a GitHub Actions step that SSHs in and runs the existing `~/deploy.sh`)
 - [ ] Structured logging (e.g. `pino`) with real log levels, in place of plain `console.log`/`console.error`
 - [ ] `CHANGELOG.md` documenting notable changes and fixes over time
-- [ ] Confirm a real `LICENSE` file exists in the repo root, not just the mention below
 - [ ] Enable Dependabot for automated dependency vulnerability alerts
 - [ ] Web dashboard for configuration (longer-term idea)
 
 ## License
 
-MIT
+MIT, see [LICENSE](LICENSE).
