@@ -18,10 +18,21 @@ import {
 	setGuildStatusMessage,
 	getGuildStatusMessage,
 	getGuildReminderCount,
+	snoozeGuildReminder,
+	unsnoozeGuildReminder,
 	MAX_REMINDERS_PER_GUILD,
 	MIN_INTERVAL_MINUTES,
 	MAX_INTERVAL_MINUTES,
 } from '../../storage.ts';
+import {
+	SNOOZE_DURATION_CHOICES,
+	AFTER_SNOOZE_CHOICES,
+	AFTER_SNOOZE_WAIT,
+	snoozeUntil,
+	isSnoozed,
+	discordTime,
+	describeSnooze,
+} from '../../snooze.ts';
 import { buildReminderStatusEmbed } from '../../reminderEmbed.ts';
 import { refreshGuildStatusMessage } from '../../reminderEmbed.ts';
 import type { TextChannel } from 'discord.js';
@@ -133,6 +144,31 @@ export default {
 						.setMaxValue(MAX_INTERVAL_MINUTES),
 				)
 				.addStringOption((option) => option.setName('message').setDescription('New reminder text').setMaxLength(2000)),
+		)
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName('snooze')
+				.setDescription('Hold a reminder back for a while; it resumes by itself when the snooze ends.')
+				.addStringOption((option) => option.setName('label').setDescription("The reminder's label").setRequired(true))
+				.addIntegerOption((option) =>
+					option
+						.setName('duration')
+						.setDescription('How long to snooze it for')
+						.addChoices(...SNOOZE_DURATION_CHOICES)
+						.setRequired(true),
+				)
+				.addStringOption((option) =>
+					option
+						.setName('after')
+						.setDescription('What happens when the snooze ends (default: send one right away if it was missed)')
+						.addChoices(...AFTER_SNOOZE_CHOICES),
+				),
+		)
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName('unsnooze')
+				.setDescription('End a snooze early.')
+				.addStringOption((option) => option.setName('label').setDescription("The reminder's label").setRequired(true)),
 		)
 		.addSubcommand((subcommand) =>
 			subcommand
@@ -252,6 +288,68 @@ export default {
 			return;
 		}
 
+		if (subcommand === 'snooze') {
+			const label = interaction.options.getString('label', true).toLowerCase();
+			const duration = interaction.options.getInteger('duration', true);
+			const skipMissed = interaction.options.getString('after') === AFTER_SNOOZE_WAIT;
+
+			const reminder = getGuildReminderByLabel(guildId, label);
+			if (!reminder) {
+				await interaction.reply({
+					content: `No reminder found with the label \`${label}\`.`,
+					flags: MessageFlags.Ephemeral,
+				});
+				return;
+			}
+
+			const now = Date.now();
+			const until = snoozeUntil(now, duration);
+			snoozeGuildReminder(guildId, label, { until, skipMissed, now });
+
+			// A snooze doesn't turn a reminder on: say so rather than let the admin
+			// expect it back when the snooze ends.
+			const disabledNote = reminder.enabled
+				? ''
+				: '\n\nIt is also disabled, so it stays off after the snooze until `/reminder toggle` turns it on.';
+			await interaction.reply({
+				content: `Reminder \`${label}\`: ${describeSnooze(until, skipMissed)}${disabledNote}`,
+				flags: MessageFlags.Ephemeral,
+			});
+			await refreshGuildStatusMessage(interaction.client, guildId);
+			return;
+		}
+
+		if (subcommand === 'unsnooze') {
+			const label = interaction.options.getString('label', true).toLowerCase();
+
+			const reminder = getGuildReminderByLabel(guildId, label);
+			if (!reminder) {
+				await interaction.reply({
+					content: `No reminder found with the label \`${label}\`.`,
+					flags: MessageFlags.Ephemeral,
+				});
+				return;
+			}
+
+			const now = Date.now();
+			if (!isSnoozed(reminder.snoozed_until, now)) {
+				await interaction.reply({
+					content: `Reminder \`${label}\` isn't snoozed.`,
+					flags: MessageFlags.Ephemeral,
+				});
+				return;
+			}
+
+			unsnoozeGuildReminder(guildId, label, now);
+
+			await interaction.reply({
+				content: `Reminder \`${label}\` is no longer snoozed.`,
+				flags: MessageFlags.Ephemeral,
+			});
+			await refreshGuildStatusMessage(interaction.client, guildId);
+			return;
+		}
+
 		if (subcommand === 'delete') {
 			const label = interaction.options.getString('label', true).toLowerCase();
 
@@ -302,10 +400,11 @@ export default {
 				return;
 			}
 
-			const lines = reminders.map(
-				(r) =>
-					`• \`${r.reminder_label}\` — every ${r.interval_minutes}m in <#${r.channel_id}> — ${r.enabled ? 'enabled' : 'disabled'}`,
-			);
+			const now = Date.now();
+			const lines = reminders.map((r) => {
+				const snoozed = isSnoozed(r.snoozed_until, now) ? `, snoozed until ${discordTime(r.snoozed_until, 'f')}` : '';
+				return `• \`${r.reminder_label}\` — every ${r.interval_minutes}m in <#${r.channel_id}> — ${r.enabled ? 'enabled' : 'disabled'}${snoozed}`;
+			});
 
 			await interaction.reply({
 				content: `**Master toggle:** ${masterEnabled ? 'enabled' : 'disabled'}\n\n**Reminders for this server:**\n${lines.join('\n')}`,
