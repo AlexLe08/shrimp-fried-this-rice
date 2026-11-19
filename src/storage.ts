@@ -211,6 +211,10 @@ export function updateGuildReminderLastSentForChannel(reminderId: number, channe
 // last_sent_at is clamped to `now` first, so re-snoozing (or cancelling) after
 // a skipMissed snooze doesn't keep that snooze's future last_sent_at; cancelling
 // is then the same as the snooze ending now.
+// Accepted race: a snooze set while that reminder's send is in flight has
+// its skipMissed last_sent_at overwritten when the scheduler records the
+// send; snoozed_until still holds, so at worst it sends when the snooze
+// ends instead of an interval later.
 const SNOOZE_SET = `snoozed_until = @until,
 	last_sent_at = CASE WHEN @skipMissed = 1 THEN @until ELSE MIN(last_sent_at, @now) END`;
 

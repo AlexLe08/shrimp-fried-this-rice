@@ -59,6 +59,19 @@ function checkChannelPermissions(
 	return `⚠️ I'm missing these permissions in that channel: ${missing.join(', ')}. The reminder was saved, but it won't send until I have them.`;
 }
 
+const MESSAGE_LIMIT = 2000;
+
+// Discord refuses a reply over 2000 characters, and 20 reminders with long
+// labels (and snoozes) can pass it; the ones that don't fit are counted
+// instead, and /reminder status (an embed, 4096) shows them all.
+function fitList(header: string, lines: string[]): string {
+	let content = header + lines.join('\n');
+	for (let shown = lines.length - 1; content.length > MESSAGE_LIMIT && shown >= 0; shown--) {
+		content = `${header}${lines.slice(0, shown).join('\n')}\n…and ${lines.length - shown} more; \`/reminder status\` lists them all.`;
+	}
+	return content;
+}
+
 // Manage Server only: reminders post publicly in the server's channels.
 export default {
 	data: new SlashCommandBuilder()
@@ -407,7 +420,10 @@ export default {
 			});
 
 			await interaction.reply({
-				content: `**Master toggle:** ${masterEnabled ? 'enabled' : 'disabled'}\n\n**Reminders for this server:**\n${lines.join('\n')}`,
+				content: fitList(
+					`**Master toggle:** ${masterEnabled ? 'enabled' : 'disabled'}\n\n**Reminders for this server:**\n`,
+					lines,
+				),
 				flags: MessageFlags.Ephemeral,
 			});
 			return;

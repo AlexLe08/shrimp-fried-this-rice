@@ -12,6 +12,13 @@ import {
 	__resetForTests,
 } from '../../../src/storage.ts';
 import { createMockInteraction } from '../../mockInteraction.ts';
+import { refreshGuildStatusMessage } from '../../../src/reminderEmbed.ts';
+
+// Only the refresh is replaced, to check that a snooze change calls it.
+vi.mock('../../../src/reminderEmbed.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('../../../src/reminderEmbed.ts')>()),
+	refreshGuildStatusMessage: vi.fn(),
+}));
 
 const NOW = 1_800_000_000_000;
 const ONE_MINUTE = 60_000;
@@ -32,6 +39,7 @@ function replyContent(interaction: ReturnType<typeof createMockInteraction>): st
 
 beforeEach(() => {
 	__resetForTests();
+	vi.clearAllMocks();
 	vi.spyOn(Date, 'now').mockReturnValue(NOW);
 	createGuildReminder({ guildId: 'g1', label: 'water', channelId: 'c1', intervalMinutes: 60, message: 'hi' });
 });
@@ -64,6 +72,7 @@ describe('/reminder snooze', () => {
 		expect(replyContent(interaction)).toContain(`Snoozed until <t:${(NOW + 120 * ONE_MINUTE) / 1000}:f>`);
 		expect(replyContent(interaction)).toContain('if one was due in the meantime');
 		expect(interaction.reply).toHaveBeenCalledWith(expect.objectContaining({ flags: expect.anything() }));
+		expect(refreshGuildStatusMessage).toHaveBeenCalledWith(interaction.client, 'g1');
 	});
 
 	it('with after: wait, moves the next send a full interval past the snooze', async () => {
@@ -123,6 +132,7 @@ describe('/reminder unsnooze', () => {
 
 		expect(getGuildReminderByLabel('g1', 'water')?.snoozed_until).toBe(0);
 		expect(replyContent(interaction)).toContain('no longer snoozed');
+		expect(refreshGuildStatusMessage).toHaveBeenCalledWith(interaction.client, 'g1');
 	});
 });
 
@@ -135,6 +145,28 @@ describe('/reminder list', () => {
 		await guildReminderCommand.execute(interaction as never);
 
 		expect(replyContent(interaction)).toContain(`enabled, snoozed until <t:${until / 1000}:f>`);
+	});
+
+	it("stays within Discord's 2000 characters with 20 long-labelled, snoozed reminders", async () => {
+		for (let i = 1; i < 20; i++) {
+			const label = `${String(i).padStart(2, '0')}-${'x'.repeat(47)}`;
+			createGuildReminder({
+				guildId: 'g1',
+				label,
+				channelId: '123456789012345678',
+				intervalMinutes: 1440,
+				message: 'hi',
+			});
+			snoozeGuildReminder('g1', label, { until: NOW + 60 * ONE_MINUTE, skipMissed: false, now: NOW });
+		}
+		const interaction = guildCommand({ subcommand: 'list' });
+
+		await guildReminderCommand.execute(interaction as never);
+
+		const content = replyContent(interaction);
+		expect(content.length).toBeLessThanOrEqual(2000);
+		expect(content).toMatch(/…and \d+ more; `\/reminder status` lists them all\.$/);
+		expect(content).toContain('`01-');
 	});
 });
 

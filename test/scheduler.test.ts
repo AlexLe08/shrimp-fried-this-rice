@@ -8,6 +8,8 @@ import {
 	upsertUserSettings,
 	getGuildReminderByLabel,
 	getUserSettings,
+	snoozeGuildReminder,
+	snoozeUser,
 	__resetForTests,
 } from '../src/storage.ts';
 import { createMockClient, createMockChannel, createMockUser } from './mocks.ts';
@@ -374,5 +376,37 @@ describe('scheduler — user DM reminders', () => {
 
 		expect(getUserSettings('u1')?.last_sent_at).toBeGreaterThan(0);
 		expect(second.send).not.toHaveBeenCalled();
+	});
+});
+
+describe('scheduler — snoozes', () => {
+	it('holds a snoozed reminder and DM back, and sends both once the snooze ends', async () => {
+		createGuildReminder({
+			guildId: 'g1',
+			label: 'water',
+			channelId: 'c1',
+			intervalMinutes: 5,
+			message: 'Drink water!',
+		});
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'Stretch!' });
+		const now = Date.now();
+		const until = now + 10 * 60_000;
+		snoozeGuildReminder('g1', 'water', { until, skipMissed: false, now });
+		snoozeUser('u1', { until, skipMissed: false, now });
+
+		const channel = createMockChannel();
+		const user = createMockUser();
+		const client = createMockClient({ channels: { c1: channel }, users: { u1: user } });
+
+		startScheduler(client as unknown as Client<true>);
+		await vi.advanceTimersByTimeAsync(9 * 60_000);
+
+		expect(channel.send).not.toHaveBeenCalled();
+		expect(user.send).not.toHaveBeenCalled();
+
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		expect(channel.send).toHaveBeenCalledWith('Drink water!');
+		expect(user.send).toHaveBeenCalledWith('Stretch!');
 	});
 });

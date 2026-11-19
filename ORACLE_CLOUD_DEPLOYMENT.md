@@ -130,7 +130,7 @@ Save with **Ctrl+O**, **Enter**, then exit with **Ctrl+X**.
 
 ### Native build tools (a fallback)
 
-`better-sqlite3` is a native C++ module. Version 13, the one in `package-lock.json`, ships prebuilt binaries, including `linux-arm64` for this VM, so installing it compiles nothing. Its install step only compiles from source (through `node-gyp`) when no prebuilt binary matches the machine, for example after a change of `better-sqlite3` version or platform. That needs a compiler toolchain, so it's worth having on the VM anyway:
+`better-sqlite3` is a native C++ module. Version 13, the one in `package-lock.json`, ships prebuilt binaries, including `linux-arm64` for this VM, so installing it compiles nothing. npm still runs its `node-gyp` install step, which needs `python3` even then; that step only compiles from source when no prebuilt binary matches the machine, for example after a change of `better-sqlite3` version or platform, and that needs a compiler toolchain as well:
 
 ```bash
 sudo apt install -y build-essential python3

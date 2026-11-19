@@ -47,7 +47,9 @@ migrations.
 - Migrations run when the bot starts, which on the VM is the deploy's
   `systemctl restart`. A migration that fails rolls back with its
   transaction and the bot exits; the deploy's login check then fails the
-  job, and the database is as it was before.
+  job, and the database is as it was before. `Restart=on-failure` keeps
+  restarting the bot every 5 seconds, failing the same way, so no
+  reminders send until a fix is deployed.
 - A migration, once merged, must never be edited or reordered: production
   has already run it. A fix is a new migration.
 - Without down migrations, rolling back means reverting the code and

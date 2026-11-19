@@ -91,6 +91,21 @@ describe('schema migrations', () => {
 		expect(userColumns).toContain('snoozed_until');
 	});
 
+	it('rolls back the whole migration, and its version, when part of it fails', async () => {
+		createPreMigrationDatabase();
+		// The first ALTER (guild_reminders) succeeds; the second fails on the
+		// column that's already there.
+		const db = new Database(dbPath);
+		db.exec('ALTER TABLE user_settings ADD COLUMN snoozed_until INTEGER NOT NULL DEFAULT 0');
+		db.close();
+
+		await expect(openStorage()).rejects.toThrow(/duplicate column/);
+
+		const { version, reminderColumns } = inspect();
+		expect(version).toBe(0);
+		expect(reminderColumns).not.toContain('snoozed_until');
+	});
+
 	it('does nothing on a database that is already up to date', async () => {
 		createPreMigrationDatabase();
 		(await openStorage()).closeDatabase();
