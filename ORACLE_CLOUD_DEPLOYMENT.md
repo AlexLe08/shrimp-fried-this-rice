@@ -167,7 +167,7 @@ npm install-scripts approve better-sqlite3
 npm start
 ```
 
-Confirm the bot shows online in Discord and responds to a test command (e.g. `/ping`). Stop with **Ctrl+C** once confirmed — this is expected to take the bot offline, since Phase 7 below is what keeps it running permanently.
+Confirm the bot shows online in Discord and responds to a test command (e.g. `/reminder list` or `/remindme`). Stop with **Ctrl+C** once confirmed — this is expected to take the bot offline, since Phase 7 below is what keeps it running permanently.
 
 **Firewall note:** no inbound firewall/security list changes are needed. The bot only makes outbound connections to Discord; nothing needs to connect into the VM.
 
