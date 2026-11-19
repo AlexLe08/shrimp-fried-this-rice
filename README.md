@@ -9,14 +9,12 @@ A Discord bot built with **TypeScript** and **discord.js v14** that periodically
 **Core feature set is complete, deployed, and running in production:**
 - Slash command loading and registration (global — works in any server the bot is invited to, plus direct DMs)
 - Event handling (`ClientReady`, `InteractionCreate`)
-- Per-command, per-user cooldowns
-- A `/reload` command for hot-reloading a single command file without restarting the bot
+- Per-command, per-user cooldowns (3 seconds by default)
 - SQLite-backed persistence (`src/storage.ts`) for server and per-user settings
 - A polling scheduler (`src/scheduler.ts`) that sends reminders when they're due, hardened against overlapping poll ticks
 - Full CRUD management of server reminders (capped at 20 per server to guard against runaway/abusive creation), plus a server-wide master toggle
 - A live-updating status embed (`/reminder status`) listing all of a server's reminders with Discord relative timestamps for their next fire time; automatically re-posts/edits itself whenever a reminder fires or its settings change (`src/reminderEmbed.ts`)
 - Personal opt-in DM reminders, independent of any server setting — configurable directly via DM with the bot
-- A handful of utility commands (`/ping`, `/echo`, `/info`, `/server`, `/user`) used to shake out the framework
 - Graceful shutdown handling (`src/shutdown.ts`) — on `SIGTERM`/`SIGINT`, the scheduler is stopped, the Discord client is cleanly destroyed, and the database connection is closed, with a 5-second force-exit safety net in case cleanup ever hangs
 - Deployed 24/7 on an Oracle Cloud "Always Free" VM, managed via systemd (see [Production Deployment](#production-deployment))
 - A Vitest test suite covering **~96% of statements / ~97% of lines** across the entire codebase — persistence, scheduling, embeds, event handling, shutdown, and every command (see [Testing](#testing))
@@ -163,13 +161,6 @@ Key production-specific details, for future reference:
 
 | Command | Description |
 |---|---|
-| `/ping` | Replies with "Pong!" — basic connectivity check. Has a 5-second cooldown. |
-| `/echo` | Sends your input message to a chosen text channel, optionally ephemeral. |
-| `/info user [target]` | Shows info about a server member (or yourself, if no target given). |
-| `/info server` | Shows basic info about the current server. |
-| `/server` | Shows the server's name and member count. |
-| `/user` | Shows the invoking user's username and server join date. |
-| `/reload <command>` | Hot-reloads a single command file's code without restarting the bot. |
 | `/reminder create <label> <channel> <interval> <message>` | Creates a new server reminder (max 20 per server). Interval must be 5–1440 minutes. Warns (but still saves) if the bot lacks permissions in the target channel. |
 | `/reminder edit <label> [channel] [interval] [message]` | Edits one or more fields of an existing reminder; unspecified fields are left unchanged. |
 | `/reminder list` | Lists the server's master toggle state, followed by every configured reminder and its status (ephemeral, text-only). |
@@ -194,7 +185,6 @@ src/
     command.ts           # shared Command interface
     types.d.ts            # module augmentation (adds `commands`/`cooldowns` to discord.js's Client)
   commands/
-    utility/              # ping, echo, info, server, user, reload
     reminderCore/          # reminder (guildreminder.ts), remindme
   events/
     ready.ts               # ClientReady handler — also starts the scheduler
@@ -215,7 +205,6 @@ test/
     userSettings.test.ts            # upsert behavior + due-reminder tests for DM settings
     dueReminders.test.ts            # due-reminder boundary/edge-case tests for guild reminders
   commands/
-    utility/                        # ping, echo, info, server, user, reload tests
     reminderCore/                   # guildreminder, remindme tests
   events/
     ready.test.ts
