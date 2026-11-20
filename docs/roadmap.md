@@ -110,7 +110,7 @@ Later item), not a follow-up.
   ones whose server lost the boost for them, and still save. The
   `GuildExpressions` intent keeps the bot's emoji list current, so an
   emoji added after startup isn't flagged.
-- **Narrow client types for the scheduler and status embed** (2026-11-20).
+- **Narrow client types for the scheduler and status embed** (2026-11-20, #28).
   `startScheduler` and `refreshGuildStatusMessage` take `SchedulerClient`
   and `StatusMessageClient`: what they call on the client, down to the
   channel, user and message, rather than all of `Client`. Narrowing only
