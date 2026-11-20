@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { PermissionFlagsBits } from 'discord.js';
 import guildReminderCommand from '../../../src/commands/reminderCore/guildreminder.ts';
 import {
 	getGuildReminderByLabel,
@@ -141,6 +142,29 @@ describe('/reminder create', () => {
 		expect(getGuildReminderByLabel('g1', 'water')).toBeDefined();
 		expect(interaction.reply).toHaveBeenCalledWith(
 			expect.objectContaining({ content: expect.stringContaining('missing these permissions') }),
+		);
+	});
+
+	it('warns when the bot can send but not embed links, since reminders are embeds', async () => {
+		const channel = createMockChannel();
+		(channel as Record<string, unknown>)['permissionsFor'] = vi.fn(() => ({
+			has: (permission: bigint) => permission !== PermissionFlagsBits.EmbedLinks,
+		}));
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: makeGuild(),
+			options: {
+				subcommand: 'create',
+				strings: { label: 'water', message: 'hi' },
+				channels: { channel },
+				integers: { interval: 60 },
+			},
+		});
+
+		await guildReminderCommand.execute(interaction as never);
+
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining('permissions in that channel: Embed Links.') }),
 		);
 	});
 });

@@ -9,6 +9,7 @@ import {
 	type GuildReminder,
 } from './storage.ts';
 import { refreshGuildStatusMessage } from './reminderEmbed.ts';
+import { buildReminderMessage } from './reminderMessage.ts';
 
 /** How often the scheduler checks for due reminders. Should be <= the smallest allowed interval (5 min). */
 const POLL_INTERVAL_MS = 60_000;
@@ -88,7 +89,7 @@ async function checkGuildReminders(client: Client<true>): Promise<void> {
 				continue;
 			}
 
-			await channel.send(reminder.message);
+			await channel.send(buildReminderMessage(reminder.reminder_label, reminder.message, reminder.interval_minutes));
 			updateGuildReminderLastSent(reminder.id, now);
 			// Shutting down: the send is recorded, and the embed's next-fire
 			// time is still right after the restart. Refreshing it would only
@@ -123,7 +124,7 @@ async function checkUserReminders(client: Client<true>): Promise<void> {
 		if (stopping) break;
 		try {
 			const user = await client.users.fetch(userSettings.user_id);
-			await user.send(userSettings.message);
+			await user.send(buildReminderMessage('Reminder', userSettings.message, userSettings.interval_minutes));
 			updateUserLastSent(userSettings.user_id, now);
 		} catch (error) {
 			console.error(`Failed to send DM reminder to user ${userSettings.user_id}:`, error);

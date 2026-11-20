@@ -54,6 +54,8 @@ function checkChannelPermissions(
 	const missing: string[] = [];
 	if (!perms.has(PermissionFlagsBits.ViewChannel)) missing.push('View Channel');
 	if (!perms.has(PermissionFlagsBits.SendMessages)) missing.push('Send Messages');
+	// Reminders are sent as embeds.
+	if (!perms.has(PermissionFlagsBits.EmbedLinks)) missing.push('Embed Links');
 
 	if (missing.length === 0) return null;
 	// Warn but still save: an admin may set the reminder up first and grant the
