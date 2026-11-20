@@ -1,0 +1,348 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`deploy-commands > registers the same command definitions 1`] = `
+[
+  {
+    "contexts": [
+      0,
+    ],
+    "default_member_permissions": "32",
+    "description": "Manage this server's periodic reminders.",
+    "name": "reminder",
+    "options": [
+      {
+        "description": "Create a new reminder.",
+        "name": "create",
+        "options": [
+          {
+            "description": "A short name for this reminder (e.g. "water")",
+            "max_length": 50,
+            "name": "label",
+            "required": true,
+            "type": 3,
+          },
+          {
+            "channel_types": [
+              0,
+            ],
+            "description": "The channel to post this reminder in",
+            "name": "channel",
+            "required": true,
+            "type": 7,
+          },
+          {
+            "description": "How often to send this reminder, in minutes",
+            "max_value": 1440,
+            "min_value": 5,
+            "name": "interval",
+            "required": true,
+            "type": 4,
+          },
+          {
+            "description": "The reminder text to send",
+            "max_length": 2000,
+            "name": "message",
+            "required": true,
+            "type": 3,
+          },
+          {
+            "description": "Send as an embed (default: yes). Messages with links, or without Embed Links, are plain text",
+            "name": "embed",
+            "required": false,
+            "type": 5,
+          },
+        ],
+        "type": 1,
+      },
+      {
+        "description": "List all reminders configured for this server.",
+        "name": "list",
+        "options": [],
+        "type": 1,
+      },
+      {
+        "description": "Enable or disable a specific reminder.",
+        "name": "toggle",
+        "options": [
+          {
+            "autocomplete": true,
+            "description": "The reminder's label",
+            "name": "label",
+            "required": true,
+            "type": 3,
+          },
+          {
+            "description": "Whether this reminder should be active",
+            "name": "enabled",
+            "required": true,
+            "type": 5,
+          },
+        ],
+        "type": 1,
+      },
+      {
+        "description": "Delete a reminder.",
+        "name": "delete",
+        "options": [
+          {
+            "autocomplete": true,
+            "description": "The reminder's label",
+            "name": "label",
+            "required": true,
+            "type": 3,
+          },
+        ],
+        "type": 1,
+      },
+      {
+        "description": "Turn all reminders for this server on or off at once.",
+        "name": "master",
+        "options": [
+          {
+            "description": "Whether reminders should be active for this server",
+            "name": "enabled",
+            "required": true,
+            "type": 5,
+          },
+        ],
+        "type": 1,
+      },
+      {
+        "description": "Edit an existing reminder.",
+        "name": "edit",
+        "options": [
+          {
+            "autocomplete": true,
+            "description": "The reminder's label",
+            "name": "label",
+            "required": true,
+            "type": 3,
+          },
+          {
+            "channel_types": [
+              0,
+            ],
+            "description": "New channel to post this reminder in",
+            "name": "channel",
+            "required": false,
+            "type": 7,
+          },
+          {
+            "description": "New interval in minutes",
+            "max_value": 1440,
+            "min_value": 5,
+            "name": "interval",
+            "required": false,
+            "type": 4,
+          },
+          {
+            "description": "New reminder text",
+            "max_length": 2000,
+            "name": "message",
+            "required": false,
+            "type": 3,
+          },
+          {
+            "description": "Send as an embed (default: yes). Messages with links, or without Embed Links, are plain text",
+            "name": "embed",
+            "required": false,
+            "type": 5,
+          },
+        ],
+        "type": 1,
+      },
+      {
+        "description": "Hold a reminder back for a while; it resumes by itself when the snooze ends.",
+        "name": "snooze",
+        "options": [
+          {
+            "autocomplete": true,
+            "description": "The reminder's label",
+            "name": "label",
+            "required": true,
+            "type": 3,
+          },
+          {
+            "choices": [
+              {
+                "name": "30 minutes",
+                "value": 30,
+              },
+              {
+                "name": "1 hour",
+                "value": 60,
+              },
+              {
+                "name": "2 hours",
+                "value": 120,
+              },
+              {
+                "name": "4 hours",
+                "value": 240,
+              },
+              {
+                "name": "8 hours",
+                "value": 480,
+              },
+              {
+                "name": "1 day",
+                "value": 1440,
+              },
+              {
+                "name": "3 days",
+                "value": 4320,
+              },
+              {
+                "name": "1 week",
+                "value": 10080,
+              },
+            ],
+            "description": "How long to snooze it for",
+            "name": "duration",
+            "required": true,
+            "type": 4,
+          },
+          {
+            "choices": [
+              {
+                "name": "Send one right away if it was missed (default)",
+                "value": "send_missed",
+              },
+              {
+                "name": "Wait a full interval after the snooze ends",
+                "value": "wait",
+              },
+            ],
+            "description": "What happens when the snooze ends (default: send one right away if it was missed)",
+            "name": "after",
+            "required": false,
+            "type": 3,
+          },
+        ],
+        "type": 1,
+      },
+      {
+        "description": "End a snooze early.",
+        "name": "unsnooze",
+        "options": [
+          {
+            "autocomplete": true,
+            "description": "The reminder's label",
+            "name": "label",
+            "required": true,
+            "type": 3,
+          },
+        ],
+        "type": 1,
+      },
+      {
+        "description": "Post a live-updating embed showing this server's reminders and when they'll next fire.",
+        "name": "status",
+        "options": [],
+        "type": 1,
+      },
+    ],
+    "type": 1,
+  },
+  {
+    "description": "Configure personal DM reminders for yourself.",
+    "name": "remindme",
+    "options": [
+      {
+        "description": "Whether you want to receive DM reminders",
+        "name": "enabled",
+        "required": false,
+        "type": 5,
+      },
+      {
+        "description": "How often to DM you, in minutes",
+        "max_value": 1440,
+        "min_value": 5,
+        "name": "interval",
+        "required": false,
+        "type": 4,
+      },
+      {
+        "description": "The reminder text to DM you",
+        "max_length": 2000,
+        "name": "message",
+        "required": false,
+        "type": 3,
+      },
+      {
+        "description": "Send as an embed (default: yes). Messages with links, or without Embed Links, are plain text",
+        "name": "embed",
+        "required": false,
+        "type": 5,
+      },
+      {
+        "choices": [
+          {
+            "name": "30 minutes",
+            "value": 30,
+          },
+          {
+            "name": "1 hour",
+            "value": 60,
+          },
+          {
+            "name": "2 hours",
+            "value": 120,
+          },
+          {
+            "name": "4 hours",
+            "value": 240,
+          },
+          {
+            "name": "8 hours",
+            "value": 480,
+          },
+          {
+            "name": "1 day",
+            "value": 1440,
+          },
+          {
+            "name": "3 days",
+            "value": 4320,
+          },
+          {
+            "name": "1 week",
+            "value": 10080,
+          },
+          {
+            "name": "Cancel snooze",
+            "value": 0,
+          },
+        ],
+        "description": "Pause your DM reminders for a while, or cancel a snooze",
+        "name": "snooze",
+        "required": false,
+        "type": 4,
+      },
+      {
+        "choices": [
+          {
+            "name": "Send one right away if it was missed (default)",
+            "value": "send_missed",
+          },
+          {
+            "name": "Wait a full interval after the snooze ends",
+            "value": "wait",
+          },
+        ],
+        "description": "What happens when the snooze ends (default: send one right away if it was missed)",
+        "name": "after_snooze",
+        "required": false,
+        "type": 3,
+      },
+      {
+        "description": "Delete all your personal reminder settings",
+        "name": "reset",
+        "required": false,
+        "type": 5,
+      },
+    ],
+    "type": 1,
+  },
+]
+`;
