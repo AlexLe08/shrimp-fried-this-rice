@@ -52,6 +52,24 @@ describe('deploy-commands', () => {
 		expect(process.exitCode).toBeUndefined();
 	});
 
+	// What users see in Discord: names, options, descriptions, choices and
+	// permissions. A refactor that changes any of them fails here; one that
+	// means to updates the snapshot (`npx vitest -u`) in the same PR.
+	it('registers the same command definitions', async () => {
+		put.mockResolvedValue([]);
+
+		await runDeployCommands();
+
+		const { body } = put.mock.calls[0]![1] as { body: { name: string }[] };
+		// Through JSON, as REST sends it: a key left undefined never reaches
+		// Discord, so a builder that omits it instead isn't a change.
+		const sent = JSON.parse(JSON.stringify(body)) as { name: string }[];
+		// Sorted so the order the loader reads files in can't change the snapshot.
+		const definitions = sent.sort((a, b) => a.name.localeCompare(b.name));
+		expect(definitions.map((command) => command.name)).toEqual(['reminder', 'remindme']);
+		expect(definitions).toMatchSnapshot();
+	});
+
 	it('exits nonzero when Discord refuses the registration', async () => {
 		const error = new Error('401: Unauthorized');
 		put.mockRejectedValue(error);
