@@ -126,12 +126,35 @@ Later item), not a follow-up.
 Feature work, in this order unless the owner says otherwise. Schema
 changes are cheapest now, while the bot is pre-release (decision 0003).
 
-1. **File or audio attachments on reminders** (bundled sounds or user
+Items 1 to 4 are designed in
+[`plans/minecraft-ff14-features.md`](plans/minecraft-ff14-features.md),
+which has their PR order (its "Suggested pull request order"), the inputs
+to ask the owner for, and which facts are still unverified. The owner put
+them ahead of items 5 and 6.
+
+1. **Trial FC member follow-ups (`/recruit`)**
+   ([Track E, E1](plans/minecraft-ff14-features.md#e-recruit-trial-fc-members-for-moderators)).
+   Moderators record trial members by in-game name; 30 days later the bot
+   pings them to check in. First, because it's the smallest, and it adds
+   decision record 0004 (feature storage modules beside `storage.ts`).
+2. **Collection tracker (`/collection`, `/collectionadmin`)**
+   ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
+   Per-server collections (FF14 mounts first), imported once from the
+   group's spreadsheet.
+3. **Minecraft bridge** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
+   A zero-dependency helper beside the Minecraft server that posts
+   start/stop, chat and real errors through a webhook.
+4. **Lodestone news and scheduled events**
+   ([Track C](plans/minecraft-ff14-features.md#track-c-lodestone-news-and-scheduled-events)),
+   then the **role check-in** after onboarding
+   ([Track E, E2](plans/minecraft-ff14-features.md#e-role-check-in-after-choosing-a-role)),
+   which needs the Server Members Intent switched on first.
+5. **File or audio attachments on reminders** (bundled sounds or user
    uploads). Open questions first: where uploads live (the VM's disk, or
    Discord's own CDN by re-posting the attachment URL, which expires),
    size limits, and the free tier. Likely a design note or decision record
    before code.
-2. **Rework `/remindme`** (brainstorm in its own session first). One
+6. **Rework `/remindme`** (brainstorm in its own session first). One
    command does everything through optional options: view (no options),
    update (`enabled`, `interval`, `message`, `embed`), snooze, and `reset`,
    with rules about which combine. Options to weigh include subcommands
@@ -172,7 +195,10 @@ runtime dependency is the owner's decision.
   covers it while there are no users or releases.
 - Dependabot version updates (`.github/dependabot.yml`); security updates
   are already on.
-- A web dashboard for configuration (longer term).
+- A web dashboard for configuration, after the tracks in Next up:
+  [Track D](plans/minecraft-ff14-features.md#track-d-web-dashboard-after-a-b-c-and-e)
+  says why it waits and what it needs (HTTPS on free tiers only, its
+  libraries being the owner's decision).
 - Custom emoji limited to certain roles: the warning doesn't check
   whether the bot has one of the emoji's roles, so such an emoji can still
   show as text unwarned.
