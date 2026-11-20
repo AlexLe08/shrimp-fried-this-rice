@@ -75,6 +75,8 @@ describe('scheduler — guild reminders', () => {
 		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(60_000);
 
+		// The bot's own permissions decide it, not anyone else's.
+		expect(permissionsFor).toHaveBeenCalledWith(client.user);
 		expect(channel.send).toHaveBeenCalledWith('Drink water!');
 	});
 
