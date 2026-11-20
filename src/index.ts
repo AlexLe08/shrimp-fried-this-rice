@@ -12,7 +12,9 @@ import { toEventListener } from './eventListener.ts';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+// GuildExpressions keeps each server's emoji current after startup, so an
+// emoji added since then isn't warned about as one the bot can't use.
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildExpressions] });
 
 client.commands = new Collection();
 const foldersPath = path.join(__dirname, 'commands');

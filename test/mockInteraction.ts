@@ -18,7 +18,7 @@ interface MockInteractionConfig {
 	member?: Record<string, unknown> | null;
 	user?: { id: string; username: string };
 	channel?: unknown;
-	client?: { commands?: Collection<string, unknown>; cooldowns?: Collection<string, unknown> };
+	client?: { commands?: Collection<string, unknown>; cooldowns?: Collection<string, unknown>; emojis?: unknown };
 	replied?: boolean;
 	deferred?: boolean;
 	isChatInputCommand?: boolean;
