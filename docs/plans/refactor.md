@@ -54,10 +54,11 @@ Empty folders aren't tracked by git, so `ffxiv/` and `minecraft/` are created by
 
 ## Tasks
 
-### 1. Snapshot the registered commands
+### ~~1. Snapshot the registered commands~~ (done, #PR)
 
 - Branch `test/snapshot-command-definitions`; PR `test: snapshot every command's registered definition`.
 - A test that loads each command and matches `data.toJSON()` against a Vitest snapshot (`toMatchSnapshot`, stored in `test/__snapshots__/`). A refactor that changes a name, option, description, choice or permission then fails it. Tasks 2 and 5 rely on it.
+- As built: `test/deployCommands.test.ts` snapshots the body `deploy-commands.ts` sends (mocked `REST`), sorted by name and passed through JSON as REST sends it, rather than loading the command files itself. It needs no third copy of the loader, and task 2 can move the commands and replace the loader without touching the test, since `deploy-commands.ts` stays put. One snapshot of the whole list, so a dropped command fails it (a per-command snapshot would only turn obsolete).
 - Deploys: no runtime change.
 
 ### 2. Feature-folder layout and one command loader
