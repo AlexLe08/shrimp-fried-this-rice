@@ -9,7 +9,7 @@ export const EMBED_OPTION_DESCRIPTION =
 
 // Code and spoilers are where an author keeps a mention from pinging or a
 // link from showing, so they don't count for either.
-const HIDDEN = /```[\s\S]*?```|`[^`\n]*`|\|\|[\s\S]*?\|\|/g;
+export const HIDDEN = /```[\s\S]*?```|`[^`\n]*`|\|\|[\s\S]*?\|\|/g;
 // Mentions inside an embed render but don't notify (checked on the dev
 // server: Discord lists no mentions for them), so they're repeated in the
 // message's content. Not escaped ones (`\@everyone`), not `@here` inside an
