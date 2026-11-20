@@ -54,7 +54,7 @@ Empty folders aren't tracked by git, so `ffxiv/` and `minecraft/` are created by
 
 ## Tasks
 
-### ~~1. Snapshot the registered commands~~ (done, #PR)
+### ~~1. Snapshot the registered commands~~ (done, #31)
 
 - Branch `test/snapshot-command-definitions`; PR `test: snapshot every command's registered definition`.
 - A test that loads each command and matches `data.toJSON()` against a Vitest snapshot (`toMatchSnapshot`, stored in `test/__snapshots__/`). A refactor that changes a name, option, description, choice or permission then fails it. Tasks 2 and 5 rely on it.
