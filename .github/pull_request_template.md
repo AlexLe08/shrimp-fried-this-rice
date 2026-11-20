@@ -9,6 +9,7 @@ definition (registered on deploy) or a database schema change. -->
 - [ ] `scripts/check.sh` passes
 - [ ] New behaviour has tests; no test deleted or loosened (except tests of deleted code, named above)
 - [ ] README updated if commands, behaviour, setup or deployment changed
+- [ ] `docs/roadmap.md`: Done entry added, and its Next up or Later item moved or removed
 
 ## Not verified
 

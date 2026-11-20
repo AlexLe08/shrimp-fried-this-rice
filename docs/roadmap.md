@@ -7,26 +7,27 @@ Later item), not a follow-up.
 
 ## Done
 
-- **First version** (2026-08-27 to 09-06, #1). Started from the
+- **First version** (2026-08-27 to 09-06, direct commits then #1). Started from the
   discord.js guide's command and event handlers. SQLite storage through
   `better-sqlite3`, with `storage.ts` as the only module that touches it;
   `/reminder` (create, edit, list, toggle, delete, master) and
   `/remindme`; the polling scheduler, guarded against overlapping
-  checks; the self-updating `/reminder status` embed. Commands are
+  checks; the self-updating `/reminder status` embed; a 3-second
+  per-user cooldown on each command. A production incident, a command
+  whose error reply also failed crashing the bot through an unhandled
+  rejection, was fixed in #1 with a `try`/`catch` around the fallback
+  reply. Commands are
   registered globally (`DISCORD_GUILD_ID` dropped), so the bot works in
   any server and `/remindme` in DMs. Deployed to an Oracle Cloud "Always
   Free" VM as the systemd service `discordbotshrimp`
   (`ORACLE_CLOUD_DEPLOYMENT.md`).
 - **Tests and CI** (2026-09-08 to 09-12, #2, #3). Vitest against an
   in-memory SQLite, with small `vi.fn()` fakes for Discord, and a CI
-  workflow (type-check and tests) that `main`'s ruleset requires. Two
-  bugs it caught:
-  - `getDueGuildReminders` used an inner `JOIN` on `guild_settings`, so a
-    server that never ran `/reminder master` (no row) never had its
-    reminders sent. It's a `LEFT JOIN` treating no row as enabled.
-  - A command whose error reply also failed crashed the bot through an
-    unhandled rejection (a production incident). The fallback reply has
-    its own `try`/`catch`, and a test reproduces the incident.
+  workflow (type-check and tests) that `main`'s ruleset requires. The
+  tests caught one bug: `getDueGuildReminders` used an inner `JOIN` on
+  `guild_settings`, so a server that never ran `/reminder master` (no
+  row) never had its reminders sent. It's a `LEFT JOIN` treating no row
+  as enabled. A regression test also reproduces #1's crash incident.
 - **Per-server cap, graceful shutdown, deploy job** (2026-09-12 to 09-17,
   #4 to #6). At most 20 reminders per server. `SIGTERM`/`SIGINT` stop
   the scheduler, destroy the client and close the database, with a
@@ -49,10 +50,15 @@ Later item), not a follow-up.
 - **Shutdown waits for sends under way** (2026-11-19, #11). A deploy's
   restart no longer repeats a reminder that was mid-send. A check that
   throws is logged instead of crashing the process.
-- **Housekeeping** (2026-11-19, #12 to #15). MIT licence; the docs name
-  the deploy job and the `discordbotshrimp` service; comments say why,
-  not what; ESLint (typescript-eslint, type-aware promise rules) and
-  Prettier, run by CI and `scripts/check.sh`.
+- **Housekeeping** (2026-11-19, #7, #12 to #15). MIT licence; the docs
+  name the deploy job and the `discordbotshrimp` service; comments say
+  why, not what; Dependabot's `undici` security bump. ESLint
+  (typescript-eslint, type-aware promise rules) and Prettier, run by CI
+  and `scripts/check.sh`, with TypeScript pinned to `~6.0` for
+  typescript-eslint. Lint found two real problems, fixed in #15: a
+  rejected event handler crashed the process (now logged, through
+  `src/eventListener.ts`), and a failed `client.login` was unhandled (now
+  logged, exit 1, so systemd restarts it).
 - **Deploy hardening** (2026-11-19, #17 to #19). A failed command
   registration exits nonzero and fails the deploy; the VM installs with
   `npm ci`, exactly what CI tested; the deploy waits, until 60 s after
@@ -79,7 +85,9 @@ changes are cheapest now, while the bot is pre-release (decision 0003).
    autocomplete handler offering the server's labels (Discord sends the
    partial input; the bot answers with up to 25 choices) removes that.
    Needs `interactionCreate.ts` to route autocomplete interactions, which
-   it doesn't today. No schema change.
+   it doesn't today, ahead of the cooldown check (an autocomplete fires
+   on every keystroke). The `label` options gain `setAutocomplete(true)`,
+   a command change the deploy re-registers. No schema change.
 2. **Embeds for the messages reminders send.** They're plain text today
    (pasted image, GIF, YouTube and Spotify links still unfurl). Options:
    a fixed style for every reminder (no schema change), or per-reminder

@@ -16,6 +16,7 @@ Deployed and running in production. What's done, what's next, and candidates for
 - Server reminders (`/reminder`): up to 20 per server, each posting its message to a channel every 5 to 1440 minutes, with a server-wide master toggle. Managing them needs **Manage Server**.
 - A self-updating status embed (`/reminder status`) listing every reminder and when it next sends, refreshed whenever one sends or changes.
 - Personal DM reminders (`/remindme`), opt-in and independent of any server.
+- Each command has a 3-second per-user cooldown.
 - Snoozing: a server reminder (`/reminder snooze`) or your own DM reminders (`/remindme snooze:`) can be held back for 30 minutes to a week, then resume by themselves. Each snooze chooses what happens when it ends: send one right away if one was missed (the default), or wait a full interval. Active snoozes show in `/reminder list`, `/reminder status` and `/remindme`.
 - Failures are handled per reminder: one whose channel was deleted (or can't take messages) is disabled, and shows as disabled in `/reminder status`; re-enable it with `/reminder edit` to a new channel, then `/reminder toggle`. A send Discord refuses (missing permissions, DMs closed) is retried after the reminder's own interval; network and Discord server errors on the next minute's poll.
 - Restarts are clean: on `SIGTERM`/`SIGINT` (every deploy), a send already under way finishes and is recorded, so it isn't repeated after the restart.

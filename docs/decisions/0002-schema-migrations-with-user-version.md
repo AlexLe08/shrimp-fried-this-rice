@@ -38,7 +38,7 @@ migrations.
 
 **Why:**
 
-Necessary to edit existing tables when we previously had no methods to do so. 
+Necessary to edit existing tables when we previously had no methods to do so.
 
 ## Consequences
 

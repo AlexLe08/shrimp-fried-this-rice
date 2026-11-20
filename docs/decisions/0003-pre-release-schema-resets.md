@@ -36,7 +36,7 @@ working. The phase ends when the owner removes the pre-release line from
 README's Status and the matching sentence from CLAUDE.md. After that,
 every change is a migration, as decision 0002 describes.
 
-**Why:** 
+**Why:**
 
 There are many more features that will be added to this bot before it sees practical use. Before we commit to supporting older schemas, I wish to solidify this data structure with these future features in mind first before we have "official" users, so breaking changes should be acceptable before practical use.
 
