@@ -1,5 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { DiscordAPIError, type Client } from 'discord.js';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import {
+	DiscordAPIError,
+	PermissionFlagsBits,
+	type Client,
+	type EmbedBuilder,
+	type MessageCreateOptions,
+} from 'discord.js';
 import { startScheduler, stopScheduler } from '../src/scheduler.ts';
 import {
 	createGuildReminder,
@@ -28,6 +34,12 @@ function discordError(code: number, status: number): DiscordAPIError {
 	return new DiscordAPIError({ message: 'mock', code }, code, status, 'POST', 'https://discord.com/api/v10/mock', {});
 }
 
+// Reminders are sent as embeds (src/reminderMessage.ts): the embed of a send call, as Discord receives it.
+function sentEmbed(send: Mock, call = 0) {
+	const options = send.mock.calls[call]?.[0] as MessageCreateOptions;
+	return (options.embeds?.[0] as EmbedBuilder).toJSON();
+}
+
 describe('scheduler — guild reminders', () => {
 	it('sends a due reminder to its channel and updates last_sent_at', async () => {
 		createGuildReminder({
@@ -44,8 +56,32 @@ describe('scheduler — guild reminders', () => {
 		startScheduler(client as unknown as Client<true>);
 		await vi.advanceTimersByTimeAsync(60_000);
 
-		expect(channel.send).toHaveBeenCalledWith('Drink water!');
+		expect(sentEmbed(channel.send)).toMatchObject({
+			title: 'water',
+			description: 'Drink water!',
+			footer: { text: 'Every 5 minutes' },
+		});
 		expect(getGuildReminderByLabel('g1', 'water')?.last_sent_at).toBeGreaterThan(0);
+	});
+
+	it('sends plain text where the bot lacks Embed Links', async () => {
+		createGuildReminder({
+			guildId: 'g1',
+			label: 'water',
+			channelId: 'c1',
+			intervalMinutes: 5,
+			message: 'Drink water!',
+		});
+		const channel = createMockChannel();
+		const permissionsFor = vi.fn(() => ({
+			has: (permission: bigint) => permission !== PermissionFlagsBits.EmbedLinks,
+		}));
+		const client = createMockClient({ channels: { c1: Object.assign(channel, { permissionsFor }) } });
+
+		startScheduler(client as unknown as Client<true>);
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		expect(channel.send).toHaveBeenCalledWith('Drink water!');
 	});
 
 	it('logs an error and does not throw when the channel is not found', async () => {
@@ -91,7 +127,7 @@ describe('scheduler — guild reminders', () => {
 		startScheduler(client as unknown as Client<true>);
 		await vi.advanceTimersByTimeAsync(60_000);
 
-		expect(workingChannel.send).toHaveBeenCalledWith('second');
+		expect(sentEmbed(workingChannel.send).description).toBe('second');
 	});
 
 	it('disables a reminder whose channel no longer exists', async () => {
@@ -146,7 +182,7 @@ describe('scheduler — guild reminders', () => {
 		await vi.advanceTimersByTimeAsync(60_000);
 
 		expect(statusMessage.edit).toHaveBeenCalled();
-		expect(working.send).toHaveBeenCalledWith('second');
+		expect(sentEmbed(working.send).description).toBe('second');
 
 		// Disabled, so never tried again.
 		await vi.advanceTimersByTimeAsync(10 * 60_000);
@@ -306,8 +342,23 @@ describe('scheduler — user DM reminders', () => {
 		startScheduler(client as unknown as Client<true>);
 		await vi.advanceTimersByTimeAsync(60_000);
 
-		expect(user.send).toHaveBeenCalledWith('Drink water!');
+		expect(sentEmbed(user.send)).toMatchObject({
+			title: 'Reminder',
+			description: 'Drink water!',
+			footer: { text: 'Every 5 minutes' },
+		});
 		expect(getUserSettings('u1')?.last_sent_at).toBeGreaterThan(0);
+	});
+
+	it("doesn't repeat mentions above a DM's embed, where they can't ping", async () => {
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: '@everyone stretch' });
+		const user = createMockUser();
+		const client = createMockClient({ users: { u1: user } });
+
+		startScheduler(client as unknown as Client<true>);
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		expect(user.send).toHaveBeenCalledWith(expect.not.objectContaining({ content: expect.anything() }));
 	});
 
 	it('logs an error and does not throw when a DM fails to send', async () => {
@@ -406,7 +457,7 @@ describe('scheduler — snoozes', () => {
 
 		await vi.advanceTimersByTimeAsync(60_000);
 
-		expect(channel.send).toHaveBeenCalledWith('Drink water!');
-		expect(user.send).toHaveBeenCalledWith('Stretch!');
+		expect(sentEmbed(channel.send).description).toBe('Drink water!');
+		expect(sentEmbed(user.send).description).toBe('Stretch!');
 	});
 });

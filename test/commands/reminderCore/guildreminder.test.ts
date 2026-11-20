@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { PermissionFlagsBits } from 'discord.js';
 import guildReminderCommand from '../../../src/commands/reminderCore/guildreminder.ts';
 import {
 	getGuildReminderByLabel,
@@ -141,6 +142,33 @@ describe('/reminder create', () => {
 		expect(getGuildReminderByLabel('g1', 'water')).toBeDefined();
 		expect(interaction.reply).toHaveBeenCalledWith(
 			expect.objectContaining({ content: expect.stringContaining('missing these permissions') }),
+		);
+	});
+
+	it('says a reminder goes out as plain text where the bot can send but not embed links', async () => {
+		const channel = createMockChannel();
+		(channel as Record<string, unknown>)['permissionsFor'] = vi.fn(() => ({
+			has: (permission: bigint) => permission !== PermissionFlagsBits.EmbedLinks,
+		}));
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: makeGuild(),
+			options: {
+				subcommand: 'create',
+				strings: { label: 'water', message: 'hi' },
+				channels: { channel },
+				integers: { interval: 60 },
+			},
+		});
+
+		await guildReminderCommand.execute(interaction as never);
+
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining('sent as plain text until I can') }),
+		);
+		// It still sends, so it mustn't say it won't.
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.not.stringContaining("won't send") }),
 		);
 	});
 });

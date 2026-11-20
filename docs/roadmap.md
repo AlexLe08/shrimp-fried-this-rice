@@ -81,26 +81,32 @@ Later item), not a follow-up.
   of the cooldown check (one fires per keystroke) and logs a failed one.
   Typing a label by hand still works, so the "No reminder found" check
   stays.
+- **Reminders as embeds** (2026-11-20, #23). Server and DM reminders send
+  an embed: the label as the title (`Reminder` in DMs), the message, and
+  an "Every N minutes" footer, in one fixed colour (per-reminder styles
+  would need a schema change). Checked on the dev server: a mention inside
+  an embed isn't a mention to Discord, and a link isn't previewed in a bot
+  message that has its own embed. So `src/reminderMessage.ts` repeats a
+  server reminder's user, role, `@everyone` and `@here` mentions above the
+  embed (not ones in code, spoilers, or escaped; within 2000 characters),
+  and sends a message with a link as plain text, as before, to keep its
+  preview. `/reminder create` and `edit` warn when Embed Links is missing,
+  and the scheduler sends plain text where it is: Discord refuses a bot's
+  embed without it (50013, seen on the dev server), which would have kept
+  that reminder from ever sending.
 
 ## Next up
 
 Feature work, in this order unless the owner says otherwise. Schema
 changes are cheapest now, while the bot is pre-release (decision 0003).
 
-1. **Embeds for the messages reminders send.** They're plain text today
-   (pasted image, GIF, YouTube and Spotify links still unfurl). Options:
-   a fixed style for every reminder (no schema change), or per-reminder
-   colour and title (new columns, a migration or, while pre-release, a
-   reset). The lean is the fixed style first. Embeds have their own
-   limits: description 4096 against the message's 2000, and mentions in
-   an embed don't ping.
-2. **Custom server emoji in reminder messages.** Discord's slash-command
+1. **Custom server emoji in reminder messages.** Discord's slash-command
    inputs don't always turn a picked custom emoji into its `<:name:id>`
    form, so it posts as text; Unicode emoji are fine. A Discord client
    limitation, so this is a workaround: for example, turning `:name:` in
    the message into the server's emoji when the reminder is saved.
    Investigate before choosing.
-3. **File or audio attachments on reminders** (bundled sounds or user
+2. **File or audio attachments on reminders** (bundled sounds or user
    uploads). Open questions first: where uploads live (the VM's disk, or
    Discord's own CDN by re-posting the attachment URL, which expires),
    size limits, and the free tier. Likely a design note or decision record
