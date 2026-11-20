@@ -85,10 +85,10 @@ What the owner should know about this choice: messages arrive from the **webhook
 
 ### Layout
 
-Code goes under `src/mcbridge/`. `src/index.ts` only scans `src/commands` and `src/events`, so the bot never loads it. Being under `src/`, it is also type-checked, linted (including the promise rules) and formatted like the rest. It deploys to the VM with every merge and sits there unused, so a Track A PR's Deploys line is "no runtime change for the bot".
+Code goes under `src/minecraft/bridge/`. The bot loads only the files in an area's `commands/` and `events/` folders (`src/core/loadCommands.ts`), and the bridge is in neither, so the bot never loads it. Being under `src/`, it is also type-checked, linted (including the promise rules) and formatted like the rest. It deploys to the VM with every merge and sits there unused, so a Track A PR's Deploys line is "no runtime change for the bot".
 
 ```
-src/mcbridge/
+src/minecraft/bridge/
   main.ts            # entrypoint: load config, wire tailer -> parser -> classifier -> sender
   config.ts          # load + validate config file / env
   tailer.ts          # polling file tailer
@@ -96,11 +96,11 @@ src/mcbridge/
   classify.ts        # parsed entry -> bridge event | null
   sender.ts          # queue, batching, rate limiting, webhook POST
   formats.ts         # per-flavor line-prefix patterns
-test/mcbridge/
+test/minecraft/bridge/
   fixtures/*.log     # real log samples, one per server flavor
 ```
 
-Add to `package.json`: `"mcbridge": "node ./src/mcbridge/main.ts"`. Add `src/mcbridge/main.ts` to the coverage `exclude` list in `vitest.config.ts`, for the same reason as `src/index.ts` (an entrypoint that only wires the tested parts together), and say so in the README's Testing section.
+Add to `package.json`: `"mcbridge": "node ./src/minecraft/bridge/main.ts"`. Add `src/minecraft/bridge/main.ts` to the coverage `exclude` list in `vitest.config.ts`, for the same reason as `src/index.ts` (an entrypoint that only wires the tested parts together), and say so in the README's Testing section.
 
 The code must stay within erasable TypeScript syntax (`erasableSyntaxOnly`), because Node runs it by type-stripping.
 
@@ -223,7 +223,7 @@ Vocabulary used below: a **collection** (for example "FF14 Mounts") holds **item
 
 ### Framework changes needed first
 
-Autocomplete support is already on `main` (#22). `Command.autocomplete`, the routing in `src/events/interactionCreate.ts` ahead of the cooldown with a failure logged, and `getFocused`/`respond` in `test/mockInteraction.ts` all exist, and `/reminder`'s label autocomplete (`test/commands/reminderCore/guildreminderAutocomplete.test.ts`) is the pattern to follow.
+Autocomplete support is already on `main` (#22). `Command.autocomplete`, the routing in `src/core/events/interactionCreate.ts` ahead of the cooldown with a failure logged, and `getFocused`/`respond` in `test/mockInteraction.ts` all exist, and `/reminder`'s label autocomplete (`test/reminders/commands/reminderAutocomplete.test.ts`) is the pattern to follow.
 
 Still needed, each in the PR that first uses it: `test/mockInteraction.ts` gains `getRole` (E1, `/recruit config`), a focused-option *name* (B3, for commands with more than one autocomplete option), `getSubcommandGroup` (B4, the `item` and `entry` groups) and `getAttachment` (B4, import).
 
@@ -309,7 +309,7 @@ Keeping the generic commands pleasant to use:
 
 ### Display
 
-- Put the embed builder in its own module as a pure function, like `src/reminderEmbed.ts`.
+- Put the embed builder in its own module as a pure function, like `src/reminders/statusEmbed.ts`.
 - Discord limits: 1024 characters per field value, 25 fields, 6000 characters per embed. Split a long category across several fields. If the whole list does not fit, show missing items in full and obtained items as counts per category.
 - Any reply that names another member sets `allowedMentions: { parse: [] }` so nobody is pinged.
 
@@ -394,20 +394,20 @@ Where a post's **body** comes from is still open: no item carried one; topics ha
 ### Layout
 
 ```
-src/news/
+src/ffxiv/lodestone/
   source.ts          # NewsSource interface + NewsItem type
   lodestoneNews.ts   # primary source client: fetch with timeout, normalise to NewsItem
   poller.ts          # timer, shared fetch per locale, fan-out to subscribed servers
   newsEmbed.ts       # pure embed builder
   maintenanceEvents.ts  # decide create / update / skip for scheduled events
 src/newsStorage.ts   # tables below (a feature storage module, per decision 0004)
-src/commands/news/lodestone.ts
+src/ffxiv/commands/lodestone.ts
 ```
 
 ### Polling
 
-- One timer, started from `src/events/ready.ts` beside `startScheduler`. Reuse `src/scheduler.ts`'s patterns: one check at a time (a tick that finds the last one running skips), `runCheck` so a throwing check is logged rather than an unhandled rejection, and a `stopping` flag.
-- **Shutdown:** `src/shutdown.ts` stops the poller and **waits for a fetch or post under way**, as it does for `stopScheduler`, before it destroys the client and closes the database. Nothing may touch the database after it closes.
+- One timer, started from `src/core/events/ready.ts` beside `startScheduler`. Reuse `src/reminders/scheduler.ts`'s patterns: one check at a time (a tick that finds the last one running skips), `runCheck` so a throwing check is logged rather than an unhandled rejection, and a `stopping` flag.
+- **Shutdown:** `src/core/shutdown.ts` stops the poller and **waits for a fetch or post under way**, as it does for `stopScheduler`, before it destroys the client and closes the database. Nothing may touch the database after it closes.
 - Poll every 5 to 10 minutes. Fetch **once per locale in use**, then fan out to every subscribed server. Never fetch per server.
 - Set a request timeout (`AbortSignal.timeout`) and a generic `User-Agent`. A failed fetch logs and waits for the next tick.
 - A send Discord refuses for good (the channel is gone, missing permissions) follows the scheduler's rule: it must not be retried every tick. A deleted channel removes or disables that subscription and shows it in `/lodestone list`.
@@ -488,7 +488,7 @@ Prune `news_items` and `news_deliveries` older than a few months so the tables s
 
 - Pure embed builder in `newsEmbed.ts`: title linked to the post, description, image, a colour and label per category, the post's timestamp.
 - For maintenance, show the window with Discord timestamp markup (`<t:...:F>`), so every member sees it in their own time zone.
-- An optional role mention is the only mention allowed; set `allowedMentions` to exactly that role. Since #23 established that a mention inside an embed doesn't ping, put the role mention in the message content above the embed, as `src/reminderMessage.ts` does.
+- An optional role mention is the only mention allowed; set `allowedMentions` to exactly that role. Since #23 established that a mention inside an embed doesn't ping, put the role mention in the message content above the embed, as `src/reminders/reminderMessage.ts` does.
 
 ### Automatic maintenance events
 
@@ -543,7 +543,7 @@ A list of title patterns marks a post as a likely dated announcement (`PvP Serie
 
 The parser is a pure function over post text, tested with fixtures of real posts gathered in C0.
 
-Both modes need buttons and forms that keep working after a bot restart, so `src/events/interactionCreate.ts` must route `isButton()` and `isModalSubmit()` by a custom-ID prefix. Put that routing after the autocomplete branch and outside the cooldown (which applies to slash commands only), with the same logged, self-catching error handling. Buttons check the clicker's permissions in code, because a button has no `setDefaultMemberPermissions`.
+Both modes need buttons and forms that keep working after a bot restart, so `src/core/events/interactionCreate.ts` must route `isButton()` and `isModalSubmit()` by a custom-ID prefix. Put that routing after the autocomplete branch and outside the cooldown (which applies to slash commands only), with the same logged, self-catching error handling. Buttons check the clicker's permissions in code, because a button has no `setDefaultMemberPermissions`.
 
 ### Steps
 
@@ -602,13 +602,13 @@ Security work (CSRF protection, session expiry, rate limiting) belongs in D1, no
 
 ## Track E: Membership follow-ups
 
-Two separate features that share one idea: store a due date in the database and let the existing poller in `src/scheduler.ts` act on it. Thirty days is far too long to hold in a timer, and the database row survives restarts and deploys.
+Two separate features that share one idea: store a due date in the database and let the existing poller in `src/reminders/scheduler.ts` act on it. Thirty days is far too long to hold in a timer, and the database row survives restarts and deploys.
 
 Neither feature is FF14-specific in code. Roles, channels, wording and day counts are all configuration.
 
 ### How the due checks fit the scheduler
 
-Both features add a check to `src/scheduler.ts` beside `guildCheck` and `userCheck`: its own promise variable, started in `startScheduler`'s interval through `runCheck` (overlap guard and logging), and added to the promises `stopScheduler` waits for, which today are only those two.
+Both features add a check to `src/reminders/scheduler.ts` beside `guildCheck` and `userCheck`: its own promise variable, started in `startScheduler`'s interval through `runCheck` (overlap guard and logging), and added to the promises `stopScheduler` waits for, which today are only those two.
 
 - `SchedulerClient` grows only by what the new checks call (for example a guild's `members.fetch` for the role check-in), and the fakes in `test/mocks.ts` grow to match.
 - These reminders are one-shot, not interval-based. A send Discord refuses for good (missing permissions, channel gone) must not be retried every poll (CLAUDE.md's scheduler rule): mark the row as failed and log it. A channel that no longer exists disables the setting, which `/rolecheck status` and `/recruit config` show, as a disabled reminder shows in `/reminder status`. Network and 5xx errors are retried on the next poll, as for reminders.
@@ -685,7 +685,7 @@ CREATE UNIQUE INDEX recruits_open_name
 
 Consequences of that rule: switching from Guest to FC starts a fresh 30 days for the new role and cancels the old one; removing and re-adding a role restarts the clock.
 
-New event files under `src/events/` are loaded by `src/index.ts` and wrapped by `src/eventListener.ts`, so a handler that throws is logged, not a crash.
+New event files under `src/ffxiv/events/` are loaded by `src/index.ts` and wrapped by `src/core/eventListener.ts`, so a handler that throws is logged, not a crash.
 
 **When the reminder is due.** Fetch the member. If they have left or no longer hold the role, delete the row and send nothing. Otherwise post and mark the row sent. It is a one-time reminder per role held.
 
@@ -735,7 +735,7 @@ The reminder channel must be one the reminded member can see, or the mention rea
 ### Steps
 
 - **E1. `/recruit`**: the first feature storage module (per decision record 0004, from the refactor), the migration, the commands, the due check in the scheduler, the reminder post, and the README, including its retitle and `CASESTUDY.md`'s Overview (see B's steps). Needs no new intent. The smallest feature in the plan, so it goes first.
-- **E2. Role check-in**: the intent and partial in `src/index.ts`, the member update and member remove event files in `src/events/`, storage and migration, `/rolecheck`, the due check, the reconcile pass, a decision record for the privileged intent, and the README and `ORACLE_CLOUD_DEPLOYMENT.md` setup changes. **Confirm the portal switch is on for both applications before the PR is merged.**
+- **E2. Role check-in**: the intent and partial in `src/index.ts`, the member update and member remove event files in `src/ffxiv/events/`, storage and migration, `/rolecheck`, the due check, the reconcile pass, a decision record for the privileged intent, and the README and `ORACLE_CLOUD_DEPLOYMENT.md` setup changes. **Confirm the portal switch is on for both applications before the PR is merged.**
 - **E3. Buttons on both reminders** (optional): Promoted, Left and Snooze on the recruit reminder; Still a guest and Joined the FC on the role check-in, which swap the member's role and so need the bot to have Manage Roles and sit above those roles. Uses the button routing built in C4.
 
 ### E-later
