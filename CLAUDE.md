@@ -78,7 +78,8 @@ the workflow, indexed in its `README.md`.
   commit.
 - `src/` is grouped by area: `core/` (bot plumbing and Discord helpers
   any area may use) and `reminders/` (later `ffxiv/` and `minecraft/`),
-  each holding its own commands, events, storage and embeds. `src/index.ts`
+  each holding its own commands, events and embeds (storage still in
+  `src/storage.ts`, until the refactor plan's task 3). `src/index.ts`
   and `src/deploy-commands.ts` stay at the top of `src/`: the VM's systemd
   unit starts `./src/index.ts`, so moving it would leave the bot down
   after the deploy.
@@ -86,26 +87,27 @@ the workflow, indexed in its `README.md`.
   share: the duration and after-snooze choices, and how a snooze is
   described.
 - Commands: one file per command under `src/<area>/commands/`,
-  default-exporting `{ data, execute, cooldown? }` (`src/core/types/command.ts`).
-  `src/core/loadCommands.ts` loads every `.ts` file there, for both
-  `index.ts` and `deploy-commands.ts`, and `index.ts` loads every `.ts`
-  file in `src/<area>/events/`; anything else (helpers, subcommand
-  handlers) goes outside those two folders. A
+  default-exporting `{ data, execute, cooldown? }`
+  (`src/core/types/command.ts`). `src/core/loadCommands.ts` loads every
+  `.ts` file there, for both `index.ts` and `deploy-commands.ts`, and
+  `index.ts` loads every `.ts` file in `src/<area>/events/`; anything
+  else (helpers, subcommand handlers) goes outside those two folders. A
   changed `data` (name, options, permissions) reaches users only when
   commands are re-registered, which the deploy does. Commands that change
   server settings set `setDefaultMemberPermissions` and
   `setContexts(InteractionContextType.Guild)`. Replies about settings are
   ephemeral (`MessageFlags.Ephemeral`).
-- `src/reminders/scheduler.ts` polls every 60 s for due reminders (`last_sent_at +
-  interval <= now`, in SQL) and sends them one by one. One failed send
-  must not stop the batch, crash the process, or retry faster than the
-  reminder's own interval when Discord has refused it for good.
-- `src/reminders/statusEmbed.ts` builds and refreshes the `/reminder status`
-  embed; anything that changes a server's reminders calls
-  `refreshGuildStatusMessage` afterwards.
-- `src/core/shutdown.ts` handles SIGTERM/SIGINT (systemd restarts on deploy):
-  stop the scheduler, destroy the client, close the database, in that
-  order. Nothing may touch the database after it closes.
+- `src/reminders/scheduler.ts` polls every 60 s for due reminders
+  (`last_sent_at + interval <= now`, in SQL) and sends them one by one.
+  One failed send must not stop the batch, crash the process, or retry
+  faster than the reminder's own interval when Discord has refused it
+  for good.
+- `src/reminders/statusEmbed.ts` builds and refreshes the
+  `/reminder status` embed; anything that changes a server's reminders
+  calls `refreshGuildStatusMessage` afterwards.
+- `src/core/shutdown.ts` handles SIGTERM/SIGINT (systemd restarts on
+  deploy): stop the scheduler, destroy the client, close the database, in
+  that order. Nothing may touch the database after it closes.
 - Tests are Vitest in `test/`, mirroring `src/`. Discord objects are small
   fakes built from `vi.fn()`s (`test/mocks.ts`, `test/mockInteraction.ts`), cast with
   `as unknown as Client` / `as never`, except where a function takes a

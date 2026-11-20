@@ -120,7 +120,7 @@ Empty folders aren't tracked by git, so `ffxiv/` and `minecraft/` are created by
 - Branch `refactor/interaction-plumbing`; PR `refactor: tidy interaction routing and event loading`.
 - `interactionCreate.ts`: look the command up once, one fallback error reply instead of two copies (`followUp` or `reply`), the cooldown as its own function. C4's button routing goes in after this.
 - An `Event` type in `core/types/` for event modules (`index.ts` types them inline today).
-- `import.meta.dirname` (in Node since 20.11, so in the Node 24 of `.nvmrc`) instead of the `__filename`/`__dirname` lines in `index.ts`, `deploy-commands.ts` and `core/database.ts`. The database path keeps resolving to the project root (task 3's test).
+- `import.meta.dirname` (in Node since 20.11, so in the Node 24 of `.nvmrc`) instead of the `fileURLToPath(import.meta.url)` lines in `core/loadCommands.ts` and `core/database.ts` (task 2 removed the ones in `index.ts` and `deploy-commands.ts`). The database path keeps resolving to the project root (task 3's test).
 - `customEmoji.ts` takes a narrow client interface (what it reads: `emojis.cache`) instead of all of `Client`, as #28 did for the scheduler and status embed.
 - Deploys: no behaviour change.
 
