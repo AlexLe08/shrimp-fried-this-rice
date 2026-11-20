@@ -94,7 +94,7 @@ Later item), not a follow-up.
   and the scheduler sends plain text where it is: Discord refuses a bot's
   embed without it (50013, seen on the dev server), which would have kept
   that reminder from ever sending.
-- **Embed or plain text, per reminder** (2026-11-20). An `embed` option on
+- **Embed or plain text, per reminder** (2026-11-20, #24). An `embed` option on
   `/reminder create`, `/reminder edit` and `/remindme`; off sends plain
   text, as before #23. Migration 1 adds `embed` (default 1) to
   `guild_reminders` and `user_settings`, so existing reminders stay
