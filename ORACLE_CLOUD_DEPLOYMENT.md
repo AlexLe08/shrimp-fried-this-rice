@@ -128,9 +128,9 @@ Save with **Ctrl+O**, **Enter**, then exit with **Ctrl+X**.
 
 ## 6. Installing dependencies and a first test run
 
-### Install native build tools first
+### Native build tools (a fallback)
 
-`better-sqlite3` compiles a native C++ binding via `node-gyp`, and this ARM-based VM likely has no pre-built binary available — it must compile from source, which requires a compiler toolchain:
+`better-sqlite3` is a native C++ module. Version 13, the one in `package-lock.json`, ships prebuilt binaries, including `linux-arm64` for this VM, so installing it compiles nothing. npm still runs its `node-gyp` install step, which needs `python3` even then; that step only compiles from source when no prebuilt binary matches the machine, for example after a change of `better-sqlite3` version or platform, and that needs a compiler toolchain as well:
 
 ```bash
 sudo apt install -y build-essential python3
@@ -144,7 +144,7 @@ npm install
 
 ### Approve `better-sqlite3`'s native build script
 
-npm's `allowScripts` security policy (npm v12 and up) blocks a package's install-time build scripts unless approved. The approval for `better-sqlite3` is already committed in `package.json` (`"allowScripts": { "better-sqlite3": true }`), so nothing needs doing on the VM. Don't run `npm install-scripts approve` there: it edits a tracked file, which the next deploy's `git reset --hard` discards.
+The script checks for a matching prebuilt binary and builds only when there isn't one. npm's `allowScripts` security policy (npm v12 and up) blocks a package's install-time build scripts unless approved. The approval for `better-sqlite3` is already committed in `package.json` (`"allowScripts": { "better-sqlite3": true }`), so nothing needs doing on the VM. Don't run `npm install-scripts approve` there: it edits a tracked file, which the next deploy's `git reset --hard` discards.
 
 ### Manual test run
 

@@ -1,5 +1,6 @@
 import { EmbedBuilder, DiscordAPIError, type Client } from 'discord.js';
 import { getGuildSettings, getGuildReminders, getGuildStatusMessage, deleteGuildStatusMessage } from './storage.ts';
+import { isSnoozed, discordTime } from './snooze.ts';
 
 export function buildReminderStatusEmbed(guildId: string, guildName: string): EmbedBuilder {
 	const settings = getGuildSettings(guildId);
@@ -31,6 +32,10 @@ export function buildReminderStatusEmbed(guildId: string, guildName: string): Em
 
 		const nextFireMs = r.last_sent_at + r.interval_minutes * 60_000;
 
+		if (isSnoozed(r.snoozed_until, now)) {
+			// Sends at whichever comes later: the snooze's end or its usual time.
+			return `${base} — 💤 snoozed, next ${discordTime(Math.max(r.snoozed_until, nextFireMs), 'R')}`;
+		}
 		if (r.last_sent_at === 0 || nextFireMs <= now) {
 			return `${base} — due on next check`;
 		}

@@ -6,18 +6,21 @@ A Discord bot built with **TypeScript** and **discord.js v14** that periodically
 
 ## Status
 
+**Pre-release:** the bot has no users yet, so a breaking schema change may reset production's database instead of migrating it ([decision 0003](docs/decisions/0003-pre-release-schema-resets.md)). Removing this line ends that; from then on every schema change is a migration.
+
 **Core feature set is complete, deployed, and running in production:**
 - Slash command loading and registration (global — works in any server the bot is invited to, plus direct DMs)
 - Event handling (`ClientReady`, `InteractionCreate`)
 - Per-command, per-user cooldowns (3 seconds by default)
-- SQLite-backed persistence (`src/storage.ts`) for server and per-user settings
+- SQLite-backed persistence (`src/storage.ts`) for server and per-user settings, with schema migrations applied on startup (versioned by SQLite's `user_version`; see [decision 0002](docs/decisions/0002-schema-migrations-with-user-version.md))
 - A polling scheduler (`src/scheduler.ts`) that sends reminders when they're due, hardened against overlapping poll ticks. A reminder whose channel was deleted (or can't take messages) is disabled, and shows as disabled in `/reminder status`; re-enable it with `/reminder edit` to a new channel, then `/reminder toggle`. A send Discord refuses (missing permissions, DMs closed) is retried after the reminder's own interval rather than every minute; network and Discord server errors are retried on the next minute's poll.
 - Full CRUD management of server reminders (capped at 20 per server to guard against runaway/abusive creation), plus a server-wide master toggle
 - A live-updating status embed (`/reminder status`) listing all of a server's reminders with Discord relative timestamps for their next fire time; automatically re-posts/edits itself whenever a reminder fires or its settings change (`src/reminderEmbed.ts`)
 - Personal opt-in DM reminders, independent of any server setting — configurable directly via DM with the bot
+- Snoozing: a server reminder (`/reminder snooze`) or your own DM reminders (`/remindme snooze:`) can be held back for 30 minutes to a week, then resume by themselves. Each snooze chooses what happens when it ends: send one right away if one was missed (the default), or wait a full interval. Active snoozes show in `/reminder list`, `/reminder status` and `/remindme`.
 - Graceful shutdown handling (`src/shutdown.ts`) — on `SIGTERM`/`SIGINT`, the scheduler is stopped (waiting for a send already under way to finish and be recorded, so it isn't repeated after the restart), the Discord client is cleanly destroyed, and the database connection is closed, with a 5-second force-exit safety net in case cleanup ever hangs
 - Deployed 24/7 on an Oracle Cloud "Always Free" VM, managed via systemd, and deployed automatically by GitHub Actions on merge to `main` (see [Production Deployment](#production-deployment))
-- A Vitest test suite covering **~96% of statements / ~97% of lines** across the entire codebase — persistence, scheduling, embeds, event handling, shutdown, and every command (see [Testing](#testing))
+- A Vitest test suite covering **~98% of statements / ~99% of lines** across the entire codebase — persistence, scheduling, embeds, event handling, shutdown, and every command (see [Testing](#testing))
 - A GitHub Actions CI workflow running type-checking and the full test suite on every push/PR, enforced via a branch ruleset that blocks merging into `main` unless CI passes (see [Continuous Integration](#continuous-integration))
 
 **Notable bugs caught by the test suite:**
@@ -109,14 +112,14 @@ npm run test:watch    # watch mode, re-runs on file changes
 npm run test:coverage # run once with a coverage report (terminal + HTML in coverage/)
 ```
 
-**Current coverage:** ~96% statements / ~97% lines across the codebase (excluding `index.ts`, `deploy-commands.ts`, and `src/types/**`, which are deliberately excluded — see below).
+**Current coverage:** ~98% statements / ~99% lines across the codebase (excluding `index.ts`, `deploy-commands.ts`, and `src/types/**`, which are deliberately excluded — see below).
 
 **Test isolation:** each test run uses an in-memory SQLite database (`DB_PATH=':memory:'`, set in `test/setup.ts`), completely separate from your real local `reminders.db`. Tests never touch real dev or production data. Most test files also call a test-only `__resetForTests()` helper between tests, exported from `storage.ts` specifically for this purpose (not used anywhere in application code).
 
 **Mocking approach:** rather than a mocking library, tests use Vitest's built-in `vi.fn()` to build small, purpose-built fake objects for discord.js interactions, channels, users, and clients (see `test/mocks.ts` and `test/mockInteraction.ts`). `scheduler.ts` is tested through its real public interface using Vitest's fake timers (`vi.advanceTimersByTimeAsync`) rather than exporting its private polling functions just to make them directly callable.
 
 **What's excluded from the coverage target, and why:**
-- `index.ts` and `deploy-commands.ts` — bootstrap/entrypoint scripts that scan the filesystem and immediately connect to Discord on load, with no exported functions to test in isolation. Restructuring them purely to hit a coverage number wasn't judged worthwhile; they're exercised in practice every time the bot runs. `test/deployCommands.test.ts` does run `deploy-commands.ts`, with a mocked `REST`,, to check the exit code the deploy job relies on, but it stays out of the coverage figures.
+- `index.ts` and `deploy-commands.ts` — bootstrap/entrypoint scripts that scan the filesystem and immediately connect to Discord on load, with no exported functions to test in isolation. Restructuring them purely to hit a coverage number wasn't judged worthwhile; they're exercised in practice every time the bot runs. `test/deployCommands.test.ts` does run `deploy-commands.ts`, with a mocked `REST`, to check the exit code the deploy job relies on, but it stays out of the coverage figures.
 - `src/types/**` — interfaces and module augmentation only, no runtime logic to execute.
 
 **Known, accepted gaps within the covered files:** a handful of narrow branches remain untested — e.g. a couple of individual reply-wording branches, and the scheduler's overlap-guard "skip this tick" path (which would require a more elaborate concurrent-timer test to trigger deliberately). These were judged not worth chasing further once the suite comfortably exceeded its coverage goal; none represent untested core logic.
@@ -143,8 +146,9 @@ Key production-specific details, for future reference:
 
 - **Persistence:** since this is a real VM (not a container-based PaaS), `reminders.db` lives on the VM's normal persistent disk — no special volume configuration needed, and it's untouched by deploys (it's git-ignored, and the deploy's `git reset --hard` only resets tracked files).
 - **Secrets:** `.env` is created directly on the VM (never committed, never pulled from git) with the production bot token and client ID — using the separate **production** Discord Application, never the local-dev one.
-- **Native module builds:** `better-sqlite3` compiles from source on first install on this ARM architecture, requiring `build-essential` and `python3` to be installed on the VM (see deployment notes/history for the full one-time VM setup steps).
-- **npm install-scripts:** `better-sqlite3`'s native build step is explicitly approved via the `allowScripts` field committed in `package.json` — required for npm v12+'s install-script security gating.
+- **Native module:** `better-sqlite3` 13 ships a prebuilt `linux-arm64` binary, so installing it on the VM compiles nothing. npm still runs its `node-gyp` step, which needs `python3`; `build-essential` is the fallback for a version or platform without a prebuilt binary (see [`ORACLE_CLOUD_DEPLOYMENT.md`](ORACLE_CLOUD_DEPLOYMENT.md), section 6).
+- **Schema migrations:** run by `storage.ts` when the bot starts, so the deploy's restart applies any new ones to `reminders.db`. A migration that fails rolls back and the bot exits, which the deploy's login check reports; systemd then restarts it every 5 seconds, failing the same way, and no reminders send until a fix is deployed.
+- **npm install-scripts:** `better-sqlite3`'s native build step (which only builds when no prebuilt binary matches) is explicitly approved via the `allowScripts` field committed in `package.json` — required for npm v12+'s install-script security gating.
 - **Graceful shutdown:** `systemctl restart`/`stop` send `SIGTERM`, which `src/shutdown.ts` handles by stopping the scheduler (and waiting for any send already under way), destroying the Discord client, and closing the database connection before the process exits — rather than the process being killed mid-operation. `Ctrl+C` during local `npm run dev` sends `SIGINT`, handled identically.
 - **Service management:** the bot runs under a systemd unit (`discordbotshrimp.service`). Common commands:
   ```bash
@@ -162,10 +166,13 @@ Key production-specific details, for future reference:
 | `/reminder edit <label> [channel] [interval] [message]` | Edits one or more fields of an existing reminder; unspecified fields are left unchanged. |
 | `/reminder list` | Lists the server's master toggle state, followed by every configured reminder and its status (ephemeral, text-only). |
 | `/reminder status` | Posts a public, self-updating embed listing every reminder and a live "next fire" timestamp for each. Deletes any previously-posted status embed for this server first. |
-| `/reminder toggle <label> <enabled>` | Enables or disables a specific reminder. |
+| `/reminder toggle <label> <enabled>` | Enables or disables a specific reminder, until toggled back. |
+| `/reminder snooze <label> <duration> [after]` | Holds a reminder back for 30 minutes, 1, 2, 4 or 8 hours, 1 day, 3 days or 1 week; it resumes by itself. `after` picks what happens when the snooze ends: send one right away if one was missed (the default), or wait a full interval. Snoozing again replaces the snooze. |
+| `/reminder unsnooze <label>` | Ends a snooze early, as if it had ended now. |
 | `/reminder delete <label>` | Deletes a reminder. |
 | `/reminder master <enabled>` | Server-wide kill switch — overrides all individual reminders when off. Requires **Manage Server** permission; guild-only. |
 | `/remindme [enabled] [interval] [message]` | Views (if called with no options) or updates your personal DM reminder settings. Can be run in a server or directly in a DM with the bot. |
+| `/remindme snooze:<duration> [after_snooze]` | Snoozes your DM reminders, with the same durations and `after_snooze` choices as `/reminder snooze`; `snooze:Cancel snooze` ends one early. Can be combined with the options above. |
 | `/remindme reset:true` | Deletes your personal DM reminder settings entirely. |
 
 ## Project Structure
@@ -177,7 +184,8 @@ src/
   scheduler.ts          # polling loop — checks storage.ts for due reminders and sends them
   shutdown.ts            # graceful SIGTERM/SIGINT handling — stops the scheduler, destroys the client, closes the database
   eventListener.ts      # wraps each event handler so a rejection is logged, not an unhandled crash
-  storage.ts            # SQLite data-access layer (guild settings, guild reminders, user settings, status message tracking)
+  storage.ts            # SQLite data-access layer (guild settings, guild reminders, user settings, status message tracking) and schema migrations
+  snooze.ts             # snooze durations and after-snooze choices shared by /reminder and /remindme
   reminderEmbed.ts       # builds the /reminder status embed; also refreshes the tracked status message when reminders change
   types/
     command.ts           # shared Command interface
@@ -205,8 +213,10 @@ test/
     guildStatusMessages.test.ts     # status-message tracking upsert/read/delete tests
     userSettings.test.ts            # upsert behavior + due-reminder tests for DM settings
     dueReminders.test.ts            # due-reminder boundary/edge-case tests for guild reminders
+    snooze.test.ts                  # snoozing, cancelling, and the after-snooze choices, for reminders and DMs
+    migrations.test.ts              # migrations on a database built like production's before them, and on a new one
   commands/
-    reminderCore/                   # guildreminder, remindme tests
+    reminderCore/                   # guildreminder, remindme, and snooze (both commands' snooze options) tests
   events/
     ready.test.ts
     interactionCreate.test.ts        # includes a direct regression test for the production crash incident
@@ -235,7 +245,6 @@ Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `sc
 - [ ] Custom-styled embeds for the periodic reminder messages themselves
 - [ ] True file/audio attachment support (bundled sound files, or user-uploaded)
 - [ ] Autocomplete for custom server emojis in reminder messages
-- [ ] Snooze/pause command
 - [ ] Enforce a minimum coverage threshold in CI
 - [ ] Publish the HTML coverage report as a CI artifact
 - [ ] Consider narrowing `refreshGuildStatusMessage`'s and `startScheduler`'s `Client` parameter to a smaller custom interface, to eliminate the `as unknown as Client` casts in test mocks
