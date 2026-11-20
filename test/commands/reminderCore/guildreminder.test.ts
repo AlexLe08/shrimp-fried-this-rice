@@ -145,7 +145,7 @@ describe('/reminder create', () => {
 		);
 	});
 
-	it('warns when the bot can send but not embed links, since reminders are embeds', async () => {
+	it('says a reminder goes out as plain text where the bot can send but not embed links', async () => {
 		const channel = createMockChannel();
 		(channel as Record<string, unknown>)['permissionsFor'] = vi.fn(() => ({
 			has: (permission: bigint) => permission !== PermissionFlagsBits.EmbedLinks,
@@ -164,7 +164,11 @@ describe('/reminder create', () => {
 		await guildReminderCommand.execute(interaction as never);
 
 		expect(interaction.reply).toHaveBeenCalledWith(
-			expect.objectContaining({ content: expect.stringContaining('permissions in that channel: Embed Links.') }),
+			expect.objectContaining({ content: expect.stringContaining('sent as plain text until I can') }),
+		);
+		// It still sends, so it mustn't say it won't.
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.not.stringContaining("won't send") }),
 		);
 	});
 });

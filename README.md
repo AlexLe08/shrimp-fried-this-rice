@@ -29,7 +29,7 @@ Deliberate choices from before the [decision records](docs/decisions/):
 
 - `/remindme` (personal DM settings) is keyed only by user ID, not per server. Someone in several servers with this bot has one set of personal DM settings across all of them: a personal reminder, independent of any server.
 - Only one status embed is tracked per server. Re-running `/reminder status` deletes the previous embed (if it still exists) and posts a new one, even in a different channel.
-- `/reminder create` warns, but still saves, when the bot lacks permissions in the channel (View Channel, Send Messages, Embed Links): an admin may grant them afterwards, and the reminder starts sending once they do.
+- `/reminder create` warns, but still saves, when the bot lacks permissions in the channel (View Channel, Send Messages): an admin may grant them afterwards, and the reminder starts sending once they do. Without Embed Links it says the reminder will go out as plain text instead.
 
 ## ⚠️ Important: never run local dev against the production bot token
 

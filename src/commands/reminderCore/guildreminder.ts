@@ -54,13 +54,20 @@ function checkChannelPermissions(
 	const missing: string[] = [];
 	if (!perms.has(PermissionFlagsBits.ViewChannel)) missing.push('View Channel');
 	if (!perms.has(PermissionFlagsBits.SendMessages)) missing.push('Send Messages');
-	// Reminders are sent as embeds.
-	if (!perms.has(PermissionFlagsBits.EmbedLinks)) missing.push('Embed Links');
 
-	if (missing.length === 0) return null;
 	// Warn but still save: an admin may set the reminder up first and grant the
 	// permissions after, and refusing would make them redo the whole command.
-	return `⚠️ I'm missing these permissions in that channel: ${missing.join(', ')}. The reminder was saved, but it won't send until I have them.`;
+	const warnings: string[] = [];
+	if (missing.length > 0) {
+		warnings.push(
+			`⚠️ I'm missing these permissions in that channel: ${missing.join(', ')}. The reminder was saved, but it won't send until I have them.`,
+		);
+	}
+	// Without it the scheduler still sends, as plain text.
+	if (!perms.has(PermissionFlagsBits.EmbedLinks)) {
+		warnings.push("⚠️ I can't embed links in that channel, so this reminder will be sent as plain text until I can.");
+	}
+	return warnings.length > 0 ? warnings.join('\n') : null;
 }
 
 const MESSAGE_LIMIT = 2000;
