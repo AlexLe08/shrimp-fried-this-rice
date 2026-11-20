@@ -1,11 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
-import {
-	DiscordAPIError,
-	PermissionFlagsBits,
-	type Client,
-	type EmbedBuilder,
-	type MessageCreateOptions,
-} from 'discord.js';
+import { DiscordAPIError, PermissionFlagsBits, type EmbedBuilder, type MessageCreateOptions } from 'discord.js';
 import { startScheduler, stopScheduler } from '../src/scheduler.ts';
 import {
 	createGuildReminder,
@@ -53,7 +47,7 @@ describe('scheduler — guild reminders', () => {
 		const channel = createMockChannel();
 		const client = createMockClient({ channels: { c1: channel } });
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(60_000);
 
 		expect(sentEmbed(channel.send)).toMatchObject({
@@ -78,7 +72,7 @@ describe('scheduler — guild reminders', () => {
 		}));
 		const client = createMockClient({ channels: { c1: Object.assign(channel, { permissionsFor }) } });
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(60_000);
 
 		expect(channel.send).toHaveBeenCalledWith('Drink water!');
@@ -96,7 +90,7 @@ describe('scheduler — guild reminders', () => {
 		const channel = createMockChannel();
 		const client = createMockClient({ channels: { c1: channel } });
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(60_000);
 
 		expect(channel.send).toHaveBeenCalledWith('Drink water!');
@@ -113,7 +107,7 @@ describe('scheduler — guild reminders', () => {
 		const client = createMockClient({ channels: { 'missing-channel': null } });
 		const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(60_000);
 
 		expect(consoleSpy).toHaveBeenCalled();
@@ -125,7 +119,7 @@ describe('scheduler — guild reminders', () => {
 		const channel = createMockChannel({ sendable: false });
 		const client = createMockClient({ channels: { c1: channel } });
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(60_000);
 
 		expect(channel.send).not.toHaveBeenCalled();
@@ -142,7 +136,7 @@ describe('scheduler — guild reminders', () => {
 		const client = createMockClient({ channels: { c1: failingChannel, c2: workingChannel } });
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(60_000);
 
 		expect(sentEmbed(workingChannel.send).description).toBe('second');
@@ -153,7 +147,7 @@ describe('scheduler — guild reminders', () => {
 		const client = createMockClient({ channels: { gone: null } });
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(60_000);
 
 		expect(getGuildReminderByLabel('g1', 'water')?.enabled).toBe(0);
@@ -164,7 +158,7 @@ describe('scheduler — guild reminders', () => {
 		const client = createMockClient({ channels: { c1: createMockChannel({ sendable: false }) } });
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(60_000);
 
 		expect(getGuildReminderByLabel('g1', 'water')?.enabled).toBe(0);
@@ -176,7 +170,7 @@ describe('scheduler — guild reminders', () => {
 		client.channels.fetch.mockRejectedValue(discordError(10003, 404));
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(60_000);
 
 		expect(getGuildReminderByLabel('g1', 'water')?.enabled).toBe(0);
@@ -196,7 +190,7 @@ describe('scheduler — guild reminders', () => {
 		});
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(60_000);
 
 		expect(statusMessage.edit).toHaveBeenCalled();
@@ -218,7 +212,7 @@ describe('scheduler — guild reminders', () => {
 		);
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(60_000);
 		updateGuildReminder('g1', 'water', { channelId: 'c2' });
 		failFetch(discordError(10003, 404));
@@ -236,7 +230,7 @@ describe('scheduler — guild reminders', () => {
 		const client = createMockClient({ channels: { c1: channel } });
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		// First attempt at the 1-minute poll; the next is due 5 minutes later.
 		await vi.advanceTimersByTimeAsync(5 * 60_000);
 
@@ -256,7 +250,7 @@ describe('scheduler — guild reminders', () => {
 		const client = createMockClient({ channels: { c1: channel } });
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(2 * 60_000);
 
 		expect(channel.send).toHaveBeenCalledTimes(2);
@@ -274,7 +268,7 @@ describe('scheduler — guild reminders', () => {
 		);
 		const client = createMockClient({ channels: { c1: channel } });
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(60_000);
 		expect(channel.send).toHaveBeenCalledTimes(1);
 
@@ -303,7 +297,7 @@ describe('scheduler — guild reminders', () => {
 		const second = createMockChannel();
 		const client = createMockClient({ channels: { c1: first, c2: second } });
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(60_000);
 		const stopping = stopScheduler();
 		finishSend();
@@ -326,7 +320,7 @@ describe('scheduler — guild reminders', () => {
 		);
 		const client = createMockClient({ channels: { c1: channel }, guilds: { g1: { name: 'Test Guild' } } });
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(60_000);
 		const stopping = stopScheduler();
 		finishSend();
@@ -341,7 +335,7 @@ describe('scheduler — guild reminders', () => {
 		const channel = createMockChannel();
 		const client = createMockClient({ channels: { c1: channel } });
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		stopScheduler();
 
 		await vi.advanceTimersByTimeAsync(120_000);
@@ -357,7 +351,7 @@ describe('scheduler — user DM reminders', () => {
 		const user = createMockUser();
 		const client = createMockClient({ users: { u1: user } });
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(60_000);
 
 		expect(sentEmbed(user.send)).toMatchObject({
@@ -379,7 +373,7 @@ describe('scheduler — user DM reminders', () => {
 		const user = createMockUser();
 		const client = createMockClient({ users: { u1: user } });
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(60_000);
 
 		expect(user.send).toHaveBeenCalledWith(expect.not.objectContaining({ content: expect.anything() }));
@@ -390,7 +384,7 @@ describe('scheduler — user DM reminders', () => {
 		const user = createMockUser();
 		const client = createMockClient({ users: { u1: user } });
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(60_000);
 
 		expect(user.send).toHaveBeenCalledWith('Stretch!');
@@ -402,7 +396,7 @@ describe('scheduler — user DM reminders', () => {
 		const client = createMockClient({ users: { u1: user } });
 		const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(60_000);
 
 		expect(consoleSpy).toHaveBeenCalled();
@@ -416,7 +410,7 @@ describe('scheduler — user DM reminders', () => {
 		const client = createMockClient({ users: { u1: user } });
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		// First attempt at the 1-minute poll; the next is due 5 minutes later.
 		await vi.advanceTimersByTimeAsync(5 * 60_000);
 
@@ -434,7 +428,7 @@ describe('scheduler — user DM reminders', () => {
 		const client = createMockClient({ users: { u1: user } });
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(2 * 60_000);
 
 		expect(user.send).toHaveBeenCalledTimes(2);
@@ -453,7 +447,7 @@ describe('scheduler — user DM reminders', () => {
 		const second = createMockUser();
 		const client = createMockClient({ users: { u1: first, u2: second } });
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(60_000);
 		const stopping = stopScheduler();
 		finishSend();
@@ -484,7 +478,7 @@ describe('scheduler — snoozes', () => {
 		const user = createMockUser();
 		const client = createMockClient({ channels: { c1: channel }, users: { u1: user } });
 
-		startScheduler(client as unknown as Client<true>);
+		startScheduler(client);
 		await vi.advanceTimersByTimeAsync(9 * 60_000);
 
 		expect(channel.send).not.toHaveBeenCalled();

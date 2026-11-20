@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { Client } from 'discord.js';
 import { createMockClient } from './mocks.ts';
 
 // Its own file: the storage mock below would replace the real database for
@@ -30,7 +29,7 @@ describe('scheduler — a check that throws', () => {
 			.mockReturnValue([]);
 		const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		startScheduler(createMockClient() as unknown as Client<true>);
+		startScheduler(createMockClient());
 		await vi.advanceTimersByTimeAsync(2 * 60_000);
 
 		expect(consoleSpy).toHaveBeenCalledWith('Guild reminder check failed:', expect.any(Error));
