@@ -91,9 +91,9 @@ Later item), not a follow-up.
   embed (not ones in code, spoilers, or escaped; within 2000 characters),
   and sends a message with a link as plain text, as before, to keep its
   preview. `/reminder create` and `edit` warn when Embed Links is missing,
-  and the scheduler sends plain text where it is (Discord's docs don't say
-  what happens to a bot's embed without it; not tested, the dev bot can't
-  change channel permissions).
+  and the scheduler sends plain text where it is: Discord refuses a bot's
+  embed without it (50013, seen on the dev server), which would have kept
+  that reminder from ever sending.
 
 ## Next up
 

@@ -89,10 +89,11 @@ async function checkGuildReminders(client: Client<true>): Promise<void> {
 				continue;
 			}
 
-			// Discord's docs don't say what becomes of a bot's embed where it
-			// lacks Embed Links (a reminder saved before the warning, or an
-			// override added since), so the plain text that worked before
-			// embeds is sent instead.
+			// Discord refuses a bot's embed where it lacks Embed Links (50013,
+			// seen on the dev server), and a refused send is only retried an
+			// interval later, so the reminder would never arrive. A reminder
+			// saved before the warning, or an override added since, gets the
+			// plain text that worked before embeds.
 			const canEmbed =
 				!('permissionsFor' in channel) ||
 				channel.permissionsFor(client.user)?.has(PermissionFlagsBits.EmbedLinks) !== false;
