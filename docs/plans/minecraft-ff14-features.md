@@ -5,12 +5,12 @@ The design for the feature tracks in [`docs/roadmap.md`](../roadmap.md)'s Next u
 How to work through it:
 
 - CLAUDE.md's workflow applies to every step: a worktree per PR, `scripts/check.sh`, the `reviewer` agent, a Deploys line, and the README and the roadmap's Done entry updated in the feature's own PR. This plan doesn't repeat those rules; see [Conventions](#conventions-specific-to-this-plan).
-- Each track's first PR adds the decision record named in that track (from [`../decisions/0000-template.md`](../decisions/0000-template.md), with the **Why** left as `TODO(Alex)`).
+- The PRs each track names add its decision records (from [`../decisions/0000-template.md`](../decisions/0000-template.md), with the **Why** left as `TODO(Alex)`).
 - Ask the owner for each [input](#inputs-still-needed-from-the-owner) when you reach the step that needs it, not all up front.
 - Facts marked **unverified** must be checked before code relies on them. Facts marked **verified 2026-11-20** were checked against the source named.
 - If the plan turns out wrong, or a simpler design fits better, say so and update this file in the same PR rather than silently diverging from it.
 
-Tracks A, B, C and E are independent; shared pieces are noted where they occur. Track D (the dashboard) comes after them.
+Tracks A, B, C and E are independent apart from two shared pieces: decision record 0004 (feature storage modules) comes with E1, so E1 goes first, and E3's buttons use C4's button routing. Other shared pieces are noted where they occur. Track D (the dashboard) comes after them.
 
 | Track | What it adds | Where it runs |
 |---|---|---|
@@ -225,7 +225,7 @@ Vocabulary used below: a **collection** (for example "FF14 Mounts") holds **item
 
 Autocomplete support is already on `main` (#22). `Command.autocomplete`, the routing in `src/events/interactionCreate.ts` ahead of the cooldown with a failure logged, and `getFocused`/`respond` in `test/mockInteraction.ts` all exist, and `/reminder`'s label autocomplete (`test/commands/reminderCore/guildreminderAutocomplete.test.ts`) is the pattern to follow.
 
-Still needed, in B2's PR: `test/mockInteraction.ts` gains `getSubcommandGroup`, `getRole`, `getAttachment`, a focused-option *name* (for commands with more than one autocomplete option), and `member.roles.cache`.
+Still needed, each in the PR that first uses it: `test/mockInteraction.ts` gains `getRole` (E1, `/recruit config`), a focused-option *name* (B3, for commands with more than one autocomplete option), `getSubcommandGroup` (B4, the `item` and `entry` groups) and `getAttachment` (B4, import).
 
 ### Schema
 
@@ -326,12 +326,12 @@ The member half depends on input 2 above. The open problem is mapping whatever t
 
 ### Steps
 
-- **B2. Feature storage module** (or the module 0004 names) with the migration, its tests (delete cascade in a transaction, caps, `__resetForTests`), and the mock additions above. (B1, autocomplete, shipped in #22.)
+- **B2. Feature storage module** (or the module 0004 names) with the migration, its tests (delete cascade in a transaction, caps, `__resetForTests`). (B1, autocomplete, shipped in #22.)
 - **B3. `/collection`**: add, remove, view, join, needs and list, the item and collection autocompletes, and the embed builder, with tests.
 - **B4. `/collectionadmin`**: create, rename, delete, item add, remove and import, entry add and remove, with tests.
 - **B5. `/collectionadmin export`** and the member import chosen above.
 - **B6. Optional: `/collection edit`**, a bulk editor using multi-select menus (25 options per menu, 5 menus per message, so one message per group of categories). Handle the component interactions with a collector inside the command, so `interactionCreate.ts` needs no further routing.
-- Each of B3 to B6 updates the README's Commands, Features and Project Structure in its own PR. The README retitle (the bot is no longer only posture and hydration), and the matching title in `CASESTUDY.md`, go in B3, the first PR with a non-reminder command.
+- Each of B3 to B6 updates the README's Commands, Features and Project Structure in its own PR. The README retitle (the bot is no longer only posture and hydration) goes in E1, the first PR with a non-reminder feature, with `CASESTUDY.md`'s Overview sentence to match.
 
 ### B-later: external data sources (optional, per collection)
 
@@ -608,10 +608,63 @@ Neither feature is FF14-specific in code. Roles, channels, wording and day count
 
 ### How the due checks fit the scheduler
 
-Both features add a check to `src/scheduler.ts` beside `guildCheck` and `userCheck`, started and stopped with them, so they get the overlap guard, `runCheck`'s logging and `stopScheduler`'s wait for free.
+Both features add a check to `src/scheduler.ts` beside `guildCheck` and `userCheck`: its own promise variable, started in `startScheduler`'s interval through `runCheck` (overlap guard and logging), and added to the promises `stopScheduler` waits for, which today are only those two.
 
 - `SchedulerClient` grows only by what the new checks call (for example a guild's `members.fetch` for the role check-in), and the fakes in `test/mocks.ts` grow to match.
 - These reminders are one-shot, not interval-based. A send Discord refuses for good (missing permissions, channel gone) must not be retried every poll (CLAUDE.md's scheduler rule): mark the row as failed and log it. A channel that no longer exists disables the setting, which `/rolecheck status` and `/recruit config` show, as a disabled reminder shows in `/reminder status`. Network and 5xx errors are retried on the next poll, as for reminders.
+
+### E-recruit: trial FC members, for moderators
+
+Decision record 0004 (feature storage modules) goes in E1's PR, since it is the first to add one.
+
+**What a moderator does.** Records a new FC member by **in-game name** with a short note. Nothing ties the entry to a Discord account. After 30 days the bot posts in the moderators' channel, pinging the moderator role: this person joined 30 days ago, here is the note, are they still with us, promote them in game to full member.
+
+One new migration appended to `MIGRATIONS`:
+
+```sql
+CREATE TABLE recruit_settings (
+    guild_id TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL,
+    ping_role_id TEXT,
+    follow_up_days INTEGER NOT NULL DEFAULT 30
+);
+
+CREATE TABLE recruits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT NOT NULL,
+    name TEXT NOT NULL,                    -- in-game name as typed
+    name_key TEXT NOT NULL,                -- lower-cased, trimmed
+    note TEXT NOT NULL DEFAULT '',
+    added_by TEXT NOT NULL,
+    added_at INTEGER NOT NULL,
+    due_at INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',-- pending | reminded | promoted | left
+    resolved_by TEXT,
+    resolved_at INTEGER
+);
+
+-- A name may appear only once among open entries, but can be re-added after it is resolved.
+CREATE UNIQUE INDEX recruits_open_name
+    ON recruits (guild_id, name_key) WHERE status IN ('pending', 'reminded');
+```
+
+`/recruit`, guild-only, default permission Manage Server. The owner can grant the whole command to a moderator role in Server Settings → Integrations, which is Discord's own mechanism and needs no code.
+
+| Command | Behaviour |
+|---|---|
+| `/recruit add name note [days]` | Records a trial member. The reminder is due in `days`, or the server default. |
+| `/recruit edit name [note] [new_name] [days]` | Changes the note, the name or the due date. |
+| `/recruit list` | Shows open entries with who added them, the note and when each is due. |
+| `/recruit resolve name outcome` | Closes an entry as `promoted` or `left`. |
+| `/recruit snooze name days` | Pushes the reminder back, for "ask me again next week". |
+| `/recruit remove name` | Deletes an entry made by mistake. |
+| `/recruit config channel [role] [days]` | Sets where reminders go, which role is pinged and the default delay. Warns, and still saves, if the bot cannot post there. |
+
+- `name` on every command except `add` is an autocomplete over open entries, built like `/reminder`'s label autocomplete (#22). Like it, a typed name that matches nothing still gets a "not found" reply.
+- Limits: name up to 50 characters, note up to 300. Cap open entries per server, next to the other limits in `storage.ts`.
+- The reminder is sent once and moves the entry to `reminded`. It stays in `/recruit list`, shown as overdue, until someone resolves or snoozes it.
+- The reminder's only mention is the configured role, in the message content; set `allowedMentions` to exactly that.
+- Replies to `/recruit` commands are ephemeral, since notes about people should not land in a public channel by accident.
 
 ### E-role: check-in after choosing a role
 
@@ -679,62 +732,9 @@ CREATE TABLE rolecheck_pending (
 
 The reminder channel must be one the reminded member can see, or the mention reaches nobody.
 
-### E-recruit: trial FC members, for moderators
-
-Decision record 0004 (feature storage modules) goes in this PR, since it is the first to add one.
-
-**What a moderator does.** Records a new FC member by **in-game name** with a short note. Nothing ties the entry to a Discord account. After 30 days the bot posts in the moderators' channel, pinging the moderator role: this person joined 30 days ago, here is the note, are they still with us, promote them in game to full member.
-
-One new migration appended to `MIGRATIONS`:
-
-```sql
-CREATE TABLE recruit_settings (
-    guild_id TEXT PRIMARY KEY,
-    channel_id TEXT NOT NULL,
-    ping_role_id TEXT,
-    follow_up_days INTEGER NOT NULL DEFAULT 30
-);
-
-CREATE TABLE recruits (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    guild_id TEXT NOT NULL,
-    name TEXT NOT NULL,                    -- in-game name as typed
-    name_key TEXT NOT NULL,                -- lower-cased, trimmed
-    note TEXT NOT NULL DEFAULT '',
-    added_by TEXT NOT NULL,
-    added_at INTEGER NOT NULL,
-    due_at INTEGER NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',-- pending | reminded | promoted | left
-    resolved_by TEXT,
-    resolved_at INTEGER
-);
-
--- A name may appear only once among open entries, but can be re-added after it is resolved.
-CREATE UNIQUE INDEX recruits_open_name
-    ON recruits (guild_id, name_key) WHERE status IN ('pending', 'reminded');
-```
-
-`/recruit`, guild-only, default permission Manage Server. The owner can grant the whole command to a moderator role in Server Settings → Integrations, which is Discord's own mechanism and needs no code.
-
-| Command | Behaviour |
-|---|---|
-| `/recruit add name note [days]` | Records a trial member. The reminder is due in `days`, or the server default. |
-| `/recruit edit name [note] [new_name] [days]` | Changes the note, the name or the due date. |
-| `/recruit list` | Shows open entries with who added them, the note and when each is due. |
-| `/recruit resolve name outcome` | Closes an entry as `promoted` or `left`. |
-| `/recruit snooze name days` | Pushes the reminder back, for "ask me again next week". |
-| `/recruit remove name` | Deletes an entry made by mistake. |
-| `/recruit config channel [role] [days]` | Sets where reminders go, which role is pinged and the default delay. Warns, and still saves, if the bot cannot post there. |
-
-- `name` on every command except `add` is an autocomplete over open entries, built like `/reminder`'s label autocomplete (#22). Like it, a typed name that matches nothing still gets a "not found" reply.
-- Limits: name up to 50 characters, note up to 300. Cap open entries per server, next to the other limits in `storage.ts`.
-- The reminder is sent once and moves the entry to `reminded`. It stays in `/recruit list`, shown as overdue, until someone resolves or snoozes it.
-- The reminder's only mention is the configured role, in the message content; set `allowedMentions` to exactly that.
-- Replies to `/recruit` commands are ephemeral, since notes about people should not land in a public channel by accident.
-
 ### Steps
 
-- **E1. `/recruit`**: decision record 0004 and the CLAUDE.md update, the first feature storage module, the migration, the commands, the due check in the scheduler, the reminder post, and the README. Needs no new intent. The smallest feature in the plan, so it goes first.
+- **E1. `/recruit`**: decision record 0004 and the CLAUDE.md update, the first feature storage module, the migration, the commands, the due check in the scheduler, the reminder post, and the README, including its retitle and `CASESTUDY.md`'s Overview (see B's steps). Needs no new intent. The smallest feature in the plan, so it goes first.
 - **E2. Role check-in**: the intent and partial in `src/index.ts`, the member update and member remove event files in `src/events/`, storage and migration, `/rolecheck`, the due check, the reconcile pass, a decision record for the privileged intent, and the README and `ORACLE_CLOUD_DEPLOYMENT.md` setup changes. **Confirm the portal switch is on for both applications before the PR is merged.**
 - **E3. Buttons on both reminders** (optional): Promoted, Left and Snooze on the recruit reminder; Still a guest and Joined the FC on the role check-in, which swap the member's role and so need the bot to have Manage Roles and sit above those roles. Uses the button routing built in C4.
 
