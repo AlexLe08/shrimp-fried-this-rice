@@ -54,6 +54,10 @@ const MIGRATIONS = [
 	// snoozed_until: epoch ms; a reminder isn't sent before it. 0 = not snoozed.
 	`ALTER TABLE guild_reminders ADD COLUMN snoozed_until INTEGER NOT NULL DEFAULT 0;
 	 ALTER TABLE user_settings ADD COLUMN snoozed_until INTEGER NOT NULL DEFAULT 0;`,
+	// embed: 1 sends the reminder as an embed, 0 as plain text. Reminders made
+	// before the choice existed were already sent as embeds, so they stay so.
+	`ALTER TABLE guild_reminders ADD COLUMN embed INTEGER NOT NULL DEFAULT 1;
+	 ALTER TABLE user_settings ADD COLUMN embed INTEGER NOT NULL DEFAULT 1;`,
 ];
 
 const schemaVersion = db.pragma('user_version', { simple: true }) as number;
@@ -85,6 +89,7 @@ export interface GuildReminder {
 	enabled: number;
 	last_sent_at: number;
 	snoozed_until: number;
+	embed: number;
 }
 
 export interface UserSettings {
@@ -94,6 +99,7 @@ export interface UserSettings {
 	message: string;
 	last_sent_at: number;
 	snoozed_until: number;
+	embed: number;
 }
 
 export interface GuildStatusMessage {
@@ -144,14 +150,22 @@ export function createGuildReminder(reminder: {
 	channelId: string;
 	intervalMinutes: number;
 	message: string;
+	embed?: boolean;
 }): void {
 	db.prepare(
-		`INSERT INTO guild_reminders (guild_id, reminder_label, channel_id, interval_minutes, message)
-		 VALUES (?, ?, ?, ?, ?)`,
-	).run(reminder.guildId, reminder.label, reminder.channelId, reminder.intervalMinutes, reminder.message);
+		`INSERT INTO guild_reminders (guild_id, reminder_label, channel_id, interval_minutes, message, embed)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+	).run(
+		reminder.guildId,
+		reminder.label,
+		reminder.channelId,
+		reminder.intervalMinutes,
+		reminder.message,
+		(reminder.embed ?? true) ? 1 : 0,
+	);
 }
 
-// Writes all three columns back, merged with the current row, rather than
+// Writes all four columns back, merged with the current row, rather than
 // building the SET clause from whichever options were given.
 export function updateGuildReminder(
 	guildId: string,
@@ -160,6 +174,7 @@ export function updateGuildReminder(
 		channelId?: string;
 		intervalMinutes?: number;
 		message?: string;
+		embed?: boolean;
 	},
 ): void {
 	const existing = getGuildReminderByLabel(guildId, label);
@@ -168,10 +183,11 @@ export function updateGuildReminder(
 	const channelId = updates.channelId ?? existing.channel_id;
 	const intervalMinutes = updates.intervalMinutes ?? existing.interval_minutes;
 	const message = updates.message ?? existing.message;
+	const embed = updates.embed === undefined ? existing.embed : updates.embed ? 1 : 0;
 
 	db.prepare(
-		'UPDATE guild_reminders SET channel_id = ?, interval_minutes = ?, message = ? WHERE guild_id = ? AND reminder_label = ?',
-	).run(channelId, intervalMinutes, message, guildId, label);
+		'UPDATE guild_reminders SET channel_id = ?, interval_minutes = ?, message = ?, embed = ? WHERE guild_id = ? AND reminder_label = ?',
+	).run(channelId, intervalMinutes, message, embed, guildId, label);
 }
 
 export function setGuildReminderEnabled(guildId: string, label: string, enabled: boolean): void {
@@ -303,15 +319,23 @@ export function upsertUserSettings(settings: {
 	dmEnabled: boolean;
 	intervalMinutes: number;
 	message: string;
+	embed: boolean;
 }): void {
 	db.prepare(
-		`INSERT INTO user_settings (user_id, dm_enabled, interval_minutes, message)
-		 VALUES (?, ?, ?, ?)
+		`INSERT INTO user_settings (user_id, dm_enabled, interval_minutes, message, embed)
+		 VALUES (?, ?, ?, ?, ?)
 		 ON CONFLICT(user_id) DO UPDATE SET
 		   dm_enabled = excluded.dm_enabled,
 		   interval_minutes = excluded.interval_minutes,
-		   message = excluded.message`,
-	).run(settings.userId, settings.dmEnabled ? 1 : 0, settings.intervalMinutes, settings.message);
+		   message = excluded.message,
+		   embed = excluded.embed`,
+	).run(
+		settings.userId,
+		settings.dmEnabled ? 1 : 0,
+		settings.intervalMinutes,
+		settings.message,
+		settings.embed ? 1 : 0,
+	);
 }
 
 export function updateUserLastSent(userId: string, timestamp: number): void {

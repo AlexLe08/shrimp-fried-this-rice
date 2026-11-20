@@ -105,3 +105,25 @@ describe('disableGuildReminderForChannel / updateGuildReminderLastSentForChannel
 		expect(after.enabled).toBe(1);
 	});
 });
+
+describe('the embed choice', () => {
+	it('defaults to an embed, and can be created as plain text', () => {
+		makeReminder();
+		makeReminder({ label: 'plain', embed: false });
+
+		expect(getGuildReminderByLabel('guild-1', 'water')?.embed).toBe(1);
+		expect(getGuildReminderByLabel('guild-1', 'plain')?.embed).toBe(0);
+	});
+
+	it('is changed by updateGuildReminder only when given', () => {
+		makeReminder();
+		updateGuildReminder('guild-1', 'water', { embed: false });
+		expect(getGuildReminderByLabel('guild-1', 'water')?.embed).toBe(0);
+
+		updateGuildReminder('guild-1', 'water', { intervalMinutes: 30 });
+		expect(getGuildReminderByLabel('guild-1', 'water')?.embed).toBe(0);
+
+		updateGuildReminder('guild-1', 'water', { embed: true });
+		expect(getGuildReminderByLabel('guild-1', 'water')?.embed).toBe(1);
+	});
+});

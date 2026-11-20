@@ -414,3 +414,121 @@ describe('/reminder status', () => {
 		consoleSpy.mockRestore();
 	});
 });
+
+describe('/reminder embed option', () => {
+	it('create saves plain text when embed is false, and says so', async () => {
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: makeGuild(),
+			options: {
+				subcommand: 'create',
+				strings: { label: 'water', message: 'hi' },
+				channels: { channel: makePermissiveChannel() },
+				integers: { interval: 60 },
+				booleans: { embed: false },
+			},
+		});
+
+		await guildReminderCommand.execute(interaction as never);
+
+		expect(getGuildReminderByLabel('g1', 'water')?.embed).toBe(0);
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining('as plain text') }),
+		);
+	});
+
+	it('create defaults to an embed', async () => {
+		await createBaseline();
+
+		expect(getGuildReminderByLabel('g1', 'water')?.embed).toBe(1);
+	});
+
+	it('edit accepts embed as the only field to change', async () => {
+		await createBaseline();
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: makeGuild(),
+			options: { subcommand: 'edit', strings: { label: 'water' }, booleans: { embed: false } },
+		});
+
+		await guildReminderCommand.execute(interaction as never);
+
+		expect(getGuildReminderByLabel('g1', 'water')).toMatchObject({ embed: 0, message: 'original' });
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining('updated') }),
+		);
+	});
+
+	it('list marks plain-text reminders', async () => {
+		await createBaseline();
+		const edit = createMockInteraction({
+			inCachedGuild: true,
+			guild: makeGuild(),
+			options: { subcommand: 'edit', strings: { label: 'water' }, booleans: { embed: false } },
+		});
+		await guildReminderCommand.execute(edit as never);
+
+		const list = createMockInteraction({ inCachedGuild: true, guild: makeGuild(), options: { subcommand: 'list' } });
+		await guildReminderCommand.execute(list as never);
+
+		expect(list.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining('enabled, plain text') }),
+		);
+	});
+
+	function makeNoEmbedChannel() {
+		const channel = createMockChannel();
+		(channel as Record<string, unknown>)['permissionsFor'] = vi.fn(() => ({
+			has: (permission: bigint) => permission !== PermissionFlagsBits.EmbedLinks,
+		}));
+		return channel;
+	}
+
+	it("doesn't warn about Embed Links for a plain-text reminder", async () => {
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: makeGuild(),
+			options: {
+				subcommand: 'create',
+				strings: { label: 'water', message: 'hi' },
+				channels: { channel: makeNoEmbedChannel() },
+				integers: { interval: 60 },
+				booleans: { embed: false },
+			},
+		});
+
+		await guildReminderCommand.execute(interaction as never);
+
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.not.stringContaining('⚠️') }),
+		);
+	});
+
+	it("warns when edit switches to an embed in a channel where the bot can't embed", async () => {
+		const channel = makeNoEmbedChannel();
+		const create = createMockInteraction({
+			inCachedGuild: true,
+			guild: makeGuild(),
+			options: {
+				subcommand: 'create',
+				strings: { label: 'water', message: 'hi' },
+				channels: { channel },
+				integers: { interval: 60 },
+				booleans: { embed: false },
+			},
+		});
+		await guildReminderCommand.execute(create as never);
+		const savedChannelId = getGuildReminderByLabel('g1', 'water')!.channel_id;
+
+		const edit = createMockInteraction({
+			inCachedGuild: true,
+			guild: { ...makeGuild(), channels: { cache: new Map([[savedChannelId, channel]]) } },
+			options: { subcommand: 'edit', strings: { label: 'water' }, booleans: { embed: true } },
+		});
+		await guildReminderCommand.execute(edit as never);
+
+		expect(edit.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining('sent as plain text until I can') }),
+		);
+	});
+});

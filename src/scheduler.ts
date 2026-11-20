@@ -98,7 +98,7 @@ async function checkGuildReminders(client: Client<true>): Promise<void> {
 				!('permissionsFor' in channel) ||
 				channel.permissionsFor(client.user)?.has(PermissionFlagsBits.EmbedLinks) !== false;
 			await channel.send(
-				canEmbed
+				canEmbed && reminder.embed === 1
 					? buildReminderMessage(reminder.reminder_label, reminder.message, reminder.interval_minutes)
 					: reminder.message,
 			);
@@ -137,7 +137,9 @@ async function checkUserReminders(client: Client<true>): Promise<void> {
 		try {
 			const user = await client.users.fetch(userSettings.user_id);
 			await user.send(
-				buildReminderMessage('Reminder', userSettings.message, userSettings.interval_minutes, { mentions: false }),
+				userSettings.embed === 1
+					? buildReminderMessage('Reminder', userSettings.message, userSettings.interval_minutes, { mentions: false })
+					: userSettings.message,
 			);
 			updateUserLastSent(userSettings.user_id, now);
 		} catch (error) {
