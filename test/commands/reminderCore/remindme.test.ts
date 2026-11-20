@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { Collection } from 'discord.js';
 import remindmeCommand from '../../../src/commands/reminderCore/remindme.ts';
 import { getUserSettings, upsertUserSettings, __resetForTests } from '../../../src/storage.ts';
 import { createMockInteraction } from '../../mockInteraction.ts';
@@ -129,5 +130,23 @@ describe('/remindme — embed', () => {
 		expect(interaction.reply).toHaveBeenCalledWith(
 			expect.objectContaining({ content: expect.stringContaining('Format: plain text') }),
 		);
+	});
+});
+
+describe('/remindme — custom emoji', () => {
+	it("warns, but saves, when the message has an emoji from a server the bot isn't in", async () => {
+		const cache = new Collection([['111', { id: '111', available: true, guild: { id: 'g1', name: 'Test Guild' } }]]);
+		const interaction = createMockInteraction({
+			user: { id: 'u1', username: 'tester' },
+			client: { emojis: { cache } },
+			options: { strings: { message: '<:shrimp:111> <:gone:999>' } },
+		});
+
+		await remindmeCommand.execute(interaction as never);
+
+		expect(getUserSettings('u1')?.message).toBe('<:shrimp:111> <:gone:999>');
+		const content = (interaction.reply.mock.calls[0]![0] as { content: string }).content;
+		expect(content).toContain('`:gone:`');
+		expect(content).not.toContain('`:shrimp:`');
 	});
 });

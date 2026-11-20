@@ -17,6 +17,7 @@ Deployed and running in production. What's done, what's next, and candidates for
 - A self-updating status embed (`/reminder status`) listing every reminder and when it next sends, refreshed whenever one sends or changes.
 - Personal DM reminders (`/remindme`), opt-in and independent of any server.
 - Reminders arrive as an embed by default: the reminder's label as the title (`Reminder` for DMs), its message, and how often it repeats. Each server reminder, and each user's DM reminders, can be set to plain text instead with the `embed` option. Discord doesn't ping mentions inside an embed, so a server reminder's mentions are also posted just above it (not ones in code, spoilers, or escaped). A message with a link is sent as plain text, as before embeds, because Discord doesn't preview links in a bot message that has its own embed; a link in code, a spoiler or `<https://…>` doesn't count. In a channel where the bot lacks Embed Links, every reminder is sent as plain text.
+- Custom emoji: a reminder can use the server's own emoji, and those of other servers the bot is in where it has Use External Emojis (in a DM, being in the emoji's server is enough). Discord shows any other custom emoji as `:name:` text, embed or not, so `/reminder create`, `/reminder edit` and `/remindme` name the ones that will when the message is saved, with the server each comes from and a link to the channel.
 - Each command has a 3-second per-user cooldown.
 - Label autocomplete: wherever `/reminder` asks for an existing reminder's `label` (`edit`, `toggle`, `snooze`, `unsnooze`, `delete`), Discord lists the server's reminders to pick from, each with its interval, channel, and whether it's disabled or snoozed. Labels starting with what's typed come first. A typed label that matches none still gets the usual "No reminder found".
 - Snoozing: a server reminder (`/reminder snooze`) or your own DM reminders (`/remindme snooze:`) can be held back for 30 minutes to a week, then resume by themselves. Each snooze chooses what happens when it ends: send one right away if one was missed (the default), or wait a full interval. Active snoozes show in `/reminder list`, `/reminder status` and `/remindme`.
@@ -29,7 +30,7 @@ Deliberate choices from before the [decision records](docs/decisions/):
 
 - `/remindme` (personal DM settings) is keyed only by user ID, not per server. Someone in several servers with this bot has one set of personal DM settings across all of them: a personal reminder, independent of any server.
 - Only one status embed is tracked per server. Re-running `/reminder status` deletes the previous embed (if it still exists) and posts a new one, even in a different channel.
-- `/reminder create` warns, but still saves, when the bot lacks permissions in the channel (View Channel, Send Messages): an admin may grant them afterwards, and the reminder starts sending once they do. Without Embed Links it says the reminder will go out as plain text instead.
+- `/reminder create` warns, but still saves, when the bot lacks permissions in the channel (View Channel, Send Messages): an admin may grant them afterwards, and the reminder starts sending once they do. Without Embed Links it says the reminder will go out as plain text instead. Custom emoji the bot can't use are warned about the same way, not refused: the fix (inviting the bot, granting Use External Emojis) is the admin's, and the text is theirs.
 
 ## ⚠️ Important: never run local dev against the production bot token
 
@@ -59,9 +60,9 @@ Slash commands are registered **globally** (via `deploycommands`), so they're av
 ## Local Setup
 
 1. **Create a dedicated local-dev Discord Application** (do not reuse the production one — see the warning above):
-   - **Bot tab:** no privileged gateway intents need to be enabled — this project only requests the non-privileged `Guilds` intent.
+   - **Bot tab:** no privileged gateway intents need to be enabled — this project only requests the non-privileged `Guilds` and `GuildExpressions` intents (the second keeps each server's emoji list current for the custom-emoji warning).
    - **OAuth2 → URL Generator → Scopes:** `bot`, `applications.commands`
-   - **Bot Permissions:** Send Messages, Embed Links (reminders and the `/reminder status` embed are embeds), Read Message History (required to fetch/delete previously-posted status embeds), View Channel
+   - **Bot Permissions:** Send Messages, Embed Links (reminders and the `/reminder status` embed are embeds), Read Message History (required to fetch/delete previously-posted status embeds), View Channel; optionally Use External Emojis, for reminders that use emoji from another server the bot is in
    - Use the generated URL to invite this dev bot to your test server.
 
 2. **Clone and install dependencies**
@@ -154,8 +155,8 @@ Key production-specific details, for future reference:
 
 | Command | Description |
 |---|---|
-| `/reminder create <label> <channel> <interval> <message> [embed]` | Creates a new server reminder (max 20 per server). Interval must be 5–1440 minutes. `embed:False` sends it as plain text (default: an embed). Warns (but still saves) if the bot lacks permissions in the target channel. |
-| `/reminder edit <label> [channel] [interval] [message] [embed]` | Edits one or more fields of an existing reminder, including whether it's an embed; unspecified fields are left unchanged. |
+| `/reminder create <label> <channel> <interval> <message> [embed]` | Creates a new server reminder (max 20 per server). Interval must be 5–1440 minutes. `embed:False` sends it as plain text (default: an embed). Warns (but still saves) if the bot lacks permissions in the target channel, and about custom emoji it can't use there. |
+| `/reminder edit <label> [channel] [interval] [message] [embed]` | Edits one or more fields of an existing reminder, including whether it's an embed; unspecified fields are left unchanged. A new message or channel warns about custom emoji the bot can't use there. |
 | `/reminder list` | Lists the server's master toggle state, followed by every configured reminder and its status, noting the ones sent as plain text (ephemeral, text-only). |
 | `/reminder status` | Posts a public, self-updating embed listing every reminder and a live "next fire" timestamp for each. Deletes any previously-posted status embed for this server first. |
 | `/reminder toggle <label> <enabled>` | Enables or disables a specific reminder, until toggled back. |
@@ -163,7 +164,7 @@ Key production-specific details, for future reference:
 | `/reminder unsnooze <label>` | Ends a snooze early, as if it had ended now. |
 | `/reminder delete <label>` | Deletes a reminder. |
 | `/reminder master <enabled>` | Server-wide kill switch — overrides all individual reminders when off. Requires **Manage Server** permission; guild-only. |
-| `/remindme [enabled] [interval] [message] [embed]` | Views (if called with no options) or updates your personal DM reminder settings; `embed:False` sends them as plain text. Can be run in a server or directly in a DM with the bot. |
+| `/remindme [enabled] [interval] [message] [embed]` | Views (if called with no options) or updates your personal DM reminder settings; `embed:False` sends them as plain text. Can be run in a server or directly in a DM with the bot. A new message warns about custom emoji the bot can't use. |
 | `/remindme snooze:<duration> [after_snooze]` | Snoozes your DM reminders, with the same durations and `after_snooze` choices as `/reminder snooze`; `snooze:Cancel snooze` ends one early. Can be combined with the options above. |
 | `/remindme reset:true` | Deletes your personal DM reminder settings entirely. |
 
@@ -179,6 +180,7 @@ src/
   storage.ts            # SQLite data-access layer (guild settings, guild reminders, user settings, status message tracking) and schema migrations
   snooze.ts             # snooze durations and after-snooze choices shared by /reminder and /remindme
   reminderMessage.ts    # builds what a reminder sends: an embed with its mentions above it, or plain text when it has a link
+  customEmoji.ts        # finds custom emoji in a reminder's text that the bot can't use where it sends
   reminderEmbed.ts       # builds the /reminder status embed; also refreshes the tracked status message when reminders change
   types/
     command.ts           # shared Command interface
@@ -194,6 +196,7 @@ test/
   mockInteraction.ts               # shared fake ChatInputCommandInteraction/AutocompleteInteraction builder (command + event tests)
   reminderEmbed.test.ts            # buildReminderStatusEmbed + refreshGuildStatusMessage tests
   reminderMessage.test.ts          # the embed a reminder sends, which mentions go above it, and when it's plain text
+  customEmoji.test.ts              # which custom emoji are warned about, per server, channel permission and DM
   scheduler.test.ts                # scheduler tests, using fake timers
   schedulerCheckFailure.test.ts    # a poll whose storage query throws is logged, not a crash (mocks storage, so its own file)
   shutdown.test.ts                  # gracefulShutdown orchestration tests (mocked scheduler + storage)

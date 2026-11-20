@@ -38,6 +38,7 @@ import {
 import { buildReminderStatusEmbed } from '../../reminderEmbed.ts';
 import { refreshGuildStatusMessage } from '../../reminderEmbed.ts';
 import { EMBED_OPTION_DESCRIPTION } from '../../reminderMessage.ts';
+import { unusableEmojiWarning } from '../../customEmoji.ts';
 import type { TextChannel } from 'discord.js';
 
 function checkChannelPermissions(
@@ -70,6 +71,28 @@ function checkChannelPermissions(
 		warnings.push("⚠️ I can't embed links in that channel, so this reminder will be sent as plain text until I can.");
 	}
 	return warnings.length > 0 ? warnings.join('\n') : null;
+}
+
+// `channel` is undefined when the saved channel isn't cached; Use External
+// Emojis is then unknown, and only emoji the bot can't use anywhere are flagged.
+function emojiWarning(
+	interaction: ChatInputCommandInteraction<'cached'>,
+	channelId: string,
+	channel: TextChannel | undefined,
+	message: string,
+): string | null {
+	const me = interaction.guild.members.me;
+	const perms = me && channel ? channel.permissionsFor(me) : null;
+	return unusableEmojiWarning(interaction.client, message, {
+		guildId: interaction.guildId,
+		channelId,
+		useExternalEmojis: perms ? perms.has(PermissionFlagsBits.UseExternalEmojis) : null,
+	});
+}
+
+function joinWarnings(...warnings: (string | null)[]): string {
+	const present = warnings.filter((warning) => warning !== null);
+	return present.length > 0 ? `\n\n${present.join('\n')}` : '';
 }
 
 const MESSAGE_LIMIT = 2000;
@@ -319,10 +342,13 @@ export default {
 				embed,
 			});
 
-			const permissionWarning = checkChannelPermissions(interaction, channel as TextChannel, embed);
+			const warnings = joinWarnings(
+				checkChannelPermissions(interaction, channel as TextChannel, embed),
+				emojiWarning(interaction, channel.id, channel as TextChannel, message),
+			);
 
 			await interaction.reply({
-				content: `Created reminder \`${label}\`: every ${interval} minutes in ${channel}, as ${embed ? 'an embed' : 'plain text'}.${permissionWarning ? `\n\n${permissionWarning}` : ''}`,
+				content: `Created reminder \`${label}\`: every ${interval} minutes in ${channel}, as ${embed ? 'an embed' : 'plain text'}.${warnings}`,
 				flags: MessageFlags.Ephemeral,
 			});
 			await refreshGuildStatusMessage(interaction.client, guildId);
@@ -366,9 +392,20 @@ export default {
 			const permissionWarning = checked
 				? checkChannelPermissions(interaction, checked as TextChannel, saved.embed === 1)
 				: null;
+			// Only the text and the channel decide whether an emoji renders; an
+			// interval or embed change alone would repeat the create's warning.
+			const emojiCheck =
+				channel || message !== null
+					? emojiWarning(
+							interaction,
+							saved.channel_id,
+							(channel ?? interaction.guild.channels.cache.get(saved.channel_id)) as TextChannel | undefined,
+							saved.message,
+						)
+					: null;
 
 			await interaction.reply({
-				content: `Reminder \`${label}\` updated.${permissionWarning ? `\n\n${permissionWarning}` : ''}`,
+				content: `Reminder \`${label}\` updated.${joinWarnings(permissionWarning, emojiCheck)}`,
 				flags: MessageFlags.Ephemeral,
 			});
 			await refreshGuildStatusMessage(interaction.client, guildId);

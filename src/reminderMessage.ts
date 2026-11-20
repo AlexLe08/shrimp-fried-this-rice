@@ -7,9 +7,11 @@ const MESSAGE_LIMIT = 2000;
 export const EMBED_OPTION_DESCRIPTION =
 	'Send as an embed (default: yes). Messages with links, or without Embed Links, are plain text';
 
+// Code shows its text as typed, so a mention, link or emoji in it is only text.
+export const CODE = /```[\s\S]*?```|`[^`\n]*`/g;
 // Code and spoilers are where an author keeps a mention from pinging or a
 // link from showing, so they don't count for either.
-const HIDDEN = /```[\s\S]*?```|`[^`\n]*`|\|\|[\s\S]*?\|\|/g;
+const HIDDEN = new RegExp(`${CODE.source}|\\|\\|[\\s\\S]*?\\|\\|`, 'g');
 // Mentions inside an embed render but don't notify (checked on the dev
 // server: Discord lists no mentions for them), so they're repeated in the
 // message's content. Not escaped ones (`\@everyone`), not `@here` inside an

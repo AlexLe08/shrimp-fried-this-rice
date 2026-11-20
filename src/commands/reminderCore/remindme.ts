@@ -18,6 +18,7 @@ import {
 	describeSnooze,
 } from '../../snooze.ts';
 import { EMBED_OPTION_DESCRIPTION } from '../../reminderMessage.ts';
+import { unusableEmojiWarning } from '../../customEmoji.ts';
 
 const DEFAULT_MESSAGE = 'Time for a quick break!';
 const DEFAULT_INTERVAL = 60;
@@ -135,6 +136,8 @@ export default {
 			replyLines.push(
 				`DM reminders ${dmEnabled ? 'enabled' : 'disabled'}. Interval: every ${intervalMinutes} minutes. Format: ${embed ? 'embed' : 'plain text'}. Message: ${message}`,
 			);
+			const emojiWarning = messageOption !== null ? unusableEmojiWarning(interaction.client, message, null) : null;
+			if (emojiWarning) replyLines.push(emojiWarning);
 		}
 
 		if (snoozeOption === CANCEL_SNOOZE) {

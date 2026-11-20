@@ -99,19 +99,24 @@ Later item), not a follow-up.
   text, as before #23. Migration 1 adds `embed` (default 1) to
   `guild_reminders` and `user_settings`, so existing reminders stay
   embeds. `/reminder list` and the `/remindme` view show the choice.
+- **Warnings for custom emoji the bot can't use** (2026-11-20, #25). The
+  roadmap had blamed the input: checked on the dev server, the client
+  sends `<:name:id>` whether an emoji is picked, autocompleted or typed on
+  mobile. An emoji shows as `:name:` text when the bot can't use it: from
+  a server it isn't in, or from another server without Use External
+  Emojis in the channel (in a DM, being in the emoji's server is enough),
+  embed or not. That can't be worked around, so `/reminder create`,
+  `edit` (new message or channel) and `/remindme` name those emoji, and
+  ones whose server lost the boost for them, and still save. The
+  `GuildExpressions` intent keeps the bot's emoji list current, so an
+  emoji added after startup isn't flagged.
 
 ## Next up
 
 Feature work, in this order unless the owner says otherwise. Schema
 changes are cheapest now, while the bot is pre-release (decision 0003).
 
-1. **Custom server emoji in reminder messages.** Discord's slash-command
-   inputs don't always turn a picked custom emoji into its `<:name:id>`
-   form, so it posts as text; Unicode emoji are fine. A Discord client
-   limitation, so this is a workaround: for example, turning `:name:` in
-   the message into the server's emoji when the reminder is saved.
-   Investigate before choosing.
-2. **File or audio attachments on reminders** (bundled sounds or user
+1. **File or audio attachments on reminders** (bundled sounds or user
    uploads). Open questions first: where uploads live (the VM's disk, or
    Discord's own CDN by re-posting the attachment URL, which expires),
    size limits, and the free tier. Likely a design note or decision record
@@ -148,3 +153,8 @@ runtime dependency is the owner's decision.
 - Dependabot version updates (`.github/dependabot.yml`); security updates
   are already on.
 - A web dashboard for configuration (longer term).
+- Custom emoji limited to certain roles: the warning doesn't check
+  whether the bot has one of the emoji's roles, so such an emoji can still
+  show as text unwarned.
+- Bot-owned application emoji (usable anywhere, no Use External Emojis
+  needed), for example for bundled reminder icons.
