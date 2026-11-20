@@ -74,34 +74,33 @@ Later item), not a follow-up.
   may reset the database instead (0003). `/reminder list` keeps under
   Discord's 2000 characters. The docs no longer say `better-sqlite3`
   compiles from source (13 ships a prebuilt `linux-arm64` binary).
+- **Label autocomplete** (2026-11-19, #22). `/reminder edit`, `toggle`,
+  `snooze`, `unsnooze` and `delete` offer the server's labels as you
+  type, each choice naming its interval, channel, and whether it's
+  disabled or snoozed. `interactionCreate.ts` routes autocomplete ahead
+  of the cooldown check (one fires per keystroke) and logs a failed one.
+  Typing a label by hand still works, so the "No reminder found" check
+  stays.
 
 ## Next up
 
 Feature work, in this order unless the owner says otherwise. Schema
 changes are cheapest now, while the bot is pre-release (decision 0003).
 
-1. **Autocomplete for reminder labels.** `/reminder edit`, `toggle`,
-   `delete`, `snooze` and `unsnooze` each take a label typed exactly; an
-   autocomplete handler offering the server's labels (Discord sends the
-   partial input; the bot answers with up to 25 choices) removes that.
-   Needs `interactionCreate.ts` to route autocomplete interactions, which
-   it doesn't today, ahead of the cooldown check (an autocomplete fires
-   on every keystroke). The `label` options gain `setAutocomplete(true)`,
-   a command change the deploy re-registers. No schema change.
-2. **Embeds for the messages reminders send.** They're plain text today
+1. **Embeds for the messages reminders send.** They're plain text today
    (pasted image, GIF, YouTube and Spotify links still unfurl). Options:
    a fixed style for every reminder (no schema change), or per-reminder
    colour and title (new columns, a migration or, while pre-release, a
    reset). The lean is the fixed style first. Embeds have their own
    limits: description 4096 against the message's 2000, and mentions in
    an embed don't ping.
-3. **Custom server emoji in reminder messages.** Discord's slash-command
+2. **Custom server emoji in reminder messages.** Discord's slash-command
    inputs don't always turn a picked custom emoji into its `<:name:id>`
    form, so it posts as text; Unicode emoji are fine. A Discord client
    limitation, so this is a workaround: for example, turning `:name:` in
    the message into the server's emoji when the reminder is saved.
    Investigate before choosing.
-4. **File or audio attachments on reminders** (bundled sounds or user
+3. **File or audio attachments on reminders** (bundled sounds or user
    uploads). Open questions first: where uploads live (the VM's disk, or
    Discord's own CDN by re-posting the attachment URL, which expires),
    size limits, and the free tier. Likely a design note or decision record

@@ -22,6 +22,8 @@ interface MockInteractionConfig {
 	replied?: boolean;
 	deferred?: boolean;
 	isChatInputCommand?: boolean;
+	isAutocomplete?: boolean;
+	focused?: string;
 	commandName?: string;
 }
 
@@ -41,6 +43,7 @@ export function createMockInteraction(config: MockInteractionConfig = {}) {
 		replied: config.replied ?? false,
 		deferred: config.deferred ?? false,
 		isChatInputCommand: vi.fn(() => config.isChatInputCommand ?? true),
+		isAutocomplete: vi.fn(() => config.isAutocomplete ?? false),
 		commandName: config.commandName ?? 'mock-command',
 
 		inCachedGuild: vi.fn(() => config.inCachedGuild ?? true),
@@ -53,9 +56,11 @@ export function createMockInteraction(config: MockInteractionConfig = {}) {
 			getChannel: vi.fn((name: string) => options.channels?.[name] ?? null),
 			getUser: vi.fn((name: string) => options.users?.[name] ?? null),
 			getSubcommand: vi.fn(() => options.subcommand ?? ''),
+			getFocused: vi.fn(() => config.focused ?? ''),
 		},
 
 		reply: vi.fn().mockResolvedValue(undefined),
+		respond: vi.fn().mockResolvedValue(undefined),
 		deferReply: vi.fn().mockResolvedValue(undefined),
 		editReply: vi.fn().mockResolvedValue(undefined),
 		followUp: vi.fn().mockResolvedValue(undefined),
