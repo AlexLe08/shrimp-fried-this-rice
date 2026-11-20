@@ -1,10 +1,11 @@
 # CLAUDE.md
 
 Project instructions for Claude Code. Personal working-style preferences
-live in `CLAUDE.local.md` (gitignored). `README.md` is the reference for
-commands, behaviour, setup and deployment, and holds the current status
-(Status) and next steps (Roadmap); read it before changing any of those,
-and update it in the same PR when they change.
+live in `CLAUDE.local.md` (gitignored). Current status and next steps
+live in `docs/roadmap.md`: read it when starting a task. `README.md` is
+the reference for features, commands, behaviour, setup and deployment;
+read it before changing any of those, and update it in the same PR when
+they change.
 
 ## What this is
 
@@ -170,5 +171,8 @@ the workflow, indexed in its `README.md`.
   branch (never `--force`). The `reviewer` subagent (`.claude/agents/`)
   reviews the branch before the PR is opened; only the owner approves,
   merges, and approves deploys.
-- A change users can see updates the README's Status, Commands or
-  Roadmap in its own PR, not in a follow-up.
+- A change users can see updates the README's Features, Commands or
+  Design notes in its own PR, not in a follow-up.
+- The roadmap's Done entry goes in the feature's own PR, which also moves
+  or removes its Next up or Later item (no follow-up commits after
+  merging).

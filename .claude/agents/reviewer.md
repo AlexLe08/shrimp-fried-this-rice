@@ -38,8 +38,10 @@ both connect to Discord.
    - Correctness: bugs, edge cases, races between the scheduler and
      commands, and shutdown (nothing touches the database after it
      closes).
-   - Docs: README sections (Status, Commands, Project Structure, Testing,
-     Production Deployment, Roadmap) that now need an edit.
+   - Docs: README sections (Status, Features, Design notes, Commands,
+     Project Structure, Testing, Production Deployment) that now need an
+     edit, and `docs/roadmap.md`: the branch's Done entry, and its Next up
+     or Later item moved or removed.
 3. Run `scripts/check.sh` to confirm the result.
 4. Report each finding as `path:line`, severity (blocker, should-fix,
    nit), the CLAUDE.md section or reason, and a suggested fix. Then what

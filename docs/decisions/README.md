@@ -16,8 +16,9 @@ later change can tell a deliberate choice from an accident.
 
 Design notes from before these records (global command registration,
 personal DM settings keyed by user only, warn-but-save on missing channel
-permissions, one status embed per server) are in the README's Status
-section.
+permissions, one status embed per server) are in the README's Features
+and Design notes sections; the history behind them is in
+[`../roadmap.md`](../roadmap.md)'s Done.
 
 | Record | Decision | Status |
 | --- | --- | --- |

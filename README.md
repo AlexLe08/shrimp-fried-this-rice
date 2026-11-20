@@ -8,36 +8,26 @@ A Discord bot built with **TypeScript** and **discord.js v14** that periodically
 
 **Pre-release:** the bot has no users yet, so a breaking schema change may reset production's database instead of migrating it ([decision 0003](docs/decisions/0003-pre-release-schema-resets.md)). Removing this line ends that; from then on every schema change is a migration.
 
-**Core feature set is complete, deployed, and running in production:**
-- Slash command loading and registration (global — works in any server the bot is invited to, plus direct DMs)
-- Event handling (`ClientReady`, `InteractionCreate`)
-- Per-command, per-user cooldowns (3 seconds by default)
-- SQLite-backed persistence (`src/storage.ts`) for server and per-user settings, with schema migrations applied on startup (versioned by SQLite's `user_version`; see [decision 0002](docs/decisions/0002-schema-migrations-with-user-version.md))
-- A polling scheduler (`src/scheduler.ts`) that sends reminders when they're due, hardened against overlapping poll ticks. A reminder whose channel was deleted (or can't take messages) is disabled, and shows as disabled in `/reminder status`; re-enable it with `/reminder edit` to a new channel, then `/reminder toggle`. A send Discord refuses (missing permissions, DMs closed) is retried after the reminder's own interval rather than every minute; network and Discord server errors are retried on the next minute's poll.
-- Full CRUD management of server reminders (capped at 20 per server to guard against runaway/abusive creation), plus a server-wide master toggle
-- A live-updating status embed (`/reminder status`) listing all of a server's reminders with Discord relative timestamps for their next fire time; automatically re-posts/edits itself whenever a reminder fires or its settings change (`src/reminderEmbed.ts`)
-- Personal opt-in DM reminders, independent of any server setting — configurable directly via DM with the bot
+Deployed and running in production. What's done, what's next, and candidates for later are in [`docs/roadmap.md`](docs/roadmap.md).
+
+## Features
+
+- Slash commands registered globally: the bot works in any server it's invited to, and `/remindme` also works in a DM with it.
+- Server reminders (`/reminder`): up to 20 per server, each posting its message to a channel every 5 to 1440 minutes, with a server-wide master toggle. Managing them needs **Manage Server**.
+- A self-updating status embed (`/reminder status`) listing every reminder and when it next sends, refreshed whenever one sends or changes.
+- Personal DM reminders (`/remindme`), opt-in and independent of any server.
+- Each command has a 3-second per-user cooldown.
 - Snoozing: a server reminder (`/reminder snooze`) or your own DM reminders (`/remindme snooze:`) can be held back for 30 minutes to a week, then resume by themselves. Each snooze chooses what happens when it ends: send one right away if one was missed (the default), or wait a full interval. Active snoozes show in `/reminder list`, `/reminder status` and `/remindme`.
-- Graceful shutdown handling (`src/shutdown.ts`) — on `SIGTERM`/`SIGINT`, the scheduler is stopped (waiting for a send already under way to finish and be recorded, so it isn't repeated after the restart), the Discord client is cleanly destroyed, and the database connection is closed, with a 5-second force-exit safety net in case cleanup ever hangs
-- Deployed 24/7 on an Oracle Cloud "Always Free" VM, managed via systemd, and deployed automatically by GitHub Actions on merge to `main` (see [Production Deployment](#production-deployment))
-- A Vitest test suite covering **~98% of statements / ~99% of lines** across the entire codebase — persistence, scheduling, embeds, event handling, shutdown, and every command (see [Testing](#testing))
-- A GitHub Actions CI workflow running type-checking and the full test suite on every push/PR, enforced via a branch ruleset that blocks merging into `main` unless CI passes (see [Continuous Integration](#continuous-integration))
+- Failures are handled per reminder: one whose channel was deleted (or can't take messages) is disabled, and shows as disabled in `/reminder status`; re-enable it with `/reminder edit` to a new channel, then `/reminder toggle`. A send Discord refuses (missing permissions, DMs closed) is retried after the reminder's own interval; network and Discord server errors on the next minute's poll.
+- Restarts are clean: on `SIGTERM`/`SIGINT` (every deploy), a send already under way finishes and is recorded, so it isn't repeated after the restart.
 
-**Notable bugs caught by the test suite:**
-- `getDueGuildReminders` originally used an inner `JOIN` against `guild_settings`, which silently excluded *every* reminder belonging to a server that had never explicitly run `/reminder master` (since no row exists there until that command is used). This meant a server that created reminders but never touched the master toggle could have had them never fire, with no visible error. Fixed by switching to a `LEFT JOIN` with explicit `NULL` handling, correctly treating "no row" the same as "enabled," matching the schema's stated default.
-- A dedicated test in `interactionCreate.test.ts` directly reproduces the production incident where a command's own error *and* the fallback error-reply itself both failed, which had previously crashed the whole bot process via an unhandled promise rejection. This test locks in the fix (a nested `try`/`catch` around the fallback reply) so a future refactor can't silently reintroduce that crash.
+## Design notes
 
-**Deferred / future enhancements (not blocking, not started):**
-- Custom-styled embeds for the periodic reminder *messages themselves* (the `/reminder status` overview already uses an embed — this item is specifically about the message a reminder actually sends when it fires, which is still plain text; it still supports pasted image/GIF/YouTube/Spotify links via Discord's automatic link unfurling)
-- True file/audio attachments on reminders (bundled sound files or user-uploaded audio)
-- Autocomplete for custom server emojis in reminder messages (Discord's own slash-command input fields don't always convert a picked custom emoji into its proper renderable format — this is a Discord client limitation, not a bug in this bot; standard Unicode emojis are unaffected)
-- Enforcing a minimum coverage threshold in CI (via Vitest's `coverage.thresholds`), so a future PR that drops coverage fails the build automatically, rather than coverage being a one-time achievement
-- Publishing the HTML coverage report as a downloadable CI artifact (via `actions/upload-artifact`), so it can be browsed per-run without checking out and re-running locally
+Deliberate choices from before the [decision records](docs/decisions/):
 
-**Known, deliberate design notes:**
-- `/remindme` (personal DM settings) is keyed only by user ID, not per-server. If the same person is in multiple servers this bot is in, they share one set of personal DM reminder settings across all of them — this matches the original spec (a personal reminder independent of any server), not a bug.
-- Only one status embed is tracked per server at a time. Re-running `/reminder status` deletes the previous embed (if it still exists) and posts a new one, even if run in a different channel than before.
-- `refreshGuildStatusMessage` (in `reminderEmbed.ts`) and `startScheduler` (in `scheduler.ts`) both accept a discord.js `Client`, but their test mocks only implement the handful of methods actually used (`channels.fetch`, `users.fetch`, `guilds.fetch`) rather than the full real interface. This requires a `client as unknown as Client` double-cast in the test files, since the mock doesn't structurally match discord.js's much larger `Client` type. A cleaner long-term fix would be narrowing each function's parameter type to a small custom interface describing only what it actually needs (interface segregation) — which would let the mocks satisfy the type directly with no cast at all. Deferred for now since the current approach is a standard, contained pattern for test mocks; worth revisiting if the project leans further into strict typing as a demonstrated practice.
+- `/remindme` (personal DM settings) is keyed only by user ID, not per server. Someone in several servers with this bot has one set of personal DM settings across all of them: a personal reminder, independent of any server.
+- Only one status embed is tracked per server. Re-running `/reminder status` deletes the previous embed (if it still exists) and posts a new one, even in a different channel.
+- `/reminder create` warns, but still saves, when the bot lacks permissions in the channel: an admin may grant them afterwards, and the reminder starts sending once they do.
 
 ## ⚠️ Important: never run local dev against the production bot token
 
@@ -222,7 +212,7 @@ test/
     interactionCreate.test.ts        # includes a direct regression test for the production crash incident
 ```
 
-Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `scripts/` (worktrees, `check.sh` mirroring CI, cleanup after merges) and `docs/decisions/`.
+Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `scripts/` (worktrees, `check.sh` mirroring CI, cleanup after merges), `docs/decisions/`, and `docs/roadmap.md` (status and next steps).
 
 ## Available Scripts
 
@@ -239,19 +229,6 @@ Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `sc
 | `npm run test:coverage` | Runs the test suite once with a coverage report |
 | `npm run deploycommands` | Registers slash commands globally with Discord's API |
 | `npm run zip` | Bundles the project (excluding `node_modules`, `dist`, `.env`, `reminders.db`, etc.) into a shareable zip |
-
-## Roadmap
-
-- [ ] Custom-styled embeds for the periodic reminder messages themselves
-- [ ] True file/audio attachment support (bundled sound files, or user-uploaded)
-- [ ] Autocomplete for custom server emojis in reminder messages
-- [ ] Enforce a minimum coverage threshold in CI
-- [ ] Publish the HTML coverage report as a CI artifact
-- [ ] Consider narrowing `refreshGuildStatusMessage`'s and `startScheduler`'s `Client` parameter to a smaller custom interface, to eliminate the `as unknown as Client` casts in test mocks
-- [ ] Structured logging (e.g. `pino`) with real log levels, in place of plain `console.log`/`console.error`
-- [ ] `CHANGELOG.md` documenting notable changes and fixes over time
-- [ ] Dependabot version updates (`.github/dependabot.yml`); security updates are already on
-- [ ] Web dashboard for configuration (longer-term idea)
 
 ## License
 
