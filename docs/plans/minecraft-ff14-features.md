@@ -10,7 +10,7 @@ How to work through it:
 - Facts marked **unverified** must be checked before code relies on them. Facts marked **verified 2026-11-20** were checked against the source named.
 - If the plan turns out wrong, or a simpler design fits better, say so and update this file in the same PR rather than silently diverging from it.
 
-Tracks A, B, C and E are independent apart from two shared pieces: decision record 0004 (feature storage modules) comes with E1, so E1 goes first, and E3's buttons use C4's button routing. Other shared pieces are noted where they occur. Track D (the dashboard) comes after them.
+Tracks A, B, C and E are independent apart from two shared pieces: decision record 0004 (feature storage modules) comes first, from [`refactor.md`](refactor.md)'s task 3, and E3's buttons use C4's button routing. Other shared pieces are noted where they occur. Track D (the dashboard) comes after them.
 
 | Track | What it adds | Where it runs |
 |---|---|---|
@@ -36,7 +36,7 @@ Tracks A, B, C and E are independent apart from two shared pieces: decision reco
 
 Added on 2026-11-20, when the plan was brought onto `main`:
 
-- **Feature storage modules.** Each feature's queries live in its own module, sharing the database handle that `src/storage.ts` opens, rather than all of them growing `storage.ts`. `storage.ts` keeps the handle, the `CREATE TABLE`s, `MIGRATIONS` and the limits. This changes CLAUDE.md's "`src/storage.ts` is the only module that touches SQLite", so the first PR that adds such a module (E1) adds decision record 0004 and updates CLAUDE.md's Architecture rules to match.
+- **Feature storage modules.** Each feature's queries live in its own module, sharing one database handle, rather than all of them growing `storage.ts`. As revised by the owner on 2026-11-20: `src/core/database.ts` opens the handle and keeps the `CREATE TABLE`s and `MIGRATIONS`, and each area's storage module keeps its queries and its own limits. This changes CLAUDE.md's "`src/storage.ts` is the only module that touches SQLite", so decision record 0004 and the CLAUDE.md update come with [`refactor.md`](refactor.md)'s task 3, before E1. That refactor also moves `src/` into feature folders; its tasks 2, 3 and 6 update this plan's paths and its `storage.ts` and `scheduler.ts` references.
 - **Mod-only collection commands are a separate command.** `/collection` is what members use; `/collectionadmin` holds everything that changes a server's collections or someone else's entries, with **Manage Server** as its default permission. A server grants it to a mod role in Server Settings → Integrations, as with `/recruit`. This follows CLAUDE.md's rule that commands changing server settings set `setDefaultMemberPermissions`, and drops the custom mod-role setting.
 - **These tracks go ahead of** the roadmap's earlier Next up items (attachments on reminders, the `/remindme` rework).
 
@@ -270,7 +270,7 @@ CREATE TABLE collection_entries (
 - Deleting a collection must delete its items, members and entries; deleting an item must delete its entries. Do it with deletes inside one transaction, tested. The alternative, `ON DELETE CASCADE`, needs `PRAGMA foreign_keys = ON` on every connection. That pragma can't be set inside a transaction (where migrations run), and it changes the behaviour of the whole connection for one feature.
 - Cap collections per server and items per collection (for example 10 and 500), next to `MAX_REMINDERS_PER_GUILD` in `storage.ts`.
 
-Where the code goes: a feature storage module (see the owner's decisions), for example `src/collectionStorage.ts`. Its exact name and how it gets the handle follow decision record 0004, from E1. `__resetForTests()` clears the new tables.
+Where the code goes: a feature storage module (see the owner's decisions), for example `src/collectionStorage.ts`. Its exact name and how it gets the handle follow decision record 0004, from [`refactor.md`](refactor.md)'s task 3. `__resetForTests()` clears the new tables.
 
 ### Commands
 
@@ -615,7 +615,7 @@ Both features add a check to `src/scheduler.ts` beside `guildCheck` and `userChe
 
 ### E-recruit: trial FC members, for moderators
 
-Decision record 0004 (feature storage modules) goes in E1's PR, since it is the first to add one.
+Decision record 0004 (feature storage modules) comes from [`refactor.md`](refactor.md)'s task 3, ahead of E1; E1 follows it.
 
 **What a moderator does.** Records a new FC member by **in-game name** with a short note. Nothing ties the entry to a Discord account. After 30 days the bot posts in the moderators' channel, pinging the moderator role: this person joined 30 days ago, here is the note, are they still with us, promote them in game to full member.
 
@@ -734,7 +734,7 @@ The reminder channel must be one the reminded member can see, or the mention rea
 
 ### Steps
 
-- **E1. `/recruit`**: decision record 0004 and the CLAUDE.md update, the first feature storage module, the migration, the commands, the due check in the scheduler, the reminder post, and the README, including its retitle and `CASESTUDY.md`'s Overview (see B's steps). Needs no new intent. The smallest feature in the plan, so it goes first.
+- **E1. `/recruit`**: the first feature storage module (per decision record 0004, from the refactor), the migration, the commands, the due check in the scheduler, the reminder post, and the README, including its retitle and `CASESTUDY.md`'s Overview (see B's steps). Needs no new intent. The smallest feature in the plan, so it goes first.
 - **E2. Role check-in**: the intent and partial in `src/index.ts`, the member update and member remove event files in `src/events/`, storage and migration, `/rolecheck`, the due check, the reconcile pass, a decision record for the privileged intent, and the README and `ORACLE_CLOUD_DEPLOYMENT.md` setup changes. **Confirm the portal switch is on for both applications before the PR is merged.**
 - **E3. Buttons on both reminders** (optional): Promoted, Left and Snooze on the recruit reminder; Still a guest and Joined the FC on the role check-in, which swap the member's role and so need the bot to have Manage Roles and sit above those roles. Uses the button routing built in C4.
 
@@ -760,7 +760,7 @@ In addition:
 
 Small PRs, each green on its own. These go ahead of the roadmap's earlier Next up items.
 
-1. E1 (`/recruit`, with decision record 0004)
+1. E1 (`/recruit`, after the refactor in [`refactor.md`](refactor.md))
 2. B2 (collection storage)
 3. B3 (`/collection`)
 4. B4 (`/collectionadmin`)
