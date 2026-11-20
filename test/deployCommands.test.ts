@@ -54,7 +54,7 @@ describe('deploy-commands', () => {
 
 	// What users see in Discord: names, options, descriptions, choices and
 	// permissions. A refactor that changes any of them fails here; one that
-	// means to updates the snapshot (`npx vitest -u`) in the same PR.
+	// means to updates the snapshot (`npx vitest run -u`) in the same PR.
 	it('registers the same command definitions', async () => {
 		put.mockResolvedValue([]);
 
