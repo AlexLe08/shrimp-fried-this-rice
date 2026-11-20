@@ -1,4 +1,4 @@
-import { DiscordAPIError, type Client } from 'discord.js';
+import { DiscordAPIError, PermissionFlagsBits, type Client } from 'discord.js';
 import {
 	getDueGuildReminders,
 	updateGuildReminderLastSent,
@@ -89,7 +89,18 @@ async function checkGuildReminders(client: Client<true>): Promise<void> {
 				continue;
 			}
 
-			await channel.send(buildReminderMessage(reminder.reminder_label, reminder.message, reminder.interval_minutes));
+			// Discord's docs don't say what becomes of a bot's embed where it
+			// lacks Embed Links (a reminder saved before the warning, or an
+			// override added since), so the plain text that worked before
+			// embeds is sent instead.
+			const canEmbed =
+				!('permissionsFor' in channel) ||
+				channel.permissionsFor(client.user)?.has(PermissionFlagsBits.EmbedLinks) !== false;
+			await channel.send(
+				canEmbed
+					? buildReminderMessage(reminder.reminder_label, reminder.message, reminder.interval_minutes)
+					: reminder.message,
+			);
 			updateGuildReminderLastSent(reminder.id, now);
 			// Shutting down: the send is recorded, and the embed's next-fire
 			// time is still right after the restart. Refreshing it would only
@@ -124,7 +135,9 @@ async function checkUserReminders(client: Client<true>): Promise<void> {
 		if (stopping) break;
 		try {
 			const user = await client.users.fetch(userSettings.user_id);
-			await user.send(buildReminderMessage('Reminder', userSettings.message, userSettings.interval_minutes));
+			await user.send(
+				buildReminderMessage('Reminder', userSettings.message, userSettings.interval_minutes, { mentions: false }),
+			);
 			updateUserLastSent(userSettings.user_id, now);
 		} catch (error) {
 			console.error(`Failed to send DM reminder to user ${userSettings.user_id}:`, error);

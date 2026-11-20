@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
-import { DiscordAPIError, type Client, type EmbedBuilder, type MessageCreateOptions } from 'discord.js';
+import {
+	DiscordAPIError,
+	PermissionFlagsBits,
+	type Client,
+	type EmbedBuilder,
+	type MessageCreateOptions,
+} from 'discord.js';
 import { startScheduler, stopScheduler } from '../src/scheduler.ts';
 import {
 	createGuildReminder,
@@ -56,6 +62,26 @@ describe('scheduler — guild reminders', () => {
 			footer: { text: 'Every 5 minutes' },
 		});
 		expect(getGuildReminderByLabel('g1', 'water')?.last_sent_at).toBeGreaterThan(0);
+	});
+
+	it('sends plain text where the bot lacks Embed Links', async () => {
+		createGuildReminder({
+			guildId: 'g1',
+			label: 'water',
+			channelId: 'c1',
+			intervalMinutes: 5,
+			message: 'Drink water!',
+		});
+		const channel = createMockChannel();
+		const permissionsFor = vi.fn(() => ({
+			has: (permission: bigint) => permission !== PermissionFlagsBits.EmbedLinks,
+		}));
+		const client = createMockClient({ channels: { c1: Object.assign(channel, { permissionsFor }) } });
+
+		startScheduler(client as unknown as Client<true>);
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		expect(channel.send).toHaveBeenCalledWith('Drink water!');
 	});
 
 	it('logs an error and does not throw when the channel is not found', async () => {
@@ -322,6 +348,17 @@ describe('scheduler — user DM reminders', () => {
 			footer: { text: 'Every 5 minutes' },
 		});
 		expect(getUserSettings('u1')?.last_sent_at).toBeGreaterThan(0);
+	});
+
+	it("doesn't repeat mentions above a DM's embed, where they can't ping", async () => {
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: '@everyone stretch' });
+		const user = createMockUser();
+		const client = createMockClient({ users: { u1: user } });
+
+		startScheduler(client as unknown as Client<true>);
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		expect(user.send).toHaveBeenCalledWith(expect.not.objectContaining({ content: expect.anything() }));
 	});
 
 	it('logs an error and does not throw when a DM fails to send', async () => {

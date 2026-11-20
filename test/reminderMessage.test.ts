@@ -46,4 +46,56 @@ describe('buildReminderMessage', () => {
 	it('lists a repeated mention or link once', () => {
 		expect(build('<@1> https://a.com <@1> https://a.com').content).toBe('<@1> https://a.com');
 	});
+
+	it("doesn't take @here or @everyone out of a word, such as an email address", () => {
+		expect(build('mail bob@heretic.org or team@everyoneinc.com').content).toBeUndefined();
+	});
+
+	it("doesn't repeat escaped mentions, which don't ping", () => {
+		expect(build('\\@everyone and \\<@123> are literal').content).toBeUndefined();
+	});
+
+	it("doesn't repeat mentions or links in code or spoilers", () => {
+		expect(
+			build('`@everyone` and ```\n<@1> https://a.com\n``` and ||https://spoiler.com @here||').content,
+		).toBeUndefined();
+	});
+
+	it('separates back-to-back markdown links', () => {
+		expect(build('[a](https://a.com)[b](https://b.com)').content).toBe('https://a.com https://b.com');
+	});
+
+	it('keeps balanced parentheses in a link', () => {
+		expect(build('see https://en.wikipedia.org/wiki/Foo_(bar).').content).toBe(
+			'https://en.wikipedia.org/wiki/Foo_(bar)',
+		);
+	});
+
+	it('stops a link at markdown emphasis', () => {
+		expect(build('*https://a.com*').content).toBe('https://a.com');
+	});
+
+	it('keeps the content within 2000 characters', () => {
+		// 2000 characters of mentions with no spaces: joined with spaces, they'd be longer.
+		const text = Array.from({ length: 200 }, (_, i) => `<@${1_000_000 + i}>`).join('');
+		const { content } = build(text);
+
+		expect(text.length).toBe(2000);
+		expect(content!.length).toBeLessThanOrEqual(2000);
+		expect(content).toMatch(/^<@1000000> <@1000001> /);
+	});
+
+	it('leaves mentions out when asked (DMs), but still repeats links', () => {
+		const message = buildReminderMessage('Reminder', '@everyone <@1> https://a.com', 60, { mentions: false });
+
+		expect(message.content).toBe('https://a.com');
+	});
+
+	it('sends an embed without a description for whitespace-only text', () => {
+		const { content, embed } = build('   ');
+
+		expect(content).toBeUndefined();
+		expect(embed.description).toBeUndefined();
+		expect(embed.title).toBe('water');
+	});
 });
