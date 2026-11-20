@@ -99,7 +99,7 @@ Later item), not a follow-up.
   text, as before #23. Migration 1 adds `embed` (default 1) to
   `guild_reminders` and `user_settings`, so existing reminders stay
   embeds. `/reminder list` and the `/remindme` view show the choice.
-- **Warnings for custom emoji the bot can't use** (2026-11-20). The
+- **Warnings for custom emoji the bot can't use** (2026-11-20, #25). The
   roadmap had blamed the input: checked on the dev server, the client
   sends `<:name:id>` whether an emoji is picked, autocompleted or typed on
   mobile. An emoji shows as `:name:` text when the bot can't use it: from
