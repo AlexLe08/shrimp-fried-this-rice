@@ -4,6 +4,18 @@ import type { Command } from '../types/command.ts';
 export default {
 	name: Events.InteractionCreate,
 	async execute(interaction: Interaction) {
+		if (interaction.isAutocomplete()) {
+			// Ahead of the cooldown: Discord sends one of these per keystroke, and an
+			// answer it never gets only leaves the list empty, so a failure is logged.
+			const command: Command | undefined = interaction.client.commands.get(interaction.commandName);
+			if (!command?.autocomplete) return;
+			try {
+				await command.autocomplete(interaction);
+			} catch (error) {
+				console.error(`Autocomplete for /${interaction.commandName} failed:`, error);
+			}
+			return;
+		}
 		if (!interaction.isChatInputCommand()) return;
 		const command: Command | undefined = interaction.client.commands.get(interaction.commandName);
 		if (!command) {
