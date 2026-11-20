@@ -63,25 +63,26 @@ Empty folders aren't tracked by git, so `ff14/` and `minecraft/` are created by 
 ### 2. Feature-folder layout and one command loader
 
 - Branch `refactor/feature-folders`; PR `refactor: move src into core and reminders feature folders`.
-- `git mv` everything to the target layout, except what tasks 3 to 6 create. Keep moves and edits apart (a commit of pure moves, then the import fixes) so the diff shows renames.
+- `git mv` everything to the target layout, except what tasks 3 to 6 create. Two files wait for their own task: `src/storage.ts` stays where it is until task 3 splits it (its default database path is relative to its own folder, see task 3), and `scheduler.ts` goes to `src/reminders/scheduler.ts` until task 6 splits it. Keep moves and edits apart (a commit of pure moves, then the import fixes) so the diff shows renames.
 - `src/core/loadCommands.ts`: the command loop `index.ts` and `deploy-commands.ts` each copy today (the copies have drifted: one imports a path, the other a file URL), scanning `src/*/commands/*.ts`. `index.ts` loads events from `src/*/events/*.ts`.
 - Tests move to mirror `src/`. Task 1's snapshot must pass unchanged.
-- Update: CLAUDE.md's Architecture rules (commands live in `src/<area>/commands/`, `snooze.ts` and `reminderEmbed.ts` paths), README's file trees and paths, `ORACLE_CLOUD_DEPLOYMENT.md` (`src/events/ready.ts`), `vitest.config.ts`'s coverage `exclude`, and the feature plan's paths (`src/news/` → `src/ff14/lodestone/`, `src/mcbridge/` → `src/minecraft/bridge/`, `src/events/` for E2 → `src/ff14/events/`).
+- Update: CLAUDE.md's Architecture rules (commands live in `src/<area>/commands/`, `snooze.ts` and `reminderEmbed.ts` paths), README's file trees and paths, `ORACLE_CLOUD_DEPLOYMENT.md` (`src/events/ready.ts`), `vitest.config.ts`'s coverage `exclude`, and the feature plan's paths (`src/news/` → `src/ff14/lodestone/`, `src/mcbridge/` → `src/minecraft/bridge/`, `src/events/` for E2 → `src/ff14/events/`, and Track A's reason the bot never loads the bridge: it has no `commands/` or `events/` folder).
 - Deploys: no user-visible change; the deploy re-registers the same command set (task 1's snapshot) and `src/index.ts` is where systemd expects it.
 
 ### 3. Storage split and decision record 0004
 
 - Branch `refactor/feature-storage-modules`; PR `refactor: split storage into core/database.ts and reminders/storage.ts`.
-- `src/core/database.ts` opens the database and exports the handle, and keeps every table's `CREATE TABLE`, `MIGRATIONS` (one sequence for all areas: `user_version` is a single number), `closeDatabase` and `__resetForTests`. `src/reminders/storage.ts` takes the reminder queries, their row interfaces and the limits. The SQL doesn't change; production's database needs nothing.
+- `src/core/database.ts` opens the database and exports the handle, and keeps every table's `CREATE TABLE`, `MIGRATIONS` (one sequence for all areas: `user_version` is a single number), `closeDatabase` and `__resetForTests`. `src/reminders/storage.ts` takes the reminder queries, their row interfaces and the limits. The SQL doesn't change.
+- **The default database path must still be `reminders.db` in the project root.** `src/storage.ts` builds it from its own folder (`path.join(__dirname, '..', 'reminders.db')`); copied unchanged into `src/core/`, it would point at `src/reminders.db`, and production would quietly open a new, empty database: every reminder gone, no error, the tests (`DB_PATH=':memory:'`) and the deploy's login check still green, and `.gitignore`'s `*.db*` hiding the stray file. Add a test that, with `DB_PATH` unset, the default path is the project root's `reminders.db`.
 - While moving: `isGuildMasterEnabled(guildId)` replaces the `settings ? settings.master_enabled === 1 : true` copied in `/reminder list` and the status embed; `updateGuildReminder` returns the updated row, so `/reminder edit` doesn't read it again.
 - Decision record 0004 (from `docs/decisions/0000-template.md`, indexed in its README): Context and Consequences drafted from the feature plan's "Feature storage modules" and this plan; **Why left as `TODO(Alex)`**. It names `core/database.ts` as the one module that opens SQLite and owns the schema, and each area's storage module as the only code in that area that queries it.
-- Update CLAUDE.md's "`src/storage.ts` is the only module that touches SQLite" rule to match, and the feature plan: E1 no longer adds 0004, and its "next to `MAX_REMINDERS_PER_GUILD` in `storage.ts`" caps go in the area's own storage module. Decision 0002 is left as written (it records where migrations were when it was made).
-- Deploys: no runtime change in behaviour; migrations and tables are untouched.
+- Update CLAUDE.md's "`src/storage.ts` is the only module that touches SQLite" rule to match, including its pre-release reset sentence (decision 0003 rewrites the `CREATE TABLE`s, now in `core/database.ts`). Update every `storage.ts` reference in the feature plan: migrations go in `core/database.ts`, and caps (collections, open recruits) in the area's own storage module. Decisions 0002 and 0003 are left as written: they record where the schema was when they were made.
+- Deploys: no runtime change in behaviour; migrations and tables are untouched. After the deploy, ask the owner to check that the bot still has its reminders (`/reminder list` on a server that had some), i.e. that it opened the existing database.
 
 ### 4. Shared Discord helpers in `core/discord.ts`
 
 - Branch `refactor/shared-discord-helpers`; PR `refactor: share reply, time and message-length helpers`.
-- `replyEphemeral(interaction, content)` for the ~23 `reply({ content, flags: MessageFlags.Ephemeral })` calls.
+- `replyEphemeral(interaction, content)` for every ephemeral `reply` (about 28: 20 in `/reminder`, 6 in `/remindme`, 2 in `interactionCreate.ts`).
 - `discordTime` moves from `snooze.ts`; `statusEmbed.ts` and `interactionCreate.ts`'s cooldown reply use it instead of building `<t:…:R>` by hand.
 - One `DISCORD_MESSAGE_LIMIT` (two `MESSAGE_LIMIT = 2000` today) and one "add lines until the limit, then say how many were left out" function for `fitList` (`/reminder list`), `customEmoji.ts`'s `fit` and `reminderMessage.ts`'s `mentionsOutsideEmbed`. `fitTo` (cutting text on whole characters) moves here too.
 - Discord error codes from discord.js's `RESTJSONErrorCodes` (exported by the installed 14.27.0, checked 2026-11-20) instead of `10003`/`10008` literals, and `isRefusedByDiscord` from `scheduler.ts`.
@@ -95,10 +96,10 @@ Empty folders aren't tracked by git, so `ff14/` and `minecraft/` are created by 
 - `execute` dispatches from a table of subcommand handlers in `src/reminders/subcommands/` instead of a 300-line `if` chain.
 - A "find the reminder or reply 'No reminder found'" helper for the five subcommands that repeat it (with the lowercased `label`).
 - Shared option builders: the `label` option with autocomplete (five copies), and `interval`, `message` and `embed`, which `/remindme` also uses. The after-snooze option's description moves to `snooze.ts` (copied in both commands today).
-- `getChannel('channel', true, [ChannelType.GuildText])`, which narrows the type in discord.js 14.27.0 (checked 2026-11-20), replaces the four `as TextChannel` casts; `/reminder edit` reads the channel's permissions once for both warnings.
+- `getChannel('channel', required, [ChannelType.GuildText])` (`true` in `create`, `false` in `edit`), which narrows the type in discord.js 14.27.0 (checked 2026-11-20), replaces the two `as TextChannel` casts on the option. The other two cast `guild.channels.cache.get(...)` for the saved channel; replace them with a type check, or leave them. `/reminder edit` reads the channel's permissions once for both warnings.
 - One function for a reminder's `` • `label` — every Nm in <#channel> `` line, used by `/reminder list` and the status embed.
 - Replacing the status message (delete the old one, post, save) moves from the `status` subcommand into `statusEmbed.ts`, which owns that message everywhere else.
-- `/remindme` only switches to the shared helpers and option builders: roadmap item 6 rewrites it, so restructuring it now would be thrown away.
+- `/remindme` only switches to the shared helpers and option builders: the roadmap's "Rework `/remindme`" item rewrites it, so restructuring it now would be thrown away.
 - Deploys: no user-visible change (task 1's snapshot, and the command tests unchanged).
 
 ### 6. Scheduler: a list of named checks
@@ -107,6 +108,7 @@ Empty folders aren't tracked by git, so `ff14/` and `minecraft/` are created by 
 - `src/core/scheduler.ts` keeps the timer, the no-overlap guard per check, `runCheck`'s logging and `stopScheduler` waiting for running checks, over a list of `{ name, run }` instead of the hand-written `guildCheck` and `userCheck`. The reminder checks move to `src/reminders/dueReminders.ts`; `ready.ts` passes the list. E1 and E2 then add a check by adding to the list.
 - The embed-or-plain-text choice, made separately for server and DM sends today, moves into one function beside `buildReminderMessage`.
 - Not yet: a general poller for Lodestone (C2). Build it when C2 needs one, from this.
+- Update the feature plan's references to `src/scheduler.ts` (Track C's polling, Track E's due checks) to the list of checks.
 - Tests keep going through `startScheduler` with fake timers (CLAUDE.md).
 - Deploys: no behaviour change; shutdown still waits for a send under way.
 
@@ -115,7 +117,7 @@ Empty folders aren't tracked by git, so `ff14/` and `minecraft/` are created by 
 - Branch `refactor/interaction-plumbing`; PR `refactor: tidy interaction routing and event loading`.
 - `interactionCreate.ts`: look the command up once, one fallback error reply instead of two copies (`followUp` or `reply`), the cooldown as its own function. C4's button routing goes in after this.
 - An `Event` type in `core/types/` for event modules (`index.ts` types them inline today).
-- `import.meta.dirname` (Node 24.21, checked) instead of the `__filename`/`__dirname` lines in `index.ts`, `deploy-commands.ts` and `core/database.ts`.
+- `import.meta.dirname` (in Node since 20.11, so in the Node 24 of `.nvmrc`) instead of the `__filename`/`__dirname` lines in `index.ts`, `deploy-commands.ts` and `core/database.ts`. The database path keeps resolving to the project root (task 3's test).
 - `customEmoji.ts` takes a narrow client interface (what it reads: `emojis.cache`) instead of all of `Client`, as #28 did for the scheduler and status embed.
 - Deploys: no behaviour change.
 
