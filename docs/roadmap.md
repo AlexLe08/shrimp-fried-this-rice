@@ -135,7 +135,7 @@ them ahead of items 6 and 7.
 1. **Refactor before the feature tracks**
    ([`plans/refactor.md`](plans/refactor.md)). Eight small PRs, no
    behaviour change: feature folders (`src/core/`, `src/reminders/`, later
-   `src/ff14/` and `src/minecraft/`), shared Discord helpers, `/reminder`
+   `src/ffxiv/` and `src/minecraft/`), shared Discord helpers, `/reminder`
    split into one handler per subcommand, the scheduler running a list of
    checks, and decision record 0004 (feature storage modules), brought
    forward from E1.

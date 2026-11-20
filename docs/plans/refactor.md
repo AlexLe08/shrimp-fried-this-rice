@@ -13,7 +13,7 @@ How to work through it:
 ## Decisions already made by the owner (2026-11-20)
 
 - **Feature folders.** `src/<area>/` holds an area's commands, storage, checks and embeds; the command and event loaders scan `src/*/commands/` and `src/*/events/`. The alternative, keeping `src/commands/<area>/` with the logic in `src/<area>/`, needs no loader change but splits every feature across two folders.
-- **Areas:** `core/` (bot plumbing and Discord helpers any area may use), `reminders/`, `ff14/`, `minecraft/`. `ff14/` takes everything in Tracks B, C and E, the role check-in (E2) included for now, although it isn't FF14-specific. The name `ff14` matches the roadmap and the feature plan; digits in folder names are ordinary. (`ffxiv`, the game's official abbreviation, is the alternative if the owner prefers it.)
+- **Areas:** `core/` (bot plumbing and Discord helpers any area may use), `reminders/`, `ffxiv/`, `minecraft/`. `ffxiv/` takes everything in Tracks B, C and E, the role check-in (E2) included for now, although it isn't FF14-specific. The folder uses `ffxiv`, the game's official abbreviation; the docs' prose still says FF14.
 - **Decision record 0004 (feature storage modules) moves here**, to task 3, from E1. E1 then follows it instead of adding it.
 - **Limits live with their area**: `MIN_INTERVAL_MINUTES`, `MAX_INTERVAL_MINUTES` and `MAX_REMINDERS_PER_GUILD` move to `src/reminders/`, and later caps (collections, open recruits) to their own area's storage module. This changes what the feature plan said (limits in `storage.ts`).
 
@@ -45,12 +45,12 @@ src/
     statusEmbed.ts         # renamed from reminderEmbed.ts: it is the /reminder status embed
     reminderMessage.ts
     snooze.ts
-  ff14/                    # created by E1: recruit, collections (B), Lodestone (C, the plan's src/news/), role check-in (E2, its member events in ff14/events/)
+  ffxiv/                   # created by E1: recruit, collections (B), Lodestone (C, the plan's src/news/), role check-in (E2, its member events in ffxiv/events/)
   minecraft/               # created by A: the plan's src/mcbridge/ becomes src/minecraft/bridge/
 test/                      # mirrors src/
 ```
 
-Empty folders aren't tracked by git, so `ff14/` and `minecraft/` are created by the first PR of their track, not here.
+Empty folders aren't tracked by git, so `ffxiv/` and `minecraft/` are created by the first PR of their track, not here.
 
 ## Tasks
 
@@ -66,18 +66,19 @@ Empty folders aren't tracked by git, so `ff14/` and `minecraft/` are created by 
 - `git mv` everything to the target layout, except what tasks 3 to 6 create. Two files wait for their own task: `src/storage.ts` stays where it is until task 3 splits it (its default database path is relative to its own folder, see task 3), and `scheduler.ts` goes to `src/reminders/scheduler.ts` until task 6 splits it. Keep moves and edits apart (a commit of pure moves, then the import fixes) so the diff shows renames.
 - `src/core/loadCommands.ts`: the command loop `index.ts` and `deploy-commands.ts` each copy today (the copies have drifted: one imports a path, the other a file URL), scanning `src/*/commands/*.ts`. `index.ts` loads events from `src/*/events/*.ts`.
 - Tests move to mirror `src/`. Task 1's snapshot must pass unchanged.
-- Update: CLAUDE.md's Architecture rules (commands live in `src/<area>/commands/`, `snooze.ts` and `reminderEmbed.ts` paths), README's file trees and paths, `ORACLE_CLOUD_DEPLOYMENT.md` (`src/events/ready.ts`), `vitest.config.ts`'s coverage `exclude`, and the feature plan's paths (`src/news/` → `src/ff14/lodestone/`, `src/mcbridge/` → `src/minecraft/bridge/`, `src/events/` for E2 → `src/ff14/events/`, and Track A's reason the bot never loads the bridge: it has no `commands/` or `events/` folder).
+- Update: CLAUDE.md's Architecture rules (commands live in `src/<area>/commands/`, `snooze.ts` and `reminderEmbed.ts` paths), README's file trees and paths, `ORACLE_CLOUD_DEPLOYMENT.md` (`src/events/ready.ts`), `vitest.config.ts`'s coverage `exclude`, and the feature plan's paths (`src/news/` → `src/ffxiv/lodestone/`, `src/mcbridge/` → `src/minecraft/bridge/`, `src/events/` for E2 → `src/ffxiv/events/`, and Track A's reason the bot never loads the bridge: it has no `commands/` or `events/` folder).
 - Deploys: no user-visible change; the deploy re-registers the same command set (task 1's snapshot) and `src/index.ts` is where systemd expects it.
 
 ### 3. Storage split and decision record 0004
 
 - Branch `refactor/feature-storage-modules`; PR `refactor: split storage into core/database.ts and reminders/storage.ts`.
 - `src/core/database.ts` opens the database and exports the handle, and keeps every table's `CREATE TABLE`, `MIGRATIONS` (one sequence for all areas: `user_version` is a single number), `closeDatabase` and `__resetForTests`. `src/reminders/storage.ts` takes the reminder queries, their row interfaces and the limits. The SQL doesn't change.
-- **The default database path must still be `reminders.db` in the project root.** `src/storage.ts` builds it from its own folder (`path.join(__dirname, '..', 'reminders.db')`); copied unchanged into `src/core/`, it would point at `src/reminders.db`, and production would quietly open a new, empty database: every reminder gone, no error, the tests (`DB_PATH=':memory:'`) and the deploy's login check still green, and `.gitignore`'s `*.db*` hiding the stray file. Add a test that, with `DB_PATH` unset, the default path is the project root's `reminders.db`.
+- **The default database path is chosen on purpose, not moved by accident.** `src/storage.ts` builds it from its own folder (`path.join(__dirname, '..', 'reminders.db')`); copied unchanged into `src/core/`, it would point at `src/reminders.db`, and production would quietly open a new, empty database, with no error: the tests never use the default (`DB_PATH=':memory:'`), the deploy's login check still passes, and `.gitignore`'s `*.db*` hides the stray file. So `core/database.ts` resolves the default from the project root, in a small exported function, and a new test checks what it returns with `DB_PATH` unset. That test opens no database, so the in-memory test database isn't in the way.
+- **The owner allows the path to change** (2026-11-20; pre-release, no users). Recommended: keep `reminders.db` in the project root, as no gain was found in moving it. If the session finds one (a `data/` folder, say), it may move it. Then production starts with an empty database, as a decision 0003 reset does; the old `reminders.db` (and its `-wal`/`-shm` files) stays in the project root until the owner deletes it; `better-sqlite3` won't create a missing folder, so the code must; and README's and `ORACLE_CLOUD_DEPLOYMENT.md`'s mentions of `reminders.db` change with it.
 - While moving: `isGuildMasterEnabled(guildId)` replaces the `settings ? settings.master_enabled === 1 : true` copied in `/reminder list` and the status embed; `updateGuildReminder` returns the updated row, so `/reminder edit` doesn't read it again.
 - Decision record 0004 (from `docs/decisions/0000-template.md`, indexed in its README): Context and Consequences drafted from the feature plan's "Feature storage modules" and this plan; **Why left as `TODO(Alex)`**. It names `core/database.ts` as the one module that opens SQLite and owns the schema, and each area's storage module as the only code in that area that queries it.
 - Update CLAUDE.md's "`src/storage.ts` is the only module that touches SQLite" rule to match, including its pre-release reset sentence (decision 0003 rewrites the `CREATE TABLE`s, now in `core/database.ts`). Update every `storage.ts` reference in the feature plan: migrations go in `core/database.ts`, and caps (collections, open recruits) in the area's own storage module. Decisions 0002 and 0003 are left as written: they record where the schema was when they were made.
-- Deploys: no runtime change in behaviour; migrations and tables are untouched. After the deploy, ask the owner to check that the bot still has its reminders (`/reminder list` on a server that had some), i.e. that it opened the existing database.
+- Deploys: no runtime change in behaviour; migrations and tables are untouched. If the path stays, ask the owner to check after the deploy that the bot still has its reminders (`/reminder list` on a server that had some), i.e. that it opened the existing database. If it moves, say that production's reminders and settings start empty, and ask the owner to delete the old `reminders.db` files from the VM when convenient.
 
 ### 4. Shared Discord helpers in `core/discord.ts`
 
