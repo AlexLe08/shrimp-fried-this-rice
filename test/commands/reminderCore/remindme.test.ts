@@ -9,7 +9,7 @@ beforeEach(() => {
 
 describe('/remindme — reset', () => {
 	it('deletes existing settings and confirms, ignoring any other options provided', async () => {
-		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 30, message: 'hi' });
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 30, message: 'hi', embed: true });
 
 		const interaction = createMockInteraction({
 			user: { id: 'u1', username: 'tester' },
@@ -35,7 +35,7 @@ describe('/remindme — view mode (no options provided)', () => {
 	});
 
 	it('shows current settings when they already exist', async () => {
-		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 45, message: 'Stretch!' });
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 45, message: 'Stretch!', embed: true });
 
 		const interaction = createMockInteraction({ user: { id: 'u1', username: 'tester' } });
 		await remindmeCommand.execute(interaction as never);
@@ -61,7 +61,13 @@ describe('/remindme — update mode', () => {
 	});
 
 	it('updates only the specified field, preserving the rest of an existing row', async () => {
-		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 30, message: 'original message' });
+		upsertUserSettings({
+			userId: 'u1',
+			dmEnabled: true,
+			intervalMinutes: 30,
+			message: 'original message',
+			embed: true,
+		});
 
 		const interaction = createMockInteraction({
 			user: { id: 'u1', username: 'tester' },
@@ -91,7 +97,7 @@ describe('/remindme — embed', () => {
 	});
 
 	it('switches to plain text on its own, keeping the rest', async () => {
-		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 30, message: 'hi' });
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 30, message: 'hi', embed: true });
 
 		const interaction = createMockInteraction({
 			user: { id: 'u1', username: 'tester' },

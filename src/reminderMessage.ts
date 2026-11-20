@@ -4,7 +4,8 @@ const REMINDER_COLOR = 0x5865f2;
 const MESSAGE_LIMIT = 2000;
 
 // The `embed` option of /reminder create, /reminder edit and /remindme.
-export const EMBED_OPTION_DESCRIPTION = 'Send as an embed (default: yes). A message with a link is always plain text';
+export const EMBED_OPTION_DESCRIPTION =
+	'Send as an embed (default: yes). Messages with links, or without Embed Links, are plain text';
 
 // Code and spoilers are where an author keeps a mention from pinging or a
 // link from showing, so they don't count for either.

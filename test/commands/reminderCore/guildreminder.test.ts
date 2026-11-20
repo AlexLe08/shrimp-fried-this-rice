@@ -475,4 +475,60 @@ describe('/reminder embed option', () => {
 			expect.objectContaining({ content: expect.stringContaining('enabled, plain text') }),
 		);
 	});
+
+	function makeNoEmbedChannel() {
+		const channel = createMockChannel();
+		(channel as Record<string, unknown>)['permissionsFor'] = vi.fn(() => ({
+			has: (permission: bigint) => permission !== PermissionFlagsBits.EmbedLinks,
+		}));
+		return channel;
+	}
+
+	it("doesn't warn about Embed Links for a plain-text reminder", async () => {
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: makeGuild(),
+			options: {
+				subcommand: 'create',
+				strings: { label: 'water', message: 'hi' },
+				channels: { channel: makeNoEmbedChannel() },
+				integers: { interval: 60 },
+				booleans: { embed: false },
+			},
+		});
+
+		await guildReminderCommand.execute(interaction as never);
+
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.not.stringContaining('⚠️') }),
+		);
+	});
+
+	it("warns when edit switches to an embed in a channel where the bot can't embed", async () => {
+		const channel = makeNoEmbedChannel();
+		const create = createMockInteraction({
+			inCachedGuild: true,
+			guild: makeGuild(),
+			options: {
+				subcommand: 'create',
+				strings: { label: 'water', message: 'hi' },
+				channels: { channel },
+				integers: { interval: 60 },
+				booleans: { embed: false },
+			},
+		});
+		await guildReminderCommand.execute(create as never);
+		const savedChannelId = getGuildReminderByLabel('g1', 'water')!.channel_id;
+
+		const edit = createMockInteraction({
+			inCachedGuild: true,
+			guild: { ...makeGuild(), channels: { cache: new Map([[savedChannelId, channel]]) } },
+			options: { subcommand: 'edit', strings: { label: 'water' }, booleans: { embed: true } },
+		});
+		await guildReminderCommand.execute(edit as never);
+
+		expect(edit.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining('sent as plain text until I can') }),
+		);
+	});
 });

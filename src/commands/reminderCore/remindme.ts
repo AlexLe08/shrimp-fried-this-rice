@@ -89,7 +89,7 @@ export default {
 			if (!existing) {
 				await interaction.reply({
 					content:
-						"You haven't set up DM reminders yet. Provide at least one option (`enabled`, `interval`, or `message`) to get started.",
+						"You haven't set up DM reminders yet. Provide at least one option (`enabled`, `interval`, `message`, or `embed`) to get started.",
 					flags: MessageFlags.Ephemeral,
 				});
 				return;
@@ -109,7 +109,7 @@ export default {
 		if (!changesSettings && !existing) {
 			await interaction.reply({
 				content:
-					"You haven't set up DM reminders yet, so there's nothing to snooze. Use `enabled`, `interval`, or `message` to set them up first.",
+					"You haven't set up DM reminders yet, so there's nothing to snooze. Use `enabled`, `interval`, `message`, or `embed` to set them up first.",
 				flags: MessageFlags.Ephemeral,
 			});
 			return;

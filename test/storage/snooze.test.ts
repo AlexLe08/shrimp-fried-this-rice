@@ -31,7 +31,7 @@ beforeEach(() => {
 	__resetForTests();
 	createGuildReminder({ guildId: 'g1', label: 'water', channelId: 'c1', intervalMinutes: 10, message: 'hi' });
 	updateGuildReminderLastSent(reminderId('water'), SENT_AT);
-	upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 10, message: 'hi' });
+	upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 10, message: 'hi', embed: true });
 	updateUserLastSent('u1', SENT_AT);
 });
 
@@ -128,7 +128,7 @@ describe('user DM snooze', () => {
 	it('keeps the snooze when the other settings are updated', () => {
 		const until = DUE_AT + 60 * ONE_MINUTE;
 		snoozeUser('u1', { until, skipMissed: false, now: DUE_AT });
-		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 15, message: 'new' });
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 15, message: 'new', embed: true });
 
 		expect(getUserSettings('u1')?.snoozed_until).toBe(until);
 	});

@@ -176,7 +176,7 @@ describe('/remindme snooze', () => {
 	}
 
 	beforeEach(() => {
-		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 30, message: 'Stretch!' });
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 30, message: 'Stretch!', embed: true });
 	});
 
 	it('snoozes existing DM reminders without changing the other settings', async () => {
@@ -213,7 +213,7 @@ describe('/remindme snooze', () => {
 	});
 
 	it('notes that nothing sends while DM reminders are off', async () => {
-		upsertUserSettings({ userId: 'u1', dmEnabled: false, intervalMinutes: 30, message: 'Stretch!' });
+		upsertUserSettings({ userId: 'u1', dmEnabled: false, intervalMinutes: 30, message: 'Stretch!', embed: true });
 		const interaction = remindme({ integers: { snooze: 60 } });
 
 		await remindmeCommand.execute(interaction as never);

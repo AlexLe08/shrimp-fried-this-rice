@@ -352,7 +352,7 @@ describe('scheduler — guild reminders', () => {
 
 describe('scheduler — user DM reminders', () => {
 	it('sends a due DM reminder and updates last_sent_at', async () => {
-		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'Drink water!' });
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'Drink water!', embed: true });
 
 		const user = createMockUser();
 		const client = createMockClient({ users: { u1: user } });
@@ -369,7 +369,13 @@ describe('scheduler — user DM reminders', () => {
 	});
 
 	it("doesn't repeat mentions above a DM's embed, where they can't ping", async () => {
-		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: '@everyone stretch' });
+		upsertUserSettings({
+			userId: 'u1',
+			dmEnabled: true,
+			intervalMinutes: 5,
+			message: '@everyone stretch',
+			embed: true,
+		});
 		const user = createMockUser();
 		const client = createMockClient({ users: { u1: user } });
 
@@ -391,7 +397,7 @@ describe('scheduler — user DM reminders', () => {
 	});
 
 	it('logs an error and does not throw when a DM fails to send', async () => {
-		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'hi' });
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'hi', embed: true });
 		const user = createMockUser({ sendShouldFail: true });
 		const client = createMockClient({ users: { u1: user } });
 		const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -404,7 +410,7 @@ describe('scheduler — user DM reminders', () => {
 	});
 
 	it('waits a full interval before retrying a DM Discord refused', async () => {
-		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'hi' });
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'hi', embed: true });
 		const user = createMockUser();
 		user.send.mockRejectedValue(discordError(50007, 403)); // Cannot send messages to this user
 		const client = createMockClient({ users: { u1: user } });
@@ -422,7 +428,7 @@ describe('scheduler — user DM reminders', () => {
 	});
 
 	it('retries a DM on the next poll after a network error', async () => {
-		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'hi' });
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'hi', embed: true });
 		const user = createMockUser();
 		user.send.mockRejectedValueOnce(new Error('network error'));
 		const client = createMockClient({ users: { u1: user } });
@@ -435,8 +441,8 @@ describe('scheduler — user DM reminders', () => {
 	});
 
 	it('stopScheduler skips the rest of a DM batch once the current send finishes', async () => {
-		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'first' });
-		upsertUserSettings({ userId: 'u2', dmEnabled: true, intervalMinutes: 5, message: 'second' });
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'first', embed: true });
+		upsertUserSettings({ userId: 'u2', dmEnabled: true, intervalMinutes: 5, message: 'second', embed: true });
 		const first = createMockUser();
 		let finishSend!: () => void;
 		first.send.mockReturnValue(
@@ -468,7 +474,7 @@ describe('scheduler — snoozes', () => {
 			intervalMinutes: 5,
 			message: 'Drink water!',
 		});
-		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'Stretch!' });
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'Stretch!', embed: true });
 		const now = Date.now();
 		const until = now + 10 * 60_000;
 		snoozeGuildReminder('g1', 'water', { until, skipMissed: false, now });

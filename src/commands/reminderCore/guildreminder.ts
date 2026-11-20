@@ -43,6 +43,7 @@ import type { TextChannel } from 'discord.js';
 function checkChannelPermissions(
 	interaction: ChatInputCommandInteraction<'cached'>,
 	channel: TextChannel,
+	embed: boolean,
 ): string | null {
 	// The bot's own member can be uncached right after startup. Skipping the
 	// check costs only the warning; the reminder is saved either way.
@@ -65,7 +66,7 @@ function checkChannelPermissions(
 		);
 	}
 	// Without it the scheduler still sends, as plain text.
-	if (!perms.has(PermissionFlagsBits.EmbedLinks)) {
+	if (embed && !perms.has(PermissionFlagsBits.EmbedLinks)) {
 		warnings.push("⚠️ I can't embed links in that channel, so this reminder will be sent as plain text until I can.");
 	}
 	return warnings.length > 0 ? warnings.join('\n') : null;
@@ -318,7 +319,7 @@ export default {
 				embed,
 			});
 
-			const permissionWarning = checkChannelPermissions(interaction, channel as TextChannel);
+			const permissionWarning = checkChannelPermissions(interaction, channel as TextChannel, embed);
 
 			await interaction.reply({
 				content: `Created reminder \`${label}\`: every ${interval} minutes in ${channel}, as ${embed ? 'an embed' : 'plain text'}.${permissionWarning ? `\n\n${permissionWarning}` : ''}`,
@@ -359,7 +360,12 @@ export default {
 
 			updateGuildReminder(guildId, label, updates);
 
-			const permissionWarning = channel ? checkChannelPermissions(interaction, channel as TextChannel) : null;
+			// A new channel, or a switch to embeds in the saved one, is worth checking.
+			const saved = getGuildReminderByLabel(guildId, label)!;
+			const checked = channel ?? (embed ? interaction.guild.channels.cache.get(saved.channel_id) : undefined);
+			const permissionWarning = checked
+				? checkChannelPermissions(interaction, checked as TextChannel, saved.embed === 1)
+				: null;
 
 			await interaction.reply({
 				content: `Reminder \`${label}\` updated.${permissionWarning ? `\n\n${permissionWarning}` : ''}`,

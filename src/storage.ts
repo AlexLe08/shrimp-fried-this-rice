@@ -319,9 +319,7 @@ export function upsertUserSettings(settings: {
 	dmEnabled: boolean;
 	intervalMinutes: number;
 	message: string;
-	// Like the others, written as given: a caller keeping the saved value
-	// passes it back (as /remindme does).
-	embed?: boolean;
+	embed: boolean;
 }): void {
 	db.prepare(
 		`INSERT INTO user_settings (user_id, dm_enabled, interval_minutes, message, embed)
@@ -336,7 +334,7 @@ export function upsertUserSettings(settings: {
 		settings.dmEnabled ? 1 : 0,
 		settings.intervalMinutes,
 		settings.message,
-		(settings.embed ?? true) ? 1 : 0,
+		settings.embed ? 1 : 0,
 	);
 }
 
