@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createMockClient } from './mocks.ts';
+import { createMockClient } from '../mocks.ts';
 
 // Its own file: the storage mock below would replace the real database for
 // every other scheduler test.
-vi.mock('../src/storage.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('../src/storage.ts')>()),
+vi.mock('../../src/storage.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('../../src/storage.ts')>()),
 	getDueGuildReminders: vi.fn(),
 }));
 
-import { startScheduler, stopScheduler } from '../src/scheduler.ts';
-import { getDueGuildReminders } from '../src/storage.ts';
+import { startScheduler, stopScheduler } from '../../src/reminders/scheduler.ts';
+import { getDueGuildReminders } from '../../src/storage.ts';
 
 beforeEach(() => {
 	vi.useFakeTimers();

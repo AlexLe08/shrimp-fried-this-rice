@@ -107,7 +107,7 @@ npm run test:watch    # watch mode, re-runs on file changes
 npm run test:coverage # run once with a coverage report (terminal + HTML in coverage/)
 ```
 
-**Current coverage:** ~98% statements / ~99% lines across the codebase (excluding `index.ts`, `deploy-commands.ts`, and `src/types/**`, which are deliberately excluded — see below).
+**Current coverage:** ~98% statements / ~99% lines across the codebase (excluding `index.ts`, `deploy-commands.ts`, and `src/core/types/**`, which are deliberately excluded — see below).
 
 **Test isolation:** each test run uses an in-memory SQLite database (`DB_PATH=':memory:'`, set in `test/setup.ts`), completely separate from your real local `reminders.db`. Tests never touch real dev or production data. Most test files also call a test-only `__resetForTests()` helper between tests, exported from `storage.ts` specifically for this purpose (not used anywhere in application code).
 
@@ -115,7 +115,7 @@ npm run test:coverage # run once with a coverage report (terminal + HTML in cove
 
 **What's excluded from the coverage target, and why:**
 - `index.ts` and `deploy-commands.ts` — bootstrap/entrypoint scripts that scan the filesystem and immediately connect to Discord on load, with no exported functions to test in isolation. Restructuring them purely to hit a coverage number wasn't judged worthwhile; they're exercised in practice every time the bot runs. `test/deployCommands.test.ts` does run `deploy-commands.ts`, with a mocked `REST`, to check the exit code the deploy job relies on, but it stays out of the coverage figures. It also matches the command definitions it registers against a snapshot (`test/__snapshots__/`), so a change to a command's name, options, descriptions, choices or permissions fails the tests unless the snapshot is updated (`npx vitest run -u`) in the same PR.
-- `src/types/**` — interfaces and module augmentation only, no runtime logic to execute.
+- `src/core/types/**` — interfaces and module augmentation only, no runtime logic to execute.
 
 **Known, accepted gaps within the covered files:** a handful of narrow branches remain untested — e.g. a couple of individual reply-wording branches, and the scheduler's overlap-guard "skip this tick" path (which would require a more elaborate concurrent-timer test to trigger deliberately). These were judged not worth chasing further once the suite comfortably exceeded its coverage goal; none represent untested core logic.
 
@@ -144,7 +144,7 @@ Key production-specific details, for future reference:
 - **Native module:** `better-sqlite3` 13 ships a prebuilt `linux-arm64` binary, so installing it on the VM compiles nothing. npm still runs its `node-gyp` step, which needs `python3`; `build-essential` is the fallback for a version or platform without a prebuilt binary (see [`ORACLE_CLOUD_DEPLOYMENT.md`](ORACLE_CLOUD_DEPLOYMENT.md), section 6).
 - **Schema migrations:** run by `storage.ts` when the bot starts, so the deploy's restart applies any new ones to `reminders.db`. A migration that fails rolls back and the bot exits, which the deploy's login check reports; systemd then restarts it every 5 seconds, failing the same way, and no reminders send until a fix is deployed.
 - **npm install-scripts:** `better-sqlite3`'s native build step (which only builds when no prebuilt binary matches) is explicitly approved via the `allowScripts` field committed in `package.json` — required for npm v12+'s install-script security gating.
-- **Graceful shutdown:** `systemctl restart`/`stop` send `SIGTERM`, which `src/shutdown.ts` handles by stopping the scheduler (and waiting for any send already under way), destroying the Discord client, and closing the database connection before the process exits — rather than the process being killed mid-operation. `Ctrl+C` during local `npm run dev` sends `SIGINT`, handled identically.
+- **Graceful shutdown:** `systemctl restart`/`stop` send `SIGTERM`, which `src/core/shutdown.ts` handles by stopping the scheduler (and waiting for any send already under way), destroying the Discord client, and closing the database connection before the process exits — rather than the process being killed mid-operation. `Ctrl+C` during local `npm run dev` sends `SIGINT`, handled identically.
 - **Service management:** the bot runs under a systemd unit (`discordbotshrimp.service`). Common commands:
   ```bash
   sudo systemctl status discordbotshrimp     # check if running
@@ -174,35 +174,32 @@ Key production-specific details, for future reference:
 
 ```
 src/
-  index.ts              # client setup, command/event loading, login
-  deploy-commands.ts    # registers slash commands globally with Discord's API
-  scheduler.ts          # polling loop — checks storage.ts for due reminders and sends them
-  shutdown.ts            # graceful SIGTERM/SIGINT handling — stops the scheduler, destroys the client, closes the database
-  eventListener.ts      # wraps each event handler so a rejection is logged, not an unhandled crash
-  storage.ts            # SQLite data-access layer (guild settings, guild reminders, user settings, status message tracking) and schema migrations
-  snooze.ts             # snooze durations and after-snooze choices shared by /reminder and /remindme
-  reminderMessage.ts    # builds what a reminder sends: an embed with its mentions above it, or plain text when it has a link
-  customEmoji.ts        # finds custom emoji in a reminder's text that the bot can't use where it sends
-  reminderEmbed.ts       # builds the /reminder status embed; also refreshes the tracked status message when reminders change
-  types/
-    command.ts           # shared Command interface
-    types.d.ts            # module augmentation (adds `commands`/`cooldowns` to discord.js's Client)
-  commands/
-    reminderCore/          # reminder (guildreminder.ts), remindme
-  events/
-    ready.ts               # ClientReady handler — also starts the scheduler
-    interactionCreate.ts   # routes slash command and autocomplete interactions, handles cooldowns + errors (with a hardened, self-catching error fallback)
+  index.ts                # client setup, command/event loading, login (systemd starts this file, so it stays here)
+  deploy-commands.ts      # registers slash commands globally with Discord's API
+  storage.ts              # SQLite data-access layer (guild settings, guild reminders, user settings, status message tracking) and schema migrations
+  core/                   # bot plumbing and Discord helpers any area may use
+    loadCommands.ts       # finds every area's commands/ and events/ files; the one command list for index.ts and deploy-commands.ts
+    shutdown.ts           # graceful SIGTERM/SIGINT handling — stops the scheduler, destroys the client, closes the database
+    eventListener.ts      # wraps each event handler so a rejection is logged, not an unhandled crash
+    customEmoji.ts        # finds custom emoji in a reminder's text that the bot can't use where it sends
+    types/
+      command.ts          # shared Command interface
+      types.d.ts          # module augmentation (adds `commands`/`cooldowns` to discord.js's Client)
+    events/
+      ready.ts            # ClientReady handler — also starts the scheduler
+      interactionCreate.ts  # routes slash command and autocomplete interactions, handles cooldowns + errors (with a hardened, self-catching error fallback)
+  reminders/              # /reminder, /remindme and the reminders they send
+    commands/
+      reminder.ts         # /reminder
+      remindme.ts         # /remindme
+    scheduler.ts          # polling loop — checks storage.ts for due reminders and sends them
+    snooze.ts             # snooze durations and after-snooze choices shared by /reminder and /remindme
+    reminderMessage.ts    # builds what a reminder sends: an embed with its mentions above it, or plain text when it has a link
+    statusEmbed.ts        # builds the /reminder status embed; also refreshes the tracked status message when reminders change
 test/
   setup.ts                       # points storage.ts at an in-memory DB before any test imports it
   mocks.ts                        # shared fake Client/channel/user builders (scheduler + embed tests)
   mockInteraction.ts               # shared fake ChatInputCommandInteraction/AutocompleteInteraction builder (command + event tests)
-  reminderEmbed.test.ts            # buildReminderStatusEmbed + refreshGuildStatusMessage tests
-  reminderMessage.test.ts          # the embed a reminder sends, which mentions go above it, and when it's plain text
-  customEmoji.test.ts              # which custom emoji are warned about, per server, channel permission and DM
-  scheduler.test.ts                # scheduler tests, using fake timers
-  schedulerCheckFailure.test.ts    # a poll whose storage query throws is logged, not a crash (mocks storage, so its own file)
-  shutdown.test.ts                  # gracefulShutdown orchestration tests (mocked scheduler + storage)
-  eventListener.test.ts            # rejected and throwing handlers are logged
   deployCommands.test.ts           # a failed registration sets a nonzero exit code; the registered definitions match a snapshot (mocked REST and dotenv)
   __snapshots__/                   # Vitest snapshots: every command's registered definition
   storage/
@@ -215,11 +212,20 @@ test/
     dueReminders.test.ts            # due-reminder boundary/edge-case tests for guild reminders
     snooze.test.ts                  # snoozing, cancelling, and the after-snooze choices, for reminders and DMs
     migrations.test.ts              # migrations on a database built like production's before them, and on a new one
-  commands/
-    reminderCore/                   # guildreminder (and its label autocomplete), remindme, and snooze (both commands' snooze options) tests
-  events/
-    ready.test.ts
-    interactionCreate.test.ts        # includes a direct regression test for the production crash incident
+  core/
+    loadCommands.test.ts            # which command and event files are found, and the commands they load
+    shutdown.test.ts                # gracefulShutdown orchestration tests (mocked scheduler + storage)
+    eventListener.test.ts           # rejected and throwing handlers are logged
+    customEmoji.test.ts             # which custom emoji are warned about, per server, channel permission and DM
+    events/
+      ready.test.ts
+      interactionCreate.test.ts     # includes a direct regression test for the production crash incident
+  reminders/
+    commands/                       # reminder (and its label autocomplete), remindme, and snooze (both commands' snooze options) tests
+    statusEmbed.test.ts             # buildReminderStatusEmbed + refreshGuildStatusMessage tests
+    reminderMessage.test.ts         # the embed a reminder sends, which mentions go above it, and when it's plain text
+    scheduler.test.ts               # scheduler tests, using fake timers
+    schedulerCheckFailure.test.ts   # a poll whose storage query throws is logged, not a crash (mocks storage, so its own file)
 ```
 
 Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `scripts/` (worktrees, `check.sh` mirroring CI, cleanup after merges), `docs/decisions/`, and `docs/roadmap.md` (status and next steps).

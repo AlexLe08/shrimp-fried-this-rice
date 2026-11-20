@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { EmbedBuilder } from 'discord.js';
-import { buildReminderMessage } from '../src/reminderMessage.ts';
+import { buildReminderMessage } from '../../src/reminders/reminderMessage.ts';
 
 function build(text: string) {
 	const message = buildReminderMessage('water', text, 60);

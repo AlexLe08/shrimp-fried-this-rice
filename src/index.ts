@@ -1,24 +1,15 @@
 import { Client, Collection, GatewayIntentBits } from 'discord.js';
 import 'dotenv/config';
 
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-import fs from 'node:fs';
-import type { Command } from './types/command.ts';
-
-import { shutdown } from './shutdown.ts';
-import { toEventListener } from './eventListener.ts';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { shutdown } from './core/shutdown.ts';
+import { toEventListener } from './core/eventListener.ts';
+import { findAreaModules, loadCommands } from './core/loadCommands.ts';
 
 // GuildExpressions keeps each server's emoji current after startup, so an
 // emoji added since then isn't warned about as one the bot can't use.
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildExpressions] });
 
 client.commands = new Collection();
-const foldersPath = path.join(__dirname, 'commands');
-const commandFolders = fs.readdirSync(foldersPath);
 
 function handleShutdownSignal(signal: string): void {
 	// A stuck cleanup (a Discord call hanging) would otherwise hold up a restart,
@@ -35,30 +26,12 @@ function handleShutdownSignal(signal: string): void {
 	});
 }
 
-// Every .ts file under commands/<category>/ is a command (deploy-commands.ts
-// registers the same set).
-for (const folder of commandFolders) {
-	const commandsPath = path.join(foldersPath, folder);
-	const commandFiles = fs.readdirSync(commandsPath).filter((file) => file.endsWith('.ts'));
-
-	for (const file of commandFiles) {
-		const filePath = path.join(commandsPath, file);
-		const commandModule = (await import(filePath)) as { default: Command };
-		const command = commandModule.default;
-		if (command && 'data' in command && 'execute' in command) {
-			client.commands.set(command.data.name, command);
-		} else {
-			console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
-		}
-	}
+for (const command of await loadCommands()) {
+	client.commands.set(command.data.name, command);
 }
 
-const eventsPath = path.join(__dirname, 'events');
-const eventFiles = fs.readdirSync(eventsPath).filter((file) => file.endsWith('.ts'));
-
-for (const file of eventFiles) {
-	const filePath = path.join(eventsPath, file);
-	const eventModule = (await import(filePath)) as {
+for (const fileUrl of findAreaModules('events')) {
+	const eventModule = (await import(fileUrl)) as {
 		default: { name: string; once: boolean; execute: (...args: unknown[]) => Promise<void> };
 	};
 	const event = eventModule.default;

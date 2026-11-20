@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { DiscordAPIError, PermissionFlagsBits, type EmbedBuilder, type MessageCreateOptions } from 'discord.js';
-import { startScheduler, stopScheduler } from '../src/scheduler.ts';
+import { startScheduler, stopScheduler } from '../../src/reminders/scheduler.ts';
 import {
 	createGuildReminder,
 	updateGuildReminder,
@@ -11,8 +11,8 @@ import {
 	snoozeGuildReminder,
 	snoozeUser,
 	__resetForTests,
-} from '../src/storage.ts';
-import { createMockClient, createMockChannel, createMockUser } from './mocks.ts';
+} from '../../src/storage.ts';
+import { createMockClient, createMockChannel, createMockUser } from '../mocks.ts';
 
 beforeEach(() => {
 	__resetForTests();
@@ -28,7 +28,7 @@ function discordError(code: number, status: number): DiscordAPIError {
 	return new DiscordAPIError({ message: 'mock', code }, code, status, 'POST', 'https://discord.com/api/v10/mock', {});
 }
 
-// Reminders are sent as embeds (src/reminderMessage.ts): the embed of a send call, as Discord receives it.
+// Reminders are sent as embeds (src/reminders/reminderMessage.ts): the embed of a send call, as Discord receives it.
 function sentEmbed(send: Mock, call = 0) {
 	const options = send.mock.calls[call]?.[0] as MessageCreateOptions;
 	return (options.embeds?.[0] as EmbedBuilder).toJSON();

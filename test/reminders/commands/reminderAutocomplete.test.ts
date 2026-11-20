@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import guildReminderCommand from '../../../src/commands/reminderCore/guildreminder.ts';
+import guildReminderCommand from '../../../src/reminders/commands/reminder.ts';
 import {
 	createGuildReminder,
 	setGuildReminderEnabled,

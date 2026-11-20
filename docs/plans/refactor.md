@@ -61,13 +61,14 @@ Empty folders aren't tracked by git, so `ffxiv/` and `minecraft/` are created by
 - As built: `test/deployCommands.test.ts` snapshots the body `deploy-commands.ts` sends (mocked `REST`), sorted by name and passed through JSON as REST sends it, rather than loading the command files itself. It needs no third copy of the loader, and task 2 can move the commands and replace the loader without touching the test, since `deploy-commands.ts` stays put. One snapshot of the whole list, so a dropped command fails it (a per-command snapshot would only turn obsolete).
 - Deploys: no runtime change.
 
-### 2. Feature-folder layout and one command loader
+### ~~2. Feature-folder layout and one command loader~~ (done, #32)
 
 - Branch `refactor/feature-folders`; PR `refactor: move src into core and reminders feature folders`.
 - `git mv` everything to the target layout, except what tasks 3 to 6 create. Two files wait for their own task: `src/storage.ts` stays where it is until task 3 splits it (its default database path is relative to its own folder, see task 3), and `scheduler.ts` goes to `src/reminders/scheduler.ts` until task 6 splits it. Keep moves and edits apart (a commit of pure moves, then the import fixes) so the diff shows renames.
 - `src/core/loadCommands.ts`: the command loop `index.ts` and `deploy-commands.ts` each copy today (the copies have drifted: one imports a path, the other a file URL), scanning `src/*/commands/*.ts`. `index.ts` loads events from `src/*/events/*.ts`.
 - Tests move to mirror `src/`. Task 1's snapshot must pass unchanged.
 - Update: CLAUDE.md's Architecture rules (commands live in `src/<area>/commands/`, `snooze.ts` and `reminderEmbed.ts` paths), README's file trees and paths, `ORACLE_CLOUD_DEPLOYMENT.md` (`src/events/ready.ts`), `vitest.config.ts`'s coverage `exclude`, and the feature plan's paths (`src/news/` → `src/ffxiv/lodestone/`, `src/mcbridge/` → `src/minecraft/bridge/`, `src/events/` for E2 → `src/ffxiv/events/`, and Track A's reason the bot never loads the bridge: it has no `commands/` or `events/` folder).
+- As built: `loadCommands.ts` also exports `findAreaModules('commands' | 'events')`, the file scan both loaders share (sorted, as file URLs), which `index.ts` uses for events; a new `test/core/loadCommands.test.ts` pins the files it finds, as `index.ts` has no test. `test/storage/` stays until task 3. The feature plan's `src/newsStorage.ts` is left for task 3, with the other storage references. CLAUDE.md gains a rule on the area layout and why the entry points stay.
 - Deploys: no user-visible change; the deploy re-registers the same command set (task 1's snapshot) and `src/index.ts` is where systemd expects it.
 
 ### 3. Storage split and decision record 0004
@@ -119,7 +120,7 @@ Empty folders aren't tracked by git, so `ffxiv/` and `minecraft/` are created by
 - Branch `refactor/interaction-plumbing`; PR `refactor: tidy interaction routing and event loading`.
 - `interactionCreate.ts`: look the command up once, one fallback error reply instead of two copies (`followUp` or `reply`), the cooldown as its own function. C4's button routing goes in after this.
 - An `Event` type in `core/types/` for event modules (`index.ts` types them inline today).
-- `import.meta.dirname` (in Node since 20.11, so in the Node 24 of `.nvmrc`) instead of the `__filename`/`__dirname` lines in `index.ts`, `deploy-commands.ts` and `core/database.ts`. The database path keeps resolving to the project root (task 3's test).
+- `import.meta.dirname` (in Node since 20.11, so in the Node 24 of `.nvmrc`) instead of the `fileURLToPath(import.meta.url)` lines in `core/loadCommands.ts` and `core/database.ts` (task 2 removed the ones in `index.ts` and `deploy-commands.ts`). The database path keeps resolving to the project root (task 3's test).
 - `customEmoji.ts` takes a narrow client interface (what it reads: `emojis.cache`) instead of all of `Client`, as #28 did for the scheduler and status embed.
 - Deploys: no behaviour change.
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Collection, type Client } from 'discord.js';
-import { unusableEmojiWarning } from '../src/customEmoji.ts';
+import { unusableEmojiWarning } from '../../src/core/customEmoji.ts';
 
 const HOME = { guildId: 'g1', channelId: 'c1', useExternalEmojis: true };
 const NO_EXTERNAL = { guildId: 'g1', channelId: 'c1', useExternalEmojis: false };

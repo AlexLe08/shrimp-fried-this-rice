@@ -13,8 +13,8 @@ import {
 	getDueUserSettings,
 	updateUserLastSent,
 	type GuildReminder,
-} from './storage.ts';
-import { refreshGuildStatusMessage, type StatusMessageChannel, type StatusMessageClient } from './reminderEmbed.ts';
+} from '../storage.ts';
+import { refreshGuildStatusMessage, type StatusMessageChannel, type StatusMessageClient } from './statusEmbed.ts';
 import { buildReminderMessage } from './reminderMessage.ts';
 
 /** How often the scheduler checks for due reminders. Should be <= the smallest allowed interval (5 min). */

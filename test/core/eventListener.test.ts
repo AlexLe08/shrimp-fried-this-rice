@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { toEventListener } from '../src/eventListener.ts';
+import { toEventListener } from '../../src/core/eventListener.ts';
 
 afterEach(() => {
 	vi.restoreAllMocks();

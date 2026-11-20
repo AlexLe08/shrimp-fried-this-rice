@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Collection } from 'discord.js';
-import remindmeCommand from '../../../src/commands/reminderCore/remindme.ts';
+import remindmeCommand from '../../../src/reminders/commands/remindme.ts';
 import { getUserSettings, upsertUserSettings, __resetForTests } from '../../../src/storage.ts';
 import { createMockInteraction } from '../../mockInteraction.ts';
 
