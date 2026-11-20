@@ -74,7 +74,7 @@ Later item), not a follow-up.
   may reset the database instead (0003). `/reminder list` keeps under
   Discord's 2000 characters. The docs no longer say `better-sqlite3`
   compiles from source (13 ships a prebuilt `linux-arm64` binary).
-- **Label autocomplete** (2026-11-19). `/reminder edit`, `toggle`,
+- **Label autocomplete** (2026-11-19, #22). `/reminder edit`, `toggle`,
   `snooze`, `unsnooze` and `delete` offer the server's labels as you
   type, each choice naming its interval, channel, and whether it's
   disabled or snoozed. `interactionCreate.ts` routes autocomplete ahead
