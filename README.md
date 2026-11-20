@@ -1,6 +1,8 @@
 ![CI](https://github.com/AlexLe08/shrimp-fried-this-rice/actions/workflows/ci.yml/badge.svg)
 
-# Posture & Hydration Reminder Bot
+![A shrimp hunched over a laptop at a desk](assets/shrimp-check.jpg)
+
+# Shrimp Who Fried That Rice - A Posture & Hydration Reminder Bot
 
 A Discord bot built with **TypeScript** and **discord.js v14** that periodically sends a preset reminder message (e.g. "Check your posture!" or "Time to drink water!") to a server channel, and optionally as a DM to individual users who opt in.
 
@@ -8,7 +10,7 @@ A Discord bot built with **TypeScript** and **discord.js v14** that periodically
 
 **Pre-release:** the bot has no users yet, so a breaking schema change may reset production's database instead of migrating it ([decision 0003](docs/decisions/0003-pre-release-schema-resets.md)). Removing this line ends that; from then on every schema change is a migration.
 
-Deployed and running in production. What's done, what's next, and candidates for later are in [`docs/roadmap.md`](docs/roadmap.md).
+Deployed and running in production. What's done, what's next, and candidates for later are in [`docs/roadmap.md`](docs/roadmap.md). How it was built, and the incidents that shaped it: [`CASESTUDY.md`](CASESTUDY.md).
 
 ## Features
 
