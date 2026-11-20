@@ -135,7 +135,7 @@ describe('/remindme — embed', () => {
 
 describe('/remindme — custom emoji', () => {
 	it("warns, but saves, when the message has an emoji from a server the bot isn't in", async () => {
-		const cache = new Collection([['111', { id: '111', available: true, guild: { id: 'g1' } }]]);
+		const cache = new Collection([['111', { id: '111', available: true, guild: { id: 'g1', name: 'Test Guild' } }]]);
 		const interaction = createMockInteraction({
 			user: { id: 'u1', username: 'tester' },
 			client: { emojis: { cache } },

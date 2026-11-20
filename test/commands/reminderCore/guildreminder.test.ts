@@ -538,8 +538,8 @@ describe('/reminder custom emoji', () => {
 	// server :gone: comes from.
 	function emojiClient() {
 		const cache = new Collection([
-			['111', { id: '111', available: true, guild: { id: 'g1' } }],
-			['222', { id: '222', available: true, guild: { id: 'g2' } }],
+			['111', { id: '111', available: true, guild: { id: 'g1', name: 'Test Guild' } }],
+			['222', { id: '222', available: true, guild: { id: 'g2', name: 'Other Guild' } }],
 		]);
 		return { emojis: { cache } };
 	}
@@ -582,10 +582,13 @@ describe('/reminder custom emoji', () => {
 	});
 
 	it('create warns about another server’s emoji where the bot lacks Use External Emojis', async () => {
-		const interaction = await createWith('<:other:222> and <:shrimp:111>', makeChannelWithoutExternalEmojis());
+		const channel = makeChannelWithoutExternalEmojis();
+		const interaction = await createWith('<:other:222> and <:shrimp:111>', channel);
 
 		const content = (interaction.reply.mock.calls[0]![0] as { content: string }).content;
-		expect(content).toContain('Use External Emojis');
+		expect(content).toContain(
+			`from another server, **Other Guild**, and I don't have Use External Emojis in <#${channel.id}>`,
+		);
 		expect(content).toContain('`:other:`');
 		expect(content).not.toContain('`:shrimp:`');
 	});

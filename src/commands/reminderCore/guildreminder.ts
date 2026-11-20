@@ -77,6 +77,7 @@ function checkChannelPermissions(
 // Emojis is then unknown, and only emoji the bot can't use anywhere are flagged.
 function emojiWarning(
 	interaction: ChatInputCommandInteraction<'cached'>,
+	channelId: string,
 	channel: TextChannel | undefined,
 	message: string,
 ): string | null {
@@ -84,6 +85,7 @@ function emojiWarning(
 	const perms = me && channel ? channel.permissionsFor(me) : null;
 	return unusableEmojiWarning(interaction.client, message, {
 		guildId: interaction.guildId,
+		channelId,
 		useExternalEmojis: perms ? perms.has(PermissionFlagsBits.UseExternalEmojis) : null,
 	});
 }
@@ -342,7 +344,7 @@ export default {
 
 			const warnings = joinWarnings(
 				checkChannelPermissions(interaction, channel as TextChannel, embed),
-				emojiWarning(interaction, channel as TextChannel, message),
+				emojiWarning(interaction, channel.id, channel as TextChannel, message),
 			);
 
 			await interaction.reply({
@@ -396,6 +398,7 @@ export default {
 				channel || message !== null
 					? emojiWarning(
 							interaction,
+							saved.channel_id,
 							(channel ?? interaction.guild.channels.cache.get(saved.channel_id)) as TextChannel | undefined,
 							saved.message,
 						)
