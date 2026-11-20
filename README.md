@@ -17,6 +17,7 @@ Deployed and running in production. What's done, what's next, and candidates for
 - A self-updating status embed (`/reminder status`) listing every reminder and when it next sends, refreshed whenever one sends or changes.
 - Personal DM reminders (`/remindme`), opt-in and independent of any server.
 - Each command has a 3-second per-user cooldown.
+- Label autocomplete: wherever `/reminder` asks for an existing reminder's `label` (`edit`, `toggle`, `snooze`, `unsnooze`, `delete`), Discord lists the server's reminders to pick from, each with its interval, channel, and whether it's disabled or snoozed. Labels starting with what's typed come first. A typed label that matches none still gets the usual "No reminder found".
 - Snoozing: a server reminder (`/reminder snooze`) or your own DM reminders (`/remindme snooze:`) can be held back for 30 minutes to a week, then resume by themselves. Each snooze chooses what happens when it ends: send one right away if one was missed (the default), or wait a full interval. Active snoozes show in `/reminder list`, `/reminder status` and `/remindme`.
 - Failures are handled per reminder: one whose channel was deleted (or can't take messages) is disabled, and shows as disabled in `/reminder status`; re-enable it with `/reminder edit` to a new channel, then `/reminder toggle`. A send Discord refuses (missing permissions, DMs closed) is retried after the reminder's own interval; network and Discord server errors on the next minute's poll.
 - Restarts are clean: on `SIGTERM`/`SIGINT` (every deploy), a send already under way finishes and is recorded, so it isn't repeated after the restart.
@@ -184,11 +185,11 @@ src/
     reminderCore/          # reminder (guildreminder.ts), remindme
   events/
     ready.ts               # ClientReady handler — also starts the scheduler
-    interactionCreate.ts   # routes slash command interactions, handles cooldowns + errors (with a hardened, self-catching error fallback)
+    interactionCreate.ts   # routes slash command and autocomplete interactions, handles cooldowns + errors (with a hardened, self-catching error fallback)
 test/
   setup.ts                       # points storage.ts at an in-memory DB before any test imports it
   mocks.ts                        # shared fake Client/channel/user builders (scheduler + embed tests)
-  mockInteraction.ts               # shared fake ChatInputCommandInteraction builder (command + event tests)
+  mockInteraction.ts               # shared fake ChatInputCommandInteraction/AutocompleteInteraction builder (command + event tests)
   reminderEmbed.test.ts            # buildReminderStatusEmbed + refreshGuildStatusMessage tests
   scheduler.test.ts                # scheduler tests, using fake timers
   schedulerCheckFailure.test.ts    # a poll whose storage query throws is logged, not a crash (mocks storage, so its own file)
@@ -206,7 +207,7 @@ test/
     snooze.test.ts                  # snoozing, cancelling, and the after-snooze choices, for reminders and DMs
     migrations.test.ts              # migrations on a database built like production's before them, and on a new one
   commands/
-    reminderCore/                   # guildreminder, remindme, and snooze (both commands' snooze options) tests
+    reminderCore/                   # guildreminder (and its label autocomplete), remindme, and snooze (both commands' snooze options) tests
   events/
     ready.test.ts
     interactionCreate.test.ts        # includes a direct regression test for the production crash incident
