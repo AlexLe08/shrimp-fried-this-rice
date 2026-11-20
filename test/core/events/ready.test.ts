@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../src/scheduler.ts', () => ({
+vi.mock('../../../src/reminders/scheduler.ts', () => ({
 	startScheduler: vi.fn(),
 }));
 
-import readyEvent from '../../src/events/ready.ts';
-import { startScheduler } from '../../src/scheduler.ts';
+import readyEvent from '../../../src/core/events/ready.ts';
+import { startScheduler } from '../../../src/reminders/scheduler.ts';
 
 describe('ready event', () => {
 	beforeEach(() => {

@@ -1,5 +1,5 @@
 import { Client, Events } from 'discord.js';
-import { startScheduler } from '../scheduler.ts';
+import { startScheduler } from '../../reminders/scheduler.ts';
 
 export default {
 	name: Events.ClientReady,

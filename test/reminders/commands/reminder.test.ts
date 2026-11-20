@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Collection, PermissionFlagsBits } from 'discord.js';
-import guildReminderCommand from '../../../src/commands/reminderCore/guildreminder.ts';
+import guildReminderCommand from '../../../src/reminders/commands/reminder.ts';
 import {
 	getGuildReminderByLabel,
 	getGuildSettings,

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { DiscordAPIError } from 'discord.js';
-import { buildReminderStatusEmbed, refreshGuildStatusMessage } from '../src/reminderEmbed.ts';
+import { buildReminderStatusEmbed, refreshGuildStatusMessage } from '../../src/reminders/statusEmbed.ts';
 import {
 	createGuildReminder,
 	updateGuildReminderLastSent,
@@ -10,8 +10,8 @@ import {
 	getGuildStatusMessage,
 	snoozeGuildReminder,
 	__resetForTests,
-} from '../src/storage.ts';
-import { createMockClient, createMockChannel } from './mocks.ts';
+} from '../../src/storage.ts';
+import { createMockClient, createMockChannel } from '../mocks.ts';
 
 beforeEach(() => {
 	__resetForTests();

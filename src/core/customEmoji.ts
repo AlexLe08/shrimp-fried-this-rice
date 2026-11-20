@@ -1,5 +1,5 @@
 import { escapeMarkdown, type Client } from 'discord.js';
-import { CODE } from './reminderMessage.ts';
+import { CODE } from '../reminders/reminderMessage.ts';
 
 // The client sends a custom emoji in this form whether it was picked or typed
 // (checked on the dev server: picker, `:` autocomplete and mobile alike).

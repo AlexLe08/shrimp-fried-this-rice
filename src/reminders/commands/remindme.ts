@@ -16,9 +16,9 @@ import {
 	isSnoozed,
 	discordTime,
 	describeSnooze,
-} from '../../snooze.ts';
-import { EMBED_OPTION_DESCRIPTION } from '../../reminderMessage.ts';
-import { unusableEmojiWarning } from '../../customEmoji.ts';
+} from '../snooze.ts';
+import { EMBED_OPTION_DESCRIPTION } from '../reminderMessage.ts';
+import { unusableEmojiWarning } from '../../core/customEmoji.ts';
 
 const DEFAULT_MESSAGE = 'Time for a quick break!';
 const DEFAULT_INTERVAL = 60;

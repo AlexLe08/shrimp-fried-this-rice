@@ -1,5 +1,5 @@
 import { EmbedBuilder, DiscordAPIError, type MessageEditOptions } from 'discord.js';
-import { getGuildSettings, getGuildReminders, getGuildStatusMessage, deleteGuildStatusMessage } from './storage.ts';
+import { getGuildSettings, getGuildReminders, getGuildStatusMessage, deleteGuildStatusMessage } from '../storage.ts';
 import { isSnoozed, discordTime } from './snooze.ts';
 
 export function buildReminderStatusEmbed(guildId: string, guildName: string): EmbedBuilder {

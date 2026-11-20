@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import guildReminderCommand from '../../../src/commands/reminderCore/guildreminder.ts';
-import remindmeCommand from '../../../src/commands/reminderCore/remindme.ts';
+import guildReminderCommand from '../../../src/reminders/commands/reminder.ts';
+import remindmeCommand from '../../../src/reminders/commands/remindme.ts';
 import {
 	createGuildReminder,
 	getGuildReminderByLabel,
@@ -12,11 +12,11 @@ import {
 	__resetForTests,
 } from '../../../src/storage.ts';
 import { createMockInteraction } from '../../mockInteraction.ts';
-import { refreshGuildStatusMessage } from '../../../src/reminderEmbed.ts';
+import { refreshGuildStatusMessage } from '../../../src/reminders/statusEmbed.ts';
 
 // Only the refresh is replaced, to check that a snooze change calls it.
-vi.mock('../../../src/reminderEmbed.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('../../../src/reminderEmbed.ts')>()),
+vi.mock('../../../src/reminders/statusEmbed.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('../../../src/reminders/statusEmbed.ts')>()),
 	refreshGuildStatusMessage: vi.fn(),
 }));
 

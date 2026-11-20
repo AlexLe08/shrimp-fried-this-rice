@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Collection } from 'discord.js';
-import interactionCreateEvent from '../../src/events/interactionCreate.ts';
-import { createMockInteraction } from '../mockInteraction.ts';
+import interactionCreateEvent from '../../../src/core/events/interactionCreate.ts';
+import { createMockInteraction } from '../../mockInteraction.ts';
 
 describe('interactionCreate event', () => {
 	it('ignores interactions that are not chat input commands', async () => {

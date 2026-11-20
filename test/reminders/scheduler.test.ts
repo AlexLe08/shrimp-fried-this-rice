@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { DiscordAPIError, PermissionFlagsBits, type EmbedBuilder, type MessageCreateOptions } from 'discord.js';
-import { startScheduler, stopScheduler } from '../src/scheduler.ts';
+import { startScheduler, stopScheduler } from '../../src/reminders/scheduler.ts';
 import {
 	createGuildReminder,
 	updateGuildReminder,
@@ -11,8 +11,8 @@ import {
 	snoozeGuildReminder,
 	snoozeUser,
 	__resetForTests,
-} from '../src/storage.ts';
-import { createMockClient, createMockChannel, createMockUser } from './mocks.ts';
+} from '../../src/storage.ts';
+import { createMockClient, createMockChannel, createMockUser } from '../mocks.ts';
 
 beforeEach(() => {
 	__resetForTests();

@@ -34,11 +34,11 @@ import {
 	isSnoozed,
 	discordTime,
 	describeSnooze,
-} from '../../snooze.ts';
-import { buildReminderStatusEmbed } from '../../reminderEmbed.ts';
-import { refreshGuildStatusMessage } from '../../reminderEmbed.ts';
-import { EMBED_OPTION_DESCRIPTION } from '../../reminderMessage.ts';
-import { unusableEmojiWarning } from '../../customEmoji.ts';
+} from '../snooze.ts';
+import { buildReminderStatusEmbed } from '../statusEmbed.ts';
+import { refreshGuildStatusMessage } from '../statusEmbed.ts';
+import { EMBED_OPTION_DESCRIPTION } from '../reminderMessage.ts';
+import { unusableEmojiWarning } from '../../core/customEmoji.ts';
 import type { TextChannel } from 'discord.js';
 
 function checkChannelPermissions(
