@@ -55,8 +55,12 @@ describe('unusableEmojiWarning', () => {
 		expect(unusableEmojiWarning(client, '<:gone:999>', null)).toContain("server I'm not in");
 	});
 
-	it('ignores emoji in code and spoilers, which show as text anyway', () => {
-		expect(unusableEmojiWarning(client, '`<:gone:999>` ||<:gone:999>||', HOME)).toBeNull();
+	it('ignores emoji in code, which shows as text anyway', () => {
+		expect(unusableEmojiWarning(client, '`<:gone:999>` ```\n<:gone:999>\n```', HOME)).toBeNull();
+	});
+
+	it('warns about an emoji in a spoiler, which renders once revealed', () => {
+		expect(unusableEmojiWarning(client, '||<:gone:999>||', HOME)).toContain('`:gone:`');
 	});
 
 	it('names a repeated emoji once, and each problem on its own line', () => {

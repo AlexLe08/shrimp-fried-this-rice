@@ -624,6 +624,39 @@ describe('/reminder custom emoji', () => {
 		);
 	});
 
+	it('edit checks a new message against the saved channel', async () => {
+		const channel = makeChannelWithoutExternalEmojis();
+		await createWith('original', channel);
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: guildWithChannels(channel),
+			client: emojiClient(),
+			options: { subcommand: 'edit', strings: { label: 'water', message: '<:other:222>' } },
+		});
+
+		await guildReminderCommand.execute(interaction as never);
+
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining('Use External Emojis') }),
+		);
+	});
+
+	it("edit doesn't guess about Use External Emojis when the saved channel isn't cached", async () => {
+		await createWith('original', makeChannelWithoutExternalEmojis());
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: guildWithChannels(),
+			client: emojiClient(),
+			options: { subcommand: 'edit', strings: { label: 'water', message: '<:other:222> <:gone:999>' } },
+		});
+
+		await guildReminderCommand.execute(interaction as never);
+
+		const content = (interaction.reply.mock.calls[0]![0] as { content: string }).content;
+		expect(content).not.toContain('Use External Emojis');
+		expect(content).toContain('`:gone:`');
+	});
+
 	it("edit doesn't repeat the warning when neither the message nor the channel changes", async () => {
 		const channel = makePermissiveChannel();
 		await createWith('<:gone:999>', channel);

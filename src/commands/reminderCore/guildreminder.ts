@@ -390,7 +390,8 @@ export default {
 			const permissionWarning = checked
 				? checkChannelPermissions(interaction, checked as TextChannel, saved.embed === 1)
 				: null;
-			// New text, or a new channel that may lack Use External Emojis.
+			// Only the text and the channel decide whether an emoji renders; an
+			// interval or embed change alone would repeat the create's warning.
 			const emojiCheck =
 				channel || message !== null
 					? emojiWarning(

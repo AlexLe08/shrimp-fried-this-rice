@@ -1,14 +1,13 @@
 import type { Client } from 'discord.js';
-import { HIDDEN } from './reminderMessage.ts';
+import { CODE } from './reminderMessage.ts';
 
 // The client sends a custom emoji in this form whether it was picked or typed
 // (checked on the dev server: picker, `:` autocomplete and mobile alike).
 const CUSTOM_EMOJI = /<a?:(\w{2,32}):(\d+)>/g;
 
 /**
- * Where a reminder is sent. `useExternalEmojis` is null when the bot's
- * permissions there are unknown; a DM (`where` null) needs only that the bot
- * be in the emoji's server (checked on the dev server).
+ * A server channel a reminder is sent to. `useExternalEmojis` is null when the
+ * bot's permissions there are unknown.
  */
 export interface EmojiDestination {
 	guildId: string;
@@ -18,19 +17,30 @@ export interface EmojiDestination {
 /**
  * A warning naming the custom emoji in `text` that the bot can't use where it
  * sends: Discord posts those as `:name:` text (checked on the dev server, embed
- * or not). The reminder is still saved: an admin can fix the permission, and
- * the text is theirs either way.
+ * or not). `where` is null for a DM, which needs only that the bot be in the
+ * emoji's server (checked on the dev server). The reminder is still saved: an
+ * admin can fix the permission, and the text is theirs either way.
+ *
+ * Spoilers aren't skipped: an emoji in one still renders once it's revealed.
  */
 export function unusableEmojiWarning(client: Client, text: string, where: EmojiDestination | null): string | null {
+	const matches = [...text.replace(CODE, ' ').matchAll(CUSTOM_EMOJI)];
+	if (matches.length === 0) return null;
+
 	const unknown = new Set<string>();
 	const unavailable = new Set<string>();
 	const external = new Set<string>();
+	// `client.emojis` builds a new manager from every server's emoji on each
+	// read, so it's read once, and only for text with custom emoji. It leaves
+	// out servers in an outage, whose emoji are then reported as unknown: a
+	// rare, wrong warning, not a lost reminder.
+	const cache = client.emojis.cache;
 
-	for (const match of text.replace(HIDDEN, ' ').matchAll(CUSTOM_EMOJI)) {
+	for (const match of matches) {
 		const shown = `\`:${match[1]!}:\``;
-		const emoji = client.emojis.cache.get(match[2]!);
+		const emoji = cache.get(match[2]!);
 		if (!emoji) unknown.add(shown);
-		else if (!emoji.available) unavailable.add(shown);
+		else if (emoji.available === false) unavailable.add(shown);
 		else if (where && emoji.guild.id !== where.guildId && where.useExternalEmojis === false) external.add(shown);
 	}
 

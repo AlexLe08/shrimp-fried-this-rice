@@ -155,8 +155,8 @@ Key production-specific details, for future reference:
 
 | Command | Description |
 |---|---|
-| `/reminder create <label> <channel> <interval> <message> [embed]` | Creates a new server reminder (max 20 per server). Interval must be 5–1440 minutes. `embed:False` sends it as plain text (default: an embed). Warns (but still saves) if the bot lacks permissions in the target channel. |
-| `/reminder edit <label> [channel] [interval] [message] [embed]` | Edits one or more fields of an existing reminder, including whether it's an embed; unspecified fields are left unchanged. |
+| `/reminder create <label> <channel> <interval> <message> [embed]` | Creates a new server reminder (max 20 per server). Interval must be 5–1440 minutes. `embed:False` sends it as plain text (default: an embed). Warns (but still saves) if the bot lacks permissions in the target channel, and about custom emoji it can't use there. |
+| `/reminder edit <label> [channel] [interval] [message] [embed]` | Edits one or more fields of an existing reminder, including whether it's an embed; unspecified fields are left unchanged. A new message or channel warns about custom emoji the bot can't use there. |
 | `/reminder list` | Lists the server's master toggle state, followed by every configured reminder and its status, noting the ones sent as plain text (ephemeral, text-only). |
 | `/reminder status` | Posts a public, self-updating embed listing every reminder and a live "next fire" timestamp for each. Deletes any previously-posted status embed for this server first. |
 | `/reminder toggle <label> <enabled>` | Enables or disables a specific reminder, until toggled back. |
@@ -164,7 +164,7 @@ Key production-specific details, for future reference:
 | `/reminder unsnooze <label>` | Ends a snooze early, as if it had ended now. |
 | `/reminder delete <label>` | Deletes a reminder. |
 | `/reminder master <enabled>` | Server-wide kill switch — overrides all individual reminders when off. Requires **Manage Server** permission; guild-only. |
-| `/remindme [enabled] [interval] [message] [embed]` | Views (if called with no options) or updates your personal DM reminder settings; `embed:False` sends them as plain text. Can be run in a server or directly in a DM with the bot. |
+| `/remindme [enabled] [interval] [message] [embed]` | Views (if called with no options) or updates your personal DM reminder settings; `embed:False` sends them as plain text. Can be run in a server or directly in a DM with the bot. A new message warns about custom emoji the bot can't use. |
 | `/remindme snooze:<duration> [after_snooze]` | Snoozes your DM reminders, with the same durations and `after_snooze` choices as `/reminder snooze`; `snooze:Cancel snooze` ends one early. Can be combined with the options above. |
 | `/remindme reset:true` | Deletes your personal DM reminder settings entirely. |
 
@@ -180,6 +180,7 @@ src/
   storage.ts            # SQLite data-access layer (guild settings, guild reminders, user settings, status message tracking) and schema migrations
   snooze.ts             # snooze durations and after-snooze choices shared by /reminder and /remindme
   reminderMessage.ts    # builds what a reminder sends: an embed with its mentions above it, or plain text when it has a link
+  customEmoji.ts        # finds custom emoji in a reminder's text that the bot can't use where it sends
   reminderEmbed.ts       # builds the /reminder status embed; also refreshes the tracked status message when reminders change
   types/
     command.ts           # shared Command interface
@@ -195,6 +196,7 @@ test/
   mockInteraction.ts               # shared fake ChatInputCommandInteraction/AutocompleteInteraction builder (command + event tests)
   reminderEmbed.test.ts            # buildReminderStatusEmbed + refreshGuildStatusMessage tests
   reminderMessage.test.ts          # the embed a reminder sends, which mentions go above it, and when it's plain text
+  customEmoji.test.ts              # which custom emoji are warned about, per server, channel permission and DM
   scheduler.test.ts                # scheduler tests, using fake timers
   schedulerCheckFailure.test.ts    # a poll whose storage query throws is logged, not a crash (mocks storage, so its own file)
   shutdown.test.ts                  # gracefulShutdown orchestration tests (mocked scheduler + storage)
