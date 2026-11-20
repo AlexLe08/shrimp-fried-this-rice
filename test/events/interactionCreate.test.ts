@@ -164,6 +164,18 @@ describe('interactionCreate event', () => {
 			expect(cooldowns.size).toBe(0);
 		});
 
+		it('does nothing for an autocomplete naming an unknown command', async () => {
+			const interaction = createMockInteraction({
+				isAutocomplete: true,
+				isChatInputCommand: false,
+				commandName: 'doesnotexist',
+				client: { commands: new Collection(), cooldowns: new Collection() },
+			});
+
+			await expect(interactionCreateEvent.execute(interaction as never)).resolves.toBeUndefined();
+			expect(interaction.respond).not.toHaveBeenCalled();
+		});
+
 		it('does nothing for a command without an autocomplete handler', async () => {
 			const execute = vi.fn().mockResolvedValue(undefined);
 			const commands = new Collection<string, unknown>();

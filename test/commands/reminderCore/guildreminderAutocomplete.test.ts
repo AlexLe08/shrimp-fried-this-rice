@@ -81,6 +81,21 @@ describe('/reminder label autocomplete', () => {
 		expect(choices[0]?.value).toBe(label);
 	});
 
+	it('shortens a long channel name, not the status, and never splits an emoji', async () => {
+		const now = Date.now();
+		addReminder('a');
+		setGuildReminderEnabled('g1', 'a', false);
+		snoozeGuildReminder('g1', 'a', { until: now + 3_600_000, skipMissed: false, now });
+
+		const choices = await autocomplete('', { guild: makeGuild({ c1: '💤'.repeat(50) }) });
+		const name = choices[0]?.name ?? '';
+
+		expect(name.startsWith('a · every 60m · disabled · 💤 snoozed · #💤')).toBe(true);
+		expect(name.endsWith('…')).toBe(true);
+		expect(name.length).toBeLessThanOrEqual(100);
+		expect(name.isWellFormed()).toBe(true);
+	});
+
 	it("offers at most Discord's 25 choices", async () => {
 		for (let i = 0; i < 30; i++) addReminder(`r${String(i).padStart(2, '0')}`);
 

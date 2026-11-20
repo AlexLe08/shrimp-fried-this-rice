@@ -97,12 +97,28 @@ function labelChoices(
 		.slice(0, MAX_CHOICES)
 		.map((r) => {
 			const parts = [r.reminder_label, `every ${r.interval_minutes}m`];
-			const channel = channelName(r.channel_id);
-			if (channel) parts.push(`#${channel}`);
 			if (!r.enabled) parts.push('disabled');
 			if (isSnoozed(r.snoozed_until, now)) parts.push('💤 snoozed');
-			return { name: parts.join(' · ').slice(0, MAX_CHOICE_NAME), value: r.reminder_label };
+			let name = parts.join(' · ');
+			// The channel goes last and alone is shortened: a channel name can be
+			// 100 characters itself, and cutting there can't lose the status.
+			const channel = channelName(r.channel_id);
+			if (channel) name += ` · #${fitTo(channel, MAX_CHOICE_NAME - name.length - ' · #'.length)}`;
+			return { name: fitTo(name, MAX_CHOICE_NAME), value: r.reminder_label };
 		});
+}
+
+// Cuts whole characters, never half of a surrogate pair (an emoji in a
+// channel name): a lone surrogate is invalid text, and Discord could refuse
+// the whole answer. Length is in UTF-16 units, as discord.js checks it.
+function fitTo(text: string, max: number): string {
+	if (text.length <= max) return text;
+	let cut = '';
+	for (const char of text) {
+		if (cut.length + char.length > max - 1) break;
+		cut += char;
+	}
+	return `${cut}…`;
 }
 
 // Manage Server only: reminders post publicly in the server's channels.
