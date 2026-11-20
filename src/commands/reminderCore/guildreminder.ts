@@ -1,6 +1,7 @@
 import {
 	SlashCommandBuilder,
 	ChatInputCommandInteraction,
+	AutocompleteInteraction,
 	ChannelType,
 	MessageFlags,
 	PermissionFlagsBits,
@@ -23,6 +24,7 @@ import {
 	MAX_REMINDERS_PER_GUILD,
 	MIN_INTERVAL_MINUTES,
 	MAX_INTERVAL_MINUTES,
+	type GuildReminder,
 } from '../../storage.ts';
 import {
 	SNOOZE_DURATION_CHOICES,
@@ -72,6 +74,37 @@ function fitList(header: string, lines: string[]): string {
 	return content;
 }
 
+// Discord shows at most 25 choices, each name at most 100 characters.
+const MAX_CHOICES = 25;
+const MAX_CHOICE_NAME = 100;
+
+// Labels that start with what was typed come first, then ones that only
+// contain it, so a short prefix finds its reminder at the top.
+function labelChoices(
+	reminders: GuildReminder[],
+	typed: string,
+	now: number,
+	channelName: (channelId: string) => string | undefined,
+): { name: string; value: string }[] {
+	const query = typed.trim().toLowerCase();
+	return reminders
+		.filter((r) => r.reminder_label.includes(query))
+		.sort(
+			(a, b) =>
+				Number(!a.reminder_label.startsWith(query)) - Number(!b.reminder_label.startsWith(query)) ||
+				a.reminder_label.localeCompare(b.reminder_label),
+		)
+		.slice(0, MAX_CHOICES)
+		.map((r) => {
+			const parts = [r.reminder_label, `every ${r.interval_minutes}m`];
+			const channel = channelName(r.channel_id);
+			if (channel) parts.push(`#${channel}`);
+			if (!r.enabled) parts.push('disabled');
+			if (isSnoozed(r.snoozed_until, now)) parts.push('💤 snoozed');
+			return { name: parts.join(' · ').slice(0, MAX_CHOICE_NAME), value: r.reminder_label };
+		});
+}
+
 // Manage Server only: reminders post publicly in the server's channels.
 export default {
 	data: new SlashCommandBuilder()
@@ -116,7 +149,9 @@ export default {
 			subcommand
 				.setName('toggle')
 				.setDescription('Enable or disable a specific reminder.')
-				.addStringOption((option) => option.setName('label').setDescription("The reminder's label").setRequired(true))
+				.addStringOption((option) =>
+					option.setName('label').setDescription("The reminder's label").setRequired(true).setAutocomplete(true),
+				)
 				.addBooleanOption((option) =>
 					option.setName('enabled').setDescription('Whether this reminder should be active').setRequired(true),
 				),
@@ -125,7 +160,9 @@ export default {
 			subcommand
 				.setName('delete')
 				.setDescription('Delete a reminder.')
-				.addStringOption((option) => option.setName('label').setDescription("The reminder's label").setRequired(true)),
+				.addStringOption((option) =>
+					option.setName('label').setDescription("The reminder's label").setRequired(true).setAutocomplete(true),
+				),
 		)
 		.addSubcommand((subcommand) =>
 			subcommand
@@ -142,7 +179,9 @@ export default {
 			subcommand
 				.setName('edit')
 				.setDescription('Edit an existing reminder.')
-				.addStringOption((option) => option.setName('label').setDescription("The reminder's label").setRequired(true))
+				.addStringOption((option) =>
+					option.setName('label').setDescription("The reminder's label").setRequired(true).setAutocomplete(true),
+				)
 				.addChannelOption((option) =>
 					option
 						.setName('channel')
@@ -162,7 +201,9 @@ export default {
 			subcommand
 				.setName('snooze')
 				.setDescription('Hold a reminder back for a while; it resumes by itself when the snooze ends.')
-				.addStringOption((option) => option.setName('label').setDescription("The reminder's label").setRequired(true))
+				.addStringOption((option) =>
+					option.setName('label').setDescription("The reminder's label").setRequired(true).setAutocomplete(true),
+				)
 				.addIntegerOption((option) =>
 					option
 						.setName('duration')
@@ -181,13 +222,30 @@ export default {
 			subcommand
 				.setName('unsnooze')
 				.setDescription('End a snooze early.')
-				.addStringOption((option) => option.setName('label').setDescription("The reminder's label").setRequired(true)),
+				.addStringOption((option) =>
+					option.setName('label').setDescription("The reminder's label").setRequired(true).setAutocomplete(true),
+				),
 		)
 		.addSubcommand((subcommand) =>
 			subcommand
 				.setName('status')
 				.setDescription("Post a live-updating embed showing this server's reminders and when they'll next fire."),
 		),
+	async autocomplete(interaction: AutocompleteInteraction) {
+		if (!interaction.inCachedGuild()) {
+			await interaction.respond([]);
+			return;
+		}
+		const { guild } = interaction;
+		await interaction.respond(
+			labelChoices(
+				getGuildReminders(guild.id),
+				interaction.options.getFocused(),
+				Date.now(),
+				(channelId) => guild.channels.cache.get(channelId)?.name,
+			),
+		);
+	},
 	async execute(interaction: ChatInputCommandInteraction) {
 		if (!interaction.inCachedGuild()) {
 			await interaction.reply({
