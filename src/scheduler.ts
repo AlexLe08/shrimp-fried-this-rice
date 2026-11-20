@@ -1,4 +1,4 @@
-import { DiscordAPIError, type Client } from 'discord.js';
+import { DiscordAPIError, PermissionFlagsBits, type Client } from 'discord.js';
 import {
 	getDueGuildReminders,
 	updateGuildReminderLastSent,
@@ -9,6 +9,7 @@ import {
 	type GuildReminder,
 } from './storage.ts';
 import { refreshGuildStatusMessage } from './reminderEmbed.ts';
+import { buildReminderMessage } from './reminderMessage.ts';
 
 /** How often the scheduler checks for due reminders. Should be <= the smallest allowed interval (5 min). */
 const POLL_INTERVAL_MS = 60_000;
@@ -88,7 +89,19 @@ async function checkGuildReminders(client: Client<true>): Promise<void> {
 				continue;
 			}
 
-			await channel.send(reminder.message);
+			// Discord refuses a bot's embed where it lacks Embed Links (50013,
+			// seen on the dev server), and a refused send is only retried an
+			// interval later, so the reminder would never arrive. A reminder
+			// saved before the warning, or an override added since, gets the
+			// plain text that worked before embeds.
+			const canEmbed =
+				!('permissionsFor' in channel) ||
+				channel.permissionsFor(client.user)?.has(PermissionFlagsBits.EmbedLinks) !== false;
+			await channel.send(
+				canEmbed && reminder.embed === 1
+					? buildReminderMessage(reminder.reminder_label, reminder.message, reminder.interval_minutes)
+					: reminder.message,
+			);
 			updateGuildReminderLastSent(reminder.id, now);
 			// Shutting down: the send is recorded, and the embed's next-fire
 			// time is still right after the restart. Refreshing it would only
@@ -123,7 +136,11 @@ async function checkUserReminders(client: Client<true>): Promise<void> {
 		if (stopping) break;
 		try {
 			const user = await client.users.fetch(userSettings.user_id);
-			await user.send(userSettings.message);
+			await user.send(
+				userSettings.embed === 1
+					? buildReminderMessage('Reminder', userSettings.message, userSettings.interval_minutes, { mentions: false })
+					: userSettings.message,
+			);
 			updateUserLastSent(userSettings.user_id, now);
 		} catch (error) {
 			console.error(`Failed to send DM reminder to user ${userSettings.user_id}:`, error);

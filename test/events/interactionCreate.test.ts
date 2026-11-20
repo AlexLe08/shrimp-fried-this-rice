@@ -121,4 +121,94 @@ describe('interactionCreate event', () => {
 		expect(consoleSpy).toHaveBeenCalledTimes(2); // the original command error, plus the fallback failure
 		consoleSpy.mockRestore();
 	});
+
+	describe('autocomplete', () => {
+		it("routes to the command's autocomplete, not execute, even while the user is on cooldown", async () => {
+			const execute = vi.fn().mockResolvedValue(undefined);
+			const autocomplete = vi.fn().mockResolvedValue(undefined);
+			const commands = new Collection<string, unknown>();
+			commands.set('ping', { data: { name: 'ping' }, cooldown: 60, execute, autocomplete });
+			const timestamps = new Collection<string, number>();
+			timestamps.set('u1', Date.now());
+			const cooldowns = new Collection<string, unknown>();
+			cooldowns.set('ping', timestamps);
+
+			const interaction = createMockInteraction({
+				isAutocomplete: true,
+				isChatInputCommand: false,
+				commandName: 'ping',
+				user: { id: 'u1', username: 'tester' },
+				client: { commands, cooldowns },
+			});
+			await interactionCreateEvent.execute(interaction as never);
+
+			expect(autocomplete).toHaveBeenCalledWith(interaction);
+			expect(execute).not.toHaveBeenCalled();
+			expect(interaction.reply).not.toHaveBeenCalled();
+		});
+
+		it('does not start a cooldown', async () => {
+			const autocomplete = vi.fn().mockResolvedValue(undefined);
+			const commands = new Collection<string, unknown>();
+			commands.set('ping', { data: { name: 'ping' }, execute: vi.fn(), autocomplete });
+			const cooldowns = new Collection<string, unknown>();
+
+			const interaction = createMockInteraction({
+				isAutocomplete: true,
+				isChatInputCommand: false,
+				commandName: 'ping',
+				client: { commands, cooldowns },
+			});
+			await interactionCreateEvent.execute(interaction as never);
+
+			expect(cooldowns.size).toBe(0);
+		});
+
+		it('does nothing for an autocomplete naming an unknown command', async () => {
+			const interaction = createMockInteraction({
+				isAutocomplete: true,
+				isChatInputCommand: false,
+				commandName: 'doesnotexist',
+				client: { commands: new Collection(), cooldowns: new Collection() },
+			});
+
+			await expect(interactionCreateEvent.execute(interaction as never)).resolves.toBeUndefined();
+			expect(interaction.respond).not.toHaveBeenCalled();
+		});
+
+		it('does nothing for a command without an autocomplete handler', async () => {
+			const execute = vi.fn().mockResolvedValue(undefined);
+			const commands = new Collection<string, unknown>();
+			commands.set('ping', { data: { name: 'ping' }, execute });
+
+			const interaction = createMockInteraction({
+				isAutocomplete: true,
+				isChatInputCommand: false,
+				commandName: 'ping',
+				client: { commands, cooldowns: new Collection() },
+			});
+			await interactionCreateEvent.execute(interaction as never);
+
+			expect(execute).not.toHaveBeenCalled();
+			expect(interaction.respond).not.toHaveBeenCalled();
+		});
+
+		it('logs a failed autocomplete instead of rejecting', async () => {
+			const autocomplete = vi.fn().mockRejectedValue(new Error('Unknown interaction'));
+			const commands = new Collection<string, unknown>();
+			commands.set('ping', { data: { name: 'ping' }, execute: vi.fn(), autocomplete });
+			const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+			const interaction = createMockInteraction({
+				isAutocomplete: true,
+				isChatInputCommand: false,
+				commandName: 'ping',
+				client: { commands, cooldowns: new Collection() },
+			});
+
+			await expect(interactionCreateEvent.execute(interaction as never)).resolves.toBeUndefined();
+			expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('/ping'), expect.any(Error));
+			consoleSpy.mockRestore();
+		});
+	});
 });

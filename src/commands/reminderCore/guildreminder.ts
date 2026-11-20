@@ -1,6 +1,7 @@
 import {
 	SlashCommandBuilder,
 	ChatInputCommandInteraction,
+	AutocompleteInteraction,
 	ChannelType,
 	MessageFlags,
 	PermissionFlagsBits,
@@ -18,17 +19,32 @@ import {
 	setGuildStatusMessage,
 	getGuildStatusMessage,
 	getGuildReminderCount,
+	snoozeGuildReminder,
+	unsnoozeGuildReminder,
 	MAX_REMINDERS_PER_GUILD,
 	MIN_INTERVAL_MINUTES,
 	MAX_INTERVAL_MINUTES,
+	type GuildReminder,
 } from '../../storage.ts';
+import {
+	SNOOZE_DURATION_CHOICES,
+	AFTER_SNOOZE_CHOICES,
+	AFTER_SNOOZE_WAIT,
+	snoozeUntil,
+	isSnoozed,
+	discordTime,
+	describeSnooze,
+} from '../../snooze.ts';
 import { buildReminderStatusEmbed } from '../../reminderEmbed.ts';
 import { refreshGuildStatusMessage } from '../../reminderEmbed.ts';
+import { EMBED_OPTION_DESCRIPTION } from '../../reminderMessage.ts';
+import { unusableEmojiWarning } from '../../customEmoji.ts';
 import type { TextChannel } from 'discord.js';
 
 function checkChannelPermissions(
 	interaction: ChatInputCommandInteraction<'cached'>,
 	channel: TextChannel,
+	embed: boolean,
 ): string | null {
 	// The bot's own member can be uncached right after startup. Skipping the
 	// check costs only the warning; the reminder is saved either way.
@@ -42,10 +58,101 @@ function checkChannelPermissions(
 	if (!perms.has(PermissionFlagsBits.ViewChannel)) missing.push('View Channel');
 	if (!perms.has(PermissionFlagsBits.SendMessages)) missing.push('Send Messages');
 
-	if (missing.length === 0) return null;
 	// Warn but still save: an admin may set the reminder up first and grant the
 	// permissions after, and refusing would make them redo the whole command.
-	return `⚠️ I'm missing these permissions in that channel: ${missing.join(', ')}. The reminder was saved, but it won't send until I have them.`;
+	const warnings: string[] = [];
+	if (missing.length > 0) {
+		warnings.push(
+			`⚠️ I'm missing these permissions in that channel: ${missing.join(', ')}. The reminder was saved, but it won't send until I have them.`,
+		);
+	}
+	// Without it the scheduler still sends, as plain text.
+	if (embed && !perms.has(PermissionFlagsBits.EmbedLinks)) {
+		warnings.push("⚠️ I can't embed links in that channel, so this reminder will be sent as plain text until I can.");
+	}
+	return warnings.length > 0 ? warnings.join('\n') : null;
+}
+
+// `channel` is undefined when the saved channel isn't cached; Use External
+// Emojis is then unknown, and only emoji the bot can't use anywhere are flagged.
+function emojiWarning(
+	interaction: ChatInputCommandInteraction<'cached'>,
+	channelId: string,
+	channel: TextChannel | undefined,
+	message: string,
+): string | null {
+	const me = interaction.guild.members.me;
+	const perms = me && channel ? channel.permissionsFor(me) : null;
+	return unusableEmojiWarning(interaction.client, message, {
+		guildId: interaction.guildId,
+		channelId,
+		useExternalEmojis: perms ? perms.has(PermissionFlagsBits.UseExternalEmojis) : null,
+	});
+}
+
+function joinWarnings(...warnings: (string | null)[]): string {
+	const present = warnings.filter((warning) => warning !== null);
+	return present.length > 0 ? `\n\n${present.join('\n')}` : '';
+}
+
+const MESSAGE_LIMIT = 2000;
+
+// Discord refuses a reply over 2000 characters, and 20 reminders with long
+// labels (and snoozes) can pass it; the ones that don't fit are counted
+// instead, and /reminder status (an embed, 4096) shows them all.
+function fitList(header: string, lines: string[]): string {
+	let content = header + lines.join('\n');
+	for (let shown = lines.length - 1; content.length > MESSAGE_LIMIT && shown >= 0; shown--) {
+		content = `${header}${lines.slice(0, shown).join('\n')}\n…and ${lines.length - shown} more; \`/reminder status\` lists them all.`;
+	}
+	return content;
+}
+
+// Discord shows at most 25 choices, each name at most 100 characters.
+const MAX_CHOICES = 25;
+const MAX_CHOICE_NAME = 100;
+
+// Labels that start with what was typed come first, then ones that only
+// contain it, so a short prefix finds its reminder at the top.
+function labelChoices(
+	reminders: GuildReminder[],
+	typed: string,
+	now: number,
+	channelName: (channelId: string) => string | undefined,
+): { name: string; value: string }[] {
+	const query = typed.trim().toLowerCase();
+	return reminders
+		.filter((r) => r.reminder_label.includes(query))
+		.sort(
+			(a, b) =>
+				Number(!a.reminder_label.startsWith(query)) - Number(!b.reminder_label.startsWith(query)) ||
+				a.reminder_label.localeCompare(b.reminder_label),
+		)
+		.slice(0, MAX_CHOICES)
+		.map((r) => {
+			const parts = [r.reminder_label, `every ${r.interval_minutes}m`];
+			if (!r.enabled) parts.push('disabled');
+			if (isSnoozed(r.snoozed_until, now)) parts.push('💤 snoozed');
+			let name = parts.join(' · ');
+			// The channel goes last and alone is shortened: a channel name can be
+			// 100 characters itself, and cutting there can't lose the status.
+			const channel = channelName(r.channel_id);
+			if (channel) name += ` · #${fitTo(channel, MAX_CHOICE_NAME - name.length - ' · #'.length)}`;
+			return { name: fitTo(name, MAX_CHOICE_NAME), value: r.reminder_label };
+		});
+}
+
+// Cuts whole characters, never half of a surrogate pair (an emoji in a
+// channel name): a lone surrogate is invalid text, and Discord could refuse
+// the whole answer. Length is in UTF-16 units, as discord.js checks it.
+function fitTo(text: string, max: number): string {
+	if (text.length <= max) return text;
+	let cut = '';
+	for (const char of text) {
+		if (cut.length + char.length > max - 1) break;
+		cut += char;
+	}
+	return `${cut}…`;
 }
 
 // Manage Server only: reminders post publicly in the server's channels.
@@ -83,7 +190,8 @@ export default {
 				)
 				.addStringOption((option) =>
 					option.setName('message').setDescription('The reminder text to send').setMaxLength(2000).setRequired(true),
-				),
+				)
+				.addBooleanOption((option) => option.setName('embed').setDescription(EMBED_OPTION_DESCRIPTION)),
 		)
 		.addSubcommand((subcommand) =>
 			subcommand.setName('list').setDescription('List all reminders configured for this server.'),
@@ -92,7 +200,9 @@ export default {
 			subcommand
 				.setName('toggle')
 				.setDescription('Enable or disable a specific reminder.')
-				.addStringOption((option) => option.setName('label').setDescription("The reminder's label").setRequired(true))
+				.addStringOption((option) =>
+					option.setName('label').setDescription("The reminder's label").setRequired(true).setAutocomplete(true),
+				)
 				.addBooleanOption((option) =>
 					option.setName('enabled').setDescription('Whether this reminder should be active').setRequired(true),
 				),
@@ -101,7 +211,9 @@ export default {
 			subcommand
 				.setName('delete')
 				.setDescription('Delete a reminder.')
-				.addStringOption((option) => option.setName('label').setDescription("The reminder's label").setRequired(true)),
+				.addStringOption((option) =>
+					option.setName('label').setDescription("The reminder's label").setRequired(true).setAutocomplete(true),
+				),
 		)
 		.addSubcommand((subcommand) =>
 			subcommand
@@ -118,7 +230,9 @@ export default {
 			subcommand
 				.setName('edit')
 				.setDescription('Edit an existing reminder.')
-				.addStringOption((option) => option.setName('label').setDescription("The reminder's label").setRequired(true))
+				.addStringOption((option) =>
+					option.setName('label').setDescription("The reminder's label").setRequired(true).setAutocomplete(true),
+				)
 				.addChannelOption((option) =>
 					option
 						.setName('channel')
@@ -132,13 +246,58 @@ export default {
 						.setMinValue(MIN_INTERVAL_MINUTES)
 						.setMaxValue(MAX_INTERVAL_MINUTES),
 				)
-				.addStringOption((option) => option.setName('message').setDescription('New reminder text').setMaxLength(2000)),
+				.addStringOption((option) => option.setName('message').setDescription('New reminder text').setMaxLength(2000))
+				.addBooleanOption((option) => option.setName('embed').setDescription(EMBED_OPTION_DESCRIPTION)),
+		)
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName('snooze')
+				.setDescription('Hold a reminder back for a while; it resumes by itself when the snooze ends.')
+				.addStringOption((option) =>
+					option.setName('label').setDescription("The reminder's label").setRequired(true).setAutocomplete(true),
+				)
+				.addIntegerOption((option) =>
+					option
+						.setName('duration')
+						.setDescription('How long to snooze it for')
+						.addChoices(...SNOOZE_DURATION_CHOICES)
+						.setRequired(true),
+				)
+				.addStringOption((option) =>
+					option
+						.setName('after')
+						.setDescription('What happens when the snooze ends (default: send one right away if it was missed)')
+						.addChoices(...AFTER_SNOOZE_CHOICES),
+				),
+		)
+		.addSubcommand((subcommand) =>
+			subcommand
+				.setName('unsnooze')
+				.setDescription('End a snooze early.')
+				.addStringOption((option) =>
+					option.setName('label').setDescription("The reminder's label").setRequired(true).setAutocomplete(true),
+				),
 		)
 		.addSubcommand((subcommand) =>
 			subcommand
 				.setName('status')
 				.setDescription("Post a live-updating embed showing this server's reminders and when they'll next fire."),
 		),
+	async autocomplete(interaction: AutocompleteInteraction) {
+		if (!interaction.inCachedGuild()) {
+			await interaction.respond([]);
+			return;
+		}
+		const { guild } = interaction;
+		await interaction.respond(
+			labelChoices(
+				getGuildReminders(guild.id),
+				interaction.options.getFocused(),
+				Date.now(),
+				(channelId) => guild.channels.cache.get(channelId)?.name,
+			),
+		);
+	},
 	async execute(interaction: ChatInputCommandInteraction) {
 		if (!interaction.inCachedGuild()) {
 			await interaction.reply({
@@ -164,6 +323,7 @@ export default {
 			const channel = interaction.options.getChannel('channel', true);
 			const interval = interaction.options.getInteger('interval', true);
 			const message = interaction.options.getString('message', true);
+			const embed = interaction.options.getBoolean('embed') ?? true;
 
 			if (getGuildReminderByLabel(guildId, label)) {
 				await interaction.reply({
@@ -179,12 +339,16 @@ export default {
 				channelId: channel.id,
 				intervalMinutes: interval,
 				message,
+				embed,
 			});
 
-			const permissionWarning = checkChannelPermissions(interaction, channel as TextChannel);
+			const warnings = joinWarnings(
+				checkChannelPermissions(interaction, channel as TextChannel, embed),
+				emojiWarning(interaction, channel.id, channel as TextChannel, message),
+			);
 
 			await interaction.reply({
-				content: `Created reminder \`${label}\`: every ${interval} minutes in ${channel}.${permissionWarning ? `\n\n${permissionWarning}` : ''}`,
+				content: `Created reminder \`${label}\`: every ${interval} minutes in ${channel}, as ${embed ? 'an embed' : 'plain text'}.${warnings}`,
 				flags: MessageFlags.Ephemeral,
 			});
 			await refreshGuildStatusMessage(interaction.client, guildId);
@@ -196,6 +360,7 @@ export default {
 			const channel = interaction.options.getChannel('channel');
 			const interval = interaction.options.getInteger('interval');
 			const message = interaction.options.getString('message');
+			const embed = interaction.options.getBoolean('embed');
 
 			if (!getGuildReminderByLabel(guildId, label)) {
 				await interaction.reply({
@@ -205,25 +370,42 @@ export default {
 				return;
 			}
 
-			if (!channel && interval === null && message === null) {
+			if (!channel && interval === null && message === null && embed === null) {
 				await interaction.reply({
-					content: 'Provide at least one field to change: `channel`, `interval`, or `message`.',
+					content: 'Provide at least one field to change: `channel`, `interval`, `message`, or `embed`.',
 					flags: MessageFlags.Ephemeral,
 				});
 				return;
 			}
 
-			const updates: { channelId?: string; intervalMinutes?: number; message?: string } = {};
+			const updates: { channelId?: string; intervalMinutes?: number; message?: string; embed?: boolean } = {};
 			if (channel) updates.channelId = channel.id;
 			if (interval !== null) updates.intervalMinutes = interval;
 			if (message !== null) updates.message = message;
+			if (embed !== null) updates.embed = embed;
 
 			updateGuildReminder(guildId, label, updates);
 
-			const permissionWarning = channel ? checkChannelPermissions(interaction, channel as TextChannel) : null;
+			// A new channel, or a switch to embeds in the saved one, is worth checking.
+			const saved = getGuildReminderByLabel(guildId, label)!;
+			const checked = channel ?? (embed ? interaction.guild.channels.cache.get(saved.channel_id) : undefined);
+			const permissionWarning = checked
+				? checkChannelPermissions(interaction, checked as TextChannel, saved.embed === 1)
+				: null;
+			// Only the text and the channel decide whether an emoji renders; an
+			// interval or embed change alone would repeat the create's warning.
+			const emojiCheck =
+				channel || message !== null
+					? emojiWarning(
+							interaction,
+							saved.channel_id,
+							(channel ?? interaction.guild.channels.cache.get(saved.channel_id)) as TextChannel | undefined,
+							saved.message,
+						)
+					: null;
 
 			await interaction.reply({
-				content: `Reminder \`${label}\` updated.${permissionWarning ? `\n\n${permissionWarning}` : ''}`,
+				content: `Reminder \`${label}\` updated.${joinWarnings(permissionWarning, emojiCheck)}`,
 				flags: MessageFlags.Ephemeral,
 			});
 			await refreshGuildStatusMessage(interaction.client, guildId);
@@ -246,6 +428,68 @@ export default {
 
 			await interaction.reply({
 				content: `Reminder \`${label}\` is now ${enabled ? 'enabled' : 'disabled'}.`,
+				flags: MessageFlags.Ephemeral,
+			});
+			await refreshGuildStatusMessage(interaction.client, guildId);
+			return;
+		}
+
+		if (subcommand === 'snooze') {
+			const label = interaction.options.getString('label', true).toLowerCase();
+			const duration = interaction.options.getInteger('duration', true);
+			const skipMissed = interaction.options.getString('after') === AFTER_SNOOZE_WAIT;
+
+			const reminder = getGuildReminderByLabel(guildId, label);
+			if (!reminder) {
+				await interaction.reply({
+					content: `No reminder found with the label \`${label}\`.`,
+					flags: MessageFlags.Ephemeral,
+				});
+				return;
+			}
+
+			const now = Date.now();
+			const until = snoozeUntil(now, duration);
+			snoozeGuildReminder(guildId, label, { until, skipMissed, now });
+
+			// A snooze doesn't turn a reminder on: say so rather than let the admin
+			// expect it back when the snooze ends.
+			const disabledNote = reminder.enabled
+				? ''
+				: '\n\nIt is also disabled, so it stays off after the snooze until `/reminder toggle` turns it on.';
+			await interaction.reply({
+				content: `Reminder \`${label}\`: ${describeSnooze(until, skipMissed)}${disabledNote}`,
+				flags: MessageFlags.Ephemeral,
+			});
+			await refreshGuildStatusMessage(interaction.client, guildId);
+			return;
+		}
+
+		if (subcommand === 'unsnooze') {
+			const label = interaction.options.getString('label', true).toLowerCase();
+
+			const reminder = getGuildReminderByLabel(guildId, label);
+			if (!reminder) {
+				await interaction.reply({
+					content: `No reminder found with the label \`${label}\`.`,
+					flags: MessageFlags.Ephemeral,
+				});
+				return;
+			}
+
+			const now = Date.now();
+			if (!isSnoozed(reminder.snoozed_until, now)) {
+				await interaction.reply({
+					content: `Reminder \`${label}\` isn't snoozed.`,
+					flags: MessageFlags.Ephemeral,
+				});
+				return;
+			}
+
+			unsnoozeGuildReminder(guildId, label, now);
+
+			await interaction.reply({
+				content: `Reminder \`${label}\` is no longer snoozed.`,
 				flags: MessageFlags.Ephemeral,
 			});
 			await refreshGuildStatusMessage(interaction.client, guildId);
@@ -302,13 +546,18 @@ export default {
 				return;
 			}
 
-			const lines = reminders.map(
-				(r) =>
-					`• \`${r.reminder_label}\` — every ${r.interval_minutes}m in <#${r.channel_id}> — ${r.enabled ? 'enabled' : 'disabled'}`,
-			);
+			const now = Date.now();
+			const lines = reminders.map((r) => {
+				const snoozed = isSnoozed(r.snoozed_until, now) ? `, snoozed until ${discordTime(r.snoozed_until, 'f')}` : '';
+				const plain = r.embed ? '' : ', plain text';
+				return `• \`${r.reminder_label}\` — every ${r.interval_minutes}m in <#${r.channel_id}> — ${r.enabled ? 'enabled' : 'disabled'}${plain}${snoozed}`;
+			});
 
 			await interaction.reply({
-				content: `**Master toggle:** ${masterEnabled ? 'enabled' : 'disabled'}\n\n**Reminders for this server:**\n${lines.join('\n')}`,
+				content: fitList(
+					`**Master toggle:** ${masterEnabled ? 'enabled' : 'disabled'}\n\n**Reminders for this server:**\n`,
+					lines,
+				),
 				flags: MessageFlags.Ephemeral,
 			});
 			return;

@@ -8,6 +8,7 @@ import {
 	setGuildMasterEnabled,
 	setGuildStatusMessage,
 	getGuildStatusMessage,
+	snoozeGuildReminder,
 	__resetForTests,
 } from '../src/storage.ts';
 import { createMockClient, createMockChannel } from './mocks.ts';
@@ -77,6 +78,54 @@ describe('buildReminderStatusEmbed', () => {
 		const embed = buildReminderStatusEmbed('guild-1', 'Test Server').toJSON();
 		expect(embed.description).toContain('paused (server master toggle is off)');
 		expect(embed.color).toBe(0xed4245);
+	});
+
+	it('marks a snoozed reminder and shows when the snooze ends', () => {
+		createGuildReminder({
+			guildId: 'guild-1',
+			label: 'water',
+			channelId: 'chan-1',
+			intervalMinutes: 60,
+			message: 'hi',
+		});
+		const now = Date.now();
+		const until = now + 120 * 60_000;
+		snoozeGuildReminder('guild-1', 'water', { until, skipMissed: false, now });
+
+		const embed = buildReminderStatusEmbed('guild-1', 'Test Server').toJSON();
+		expect(embed.description).toContain(`💤 snoozed, next <t:${Math.floor(until / 1000)}:R>`);
+	});
+
+	it('shows the usual next time for a snoozed reminder not due until after the snooze', () => {
+		createGuildReminder({
+			guildId: 'guild-1',
+			label: 'water',
+			channelId: 'chan-1',
+			intervalMinutes: 60,
+			message: 'hi',
+		});
+		const now = Date.now();
+		const until = now + 30 * 60_000;
+		snoozeGuildReminder('guild-1', 'water', { until, skipMissed: true, now });
+
+		const embed = buildReminderStatusEmbed('guild-1', 'Test Server').toJSON();
+		expect(embed.description).toContain(`💤 snoozed, next <t:${Math.floor((until + 60 * 60_000) / 1000)}:R>`);
+	});
+
+	it('shows a reminder whose snooze has ended as due', () => {
+		createGuildReminder({
+			guildId: 'guild-1',
+			label: 'water',
+			channelId: 'chan-1',
+			intervalMinutes: 60,
+			message: 'hi',
+		});
+		const now = Date.now();
+		snoozeGuildReminder('guild-1', 'water', { until: now - 1, skipMissed: false, now: now - 60_000 });
+
+		const embed = buildReminderStatusEmbed('guild-1', 'Test Server').toJSON();
+		expect(embed.description).toContain('due on next check');
+		expect(embed.description).not.toContain('💤');
 	});
 });
 

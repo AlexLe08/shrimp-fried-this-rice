@@ -51,7 +51,36 @@ jobs:
             cd ~/shrimp-fried-this-rice
             git fetch
             git reset --hard origin/main
-            npm install
+            npm ci
+            restarted_at=$(date +%s)
             sudo systemctl restart discordbotshrimp
-            npm run deploycommands
+            # Checked after the login wait, so a failed registration still
+            # reports whether the new code is running.
+            registration_failed=0
+            npm run deploycommands || registration_failed=1
+            # A bot that can't log in still shows as active until it exits,
+            # and Restart=on-failure brings it back, so wait for ready.ts's line.
+            logged_in=0
+            while true; do
+              if sudo journalctl -u discordbotshrimp --since "@$restarted_at" --no-pager -o cat | grep -q '^Ready! Logged in as'; then
+                logged_in=1
+                break
+              fi
+              if [ "$(date +%s)" -ge $((restarted_at + 60)) ]; then
+                break
+              fi
+              sleep 2
+            done
+            if [ "$logged_in" -eq 1 ]; then
+              echo "Bot logged in."
+            else
+              echo "Bot did not log in within 60 s of the restart. Its log since then:"
+              sudo journalctl -u discordbotshrimp --since "@$restarted_at" --no-pager
+            fi
+            if [ "$registration_failed" -eq 1 ]; then
+              echo "Command registration failed; its error is above."
+            fi
             sudo systemctl status discordbotshrimp --no-pager
+            if [ "$logged_in" -eq 0 ] || [ "$registration_failed" -eq 1 ]; then
+              exit 1
+            fi

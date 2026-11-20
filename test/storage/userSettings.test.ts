@@ -20,6 +20,7 @@ function makeUser(overrides: Partial<Parameters<typeof upsertUserSettings>[0]> =
 		dmEnabled: true,
 		intervalMinutes: 60,
 		message: 'Drink water!',
+		embed: true,
 		...overrides,
 	});
 }

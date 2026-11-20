@@ -1,5 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { DiscordAPIError, type Client } from 'discord.js';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import {
+	DiscordAPIError,
+	PermissionFlagsBits,
+	type Client,
+	type EmbedBuilder,
+	type MessageCreateOptions,
+} from 'discord.js';
 import { startScheduler, stopScheduler } from '../src/scheduler.ts';
 import {
 	createGuildReminder,
@@ -8,6 +14,8 @@ import {
 	upsertUserSettings,
 	getGuildReminderByLabel,
 	getUserSettings,
+	snoozeGuildReminder,
+	snoozeUser,
 	__resetForTests,
 } from '../src/storage.ts';
 import { createMockClient, createMockChannel, createMockUser } from './mocks.ts';
@@ -26,6 +34,12 @@ function discordError(code: number, status: number): DiscordAPIError {
 	return new DiscordAPIError({ message: 'mock', code }, code, status, 'POST', 'https://discord.com/api/v10/mock', {});
 }
 
+// Reminders are sent as embeds (src/reminderMessage.ts): the embed of a send call, as Discord receives it.
+function sentEmbed(send: Mock, call = 0) {
+	const options = send.mock.calls[call]?.[0] as MessageCreateOptions;
+	return (options.embeds?.[0] as EmbedBuilder).toJSON();
+}
+
 describe('scheduler — guild reminders', () => {
 	it('sends a due reminder to its channel and updates last_sent_at', async () => {
 		createGuildReminder({
@@ -42,8 +56,50 @@ describe('scheduler — guild reminders', () => {
 		startScheduler(client as unknown as Client<true>);
 		await vi.advanceTimersByTimeAsync(60_000);
 
-		expect(channel.send).toHaveBeenCalledWith('Drink water!');
+		expect(sentEmbed(channel.send)).toMatchObject({
+			title: 'water',
+			description: 'Drink water!',
+			footer: { text: 'Every 5 minutes' },
+		});
 		expect(getGuildReminderByLabel('g1', 'water')?.last_sent_at).toBeGreaterThan(0);
+	});
+
+	it('sends plain text where the bot lacks Embed Links', async () => {
+		createGuildReminder({
+			guildId: 'g1',
+			label: 'water',
+			channelId: 'c1',
+			intervalMinutes: 5,
+			message: 'Drink water!',
+		});
+		const channel = createMockChannel();
+		const permissionsFor = vi.fn(() => ({
+			has: (permission: bigint) => permission !== PermissionFlagsBits.EmbedLinks,
+		}));
+		const client = createMockClient({ channels: { c1: Object.assign(channel, { permissionsFor }) } });
+
+		startScheduler(client as unknown as Client<true>);
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		expect(channel.send).toHaveBeenCalledWith('Drink water!');
+	});
+
+	it('sends plain text for a reminder set to plain text', async () => {
+		createGuildReminder({
+			guildId: 'g1',
+			label: 'water',
+			channelId: 'c1',
+			intervalMinutes: 5,
+			message: 'Drink water!',
+			embed: false,
+		});
+		const channel = createMockChannel();
+		const client = createMockClient({ channels: { c1: channel } });
+
+		startScheduler(client as unknown as Client<true>);
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		expect(channel.send).toHaveBeenCalledWith('Drink water!');
 	});
 
 	it('logs an error and does not throw when the channel is not found', async () => {
@@ -89,7 +145,7 @@ describe('scheduler — guild reminders', () => {
 		startScheduler(client as unknown as Client<true>);
 		await vi.advanceTimersByTimeAsync(60_000);
 
-		expect(workingChannel.send).toHaveBeenCalledWith('second');
+		expect(sentEmbed(workingChannel.send).description).toBe('second');
 	});
 
 	it('disables a reminder whose channel no longer exists', async () => {
@@ -144,7 +200,7 @@ describe('scheduler — guild reminders', () => {
 		await vi.advanceTimersByTimeAsync(60_000);
 
 		expect(statusMessage.edit).toHaveBeenCalled();
-		expect(working.send).toHaveBeenCalledWith('second');
+		expect(sentEmbed(working.send).description).toBe('second');
 
 		// Disabled, so never tried again.
 		await vi.advanceTimersByTimeAsync(10 * 60_000);
@@ -296,7 +352,7 @@ describe('scheduler — guild reminders', () => {
 
 describe('scheduler — user DM reminders', () => {
 	it('sends a due DM reminder and updates last_sent_at', async () => {
-		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'Drink water!' });
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'Drink water!', embed: true });
 
 		const user = createMockUser();
 		const client = createMockClient({ users: { u1: user } });
@@ -304,12 +360,44 @@ describe('scheduler — user DM reminders', () => {
 		startScheduler(client as unknown as Client<true>);
 		await vi.advanceTimersByTimeAsync(60_000);
 
-		expect(user.send).toHaveBeenCalledWith('Drink water!');
+		expect(sentEmbed(user.send)).toMatchObject({
+			title: 'Reminder',
+			description: 'Drink water!',
+			footer: { text: 'Every 5 minutes' },
+		});
 		expect(getUserSettings('u1')?.last_sent_at).toBeGreaterThan(0);
 	});
 
+	it("doesn't repeat mentions above a DM's embed, where they can't ping", async () => {
+		upsertUserSettings({
+			userId: 'u1',
+			dmEnabled: true,
+			intervalMinutes: 5,
+			message: '@everyone stretch',
+			embed: true,
+		});
+		const user = createMockUser();
+		const client = createMockClient({ users: { u1: user } });
+
+		startScheduler(client as unknown as Client<true>);
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		expect(user.send).toHaveBeenCalledWith(expect.not.objectContaining({ content: expect.anything() }));
+	});
+
+	it('sends a DM as plain text when the user chose plain text', async () => {
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'Stretch!', embed: false });
+		const user = createMockUser();
+		const client = createMockClient({ users: { u1: user } });
+
+		startScheduler(client as unknown as Client<true>);
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		expect(user.send).toHaveBeenCalledWith('Stretch!');
+	});
+
 	it('logs an error and does not throw when a DM fails to send', async () => {
-		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'hi' });
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'hi', embed: true });
 		const user = createMockUser({ sendShouldFail: true });
 		const client = createMockClient({ users: { u1: user } });
 		const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -322,7 +410,7 @@ describe('scheduler — user DM reminders', () => {
 	});
 
 	it('waits a full interval before retrying a DM Discord refused', async () => {
-		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'hi' });
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'hi', embed: true });
 		const user = createMockUser();
 		user.send.mockRejectedValue(discordError(50007, 403)); // Cannot send messages to this user
 		const client = createMockClient({ users: { u1: user } });
@@ -340,7 +428,7 @@ describe('scheduler — user DM reminders', () => {
 	});
 
 	it('retries a DM on the next poll after a network error', async () => {
-		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'hi' });
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'hi', embed: true });
 		const user = createMockUser();
 		user.send.mockRejectedValueOnce(new Error('network error'));
 		const client = createMockClient({ users: { u1: user } });
@@ -353,8 +441,8 @@ describe('scheduler — user DM reminders', () => {
 	});
 
 	it('stopScheduler skips the rest of a DM batch once the current send finishes', async () => {
-		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'first' });
-		upsertUserSettings({ userId: 'u2', dmEnabled: true, intervalMinutes: 5, message: 'second' });
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'first', embed: true });
+		upsertUserSettings({ userId: 'u2', dmEnabled: true, intervalMinutes: 5, message: 'second', embed: true });
 		const first = createMockUser();
 		let finishSend!: () => void;
 		first.send.mockReturnValue(
@@ -374,5 +462,37 @@ describe('scheduler — user DM reminders', () => {
 
 		expect(getUserSettings('u1')?.last_sent_at).toBeGreaterThan(0);
 		expect(second.send).not.toHaveBeenCalled();
+	});
+});
+
+describe('scheduler — snoozes', () => {
+	it('holds a snoozed reminder and DM back, and sends both once the snooze ends', async () => {
+		createGuildReminder({
+			guildId: 'g1',
+			label: 'water',
+			channelId: 'c1',
+			intervalMinutes: 5,
+			message: 'Drink water!',
+		});
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'Stretch!', embed: true });
+		const now = Date.now();
+		const until = now + 10 * 60_000;
+		snoozeGuildReminder('g1', 'water', { until, skipMissed: false, now });
+		snoozeUser('u1', { until, skipMissed: false, now });
+
+		const channel = createMockChannel();
+		const user = createMockUser();
+		const client = createMockClient({ channels: { c1: channel }, users: { u1: user } });
+
+		startScheduler(client as unknown as Client<true>);
+		await vi.advanceTimersByTimeAsync(9 * 60_000);
+
+		expect(channel.send).not.toHaveBeenCalled();
+		expect(user.send).not.toHaveBeenCalled();
+
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		expect(sentEmbed(channel.send).description).toBe('Drink water!');
+		expect(sentEmbed(user.send).description).toBe('Stretch!');
 	});
 });

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { Collection, PermissionFlagsBits } from 'discord.js';
 import guildReminderCommand from '../../../src/commands/reminderCore/guildreminder.ts';
 import {
 	getGuildReminderByLabel,
@@ -141,6 +142,33 @@ describe('/reminder create', () => {
 		expect(getGuildReminderByLabel('g1', 'water')).toBeDefined();
 		expect(interaction.reply).toHaveBeenCalledWith(
 			expect.objectContaining({ content: expect.stringContaining('missing these permissions') }),
+		);
+	});
+
+	it('says a reminder goes out as plain text where the bot can send but not embed links', async () => {
+		const channel = createMockChannel();
+		(channel as Record<string, unknown>)['permissionsFor'] = vi.fn(() => ({
+			has: (permission: bigint) => permission !== PermissionFlagsBits.EmbedLinks,
+		}));
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: makeGuild(),
+			options: {
+				subcommand: 'create',
+				strings: { label: 'water', message: 'hi' },
+				channels: { channel },
+				integers: { interval: 60 },
+			},
+		});
+
+		await guildReminderCommand.execute(interaction as never);
+
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining('sent as plain text until I can') }),
+		);
+		// It still sends, so it mustn't say it won't.
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.not.stringContaining("won't send") }),
 		);
 	});
 });
@@ -384,5 +412,269 @@ describe('/reminder status', () => {
 		expect(consoleSpy).toHaveBeenCalled();
 		expect(newChannel.send).toHaveBeenCalled();
 		consoleSpy.mockRestore();
+	});
+});
+
+describe('/reminder embed option', () => {
+	it('create saves plain text when embed is false, and says so', async () => {
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: makeGuild(),
+			options: {
+				subcommand: 'create',
+				strings: { label: 'water', message: 'hi' },
+				channels: { channel: makePermissiveChannel() },
+				integers: { interval: 60 },
+				booleans: { embed: false },
+			},
+		});
+
+		await guildReminderCommand.execute(interaction as never);
+
+		expect(getGuildReminderByLabel('g1', 'water')?.embed).toBe(0);
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining('as plain text') }),
+		);
+	});
+
+	it('create defaults to an embed', async () => {
+		await createBaseline();
+
+		expect(getGuildReminderByLabel('g1', 'water')?.embed).toBe(1);
+	});
+
+	it('edit accepts embed as the only field to change', async () => {
+		await createBaseline();
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: makeGuild(),
+			options: { subcommand: 'edit', strings: { label: 'water' }, booleans: { embed: false } },
+		});
+
+		await guildReminderCommand.execute(interaction as never);
+
+		expect(getGuildReminderByLabel('g1', 'water')).toMatchObject({ embed: 0, message: 'original' });
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining('updated') }),
+		);
+	});
+
+	it('list marks plain-text reminders', async () => {
+		await createBaseline();
+		const edit = createMockInteraction({
+			inCachedGuild: true,
+			guild: makeGuild(),
+			options: { subcommand: 'edit', strings: { label: 'water' }, booleans: { embed: false } },
+		});
+		await guildReminderCommand.execute(edit as never);
+
+		const list = createMockInteraction({ inCachedGuild: true, guild: makeGuild(), options: { subcommand: 'list' } });
+		await guildReminderCommand.execute(list as never);
+
+		expect(list.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining('enabled, plain text') }),
+		);
+	});
+
+	function makeNoEmbedChannel() {
+		const channel = createMockChannel();
+		(channel as Record<string, unknown>)['permissionsFor'] = vi.fn(() => ({
+			has: (permission: bigint) => permission !== PermissionFlagsBits.EmbedLinks,
+		}));
+		return channel;
+	}
+
+	it("doesn't warn about Embed Links for a plain-text reminder", async () => {
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: makeGuild(),
+			options: {
+				subcommand: 'create',
+				strings: { label: 'water', message: 'hi' },
+				channels: { channel: makeNoEmbedChannel() },
+				integers: { interval: 60 },
+				booleans: { embed: false },
+			},
+		});
+
+		await guildReminderCommand.execute(interaction as never);
+
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.not.stringContaining('⚠️') }),
+		);
+	});
+
+	it("warns when edit switches to an embed in a channel where the bot can't embed", async () => {
+		const channel = makeNoEmbedChannel();
+		const create = createMockInteraction({
+			inCachedGuild: true,
+			guild: makeGuild(),
+			options: {
+				subcommand: 'create',
+				strings: { label: 'water', message: 'hi' },
+				channels: { channel },
+				integers: { interval: 60 },
+				booleans: { embed: false },
+			},
+		});
+		await guildReminderCommand.execute(create as never);
+		const savedChannelId = getGuildReminderByLabel('g1', 'water')!.channel_id;
+
+		const edit = createMockInteraction({
+			inCachedGuild: true,
+			guild: { ...makeGuild(), channels: { cache: new Map([[savedChannelId, channel]]) } },
+			options: { subcommand: 'edit', strings: { label: 'water' }, booleans: { embed: true } },
+		});
+		await guildReminderCommand.execute(edit as never);
+
+		expect(edit.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining('sent as plain text until I can') }),
+		);
+	});
+});
+
+describe('/reminder custom emoji', () => {
+	// The bot is in g1 (with :shrimp:) and g2 (with :other:), not in the
+	// server :gone: comes from.
+	function emojiClient() {
+		const cache = new Collection([
+			['111', { id: '111', available: true, guild: { id: 'g1', name: 'Test Guild' } }],
+			['222', { id: '222', available: true, guild: { id: 'g2', name: 'Other Guild' } }],
+		]);
+		return { emojis: { cache } };
+	}
+
+	function makeChannelWithoutExternalEmojis() {
+		const channel = createMockChannel();
+		(channel as Record<string, unknown>)['permissionsFor'] = vi.fn(() => ({
+			has: (permission: bigint) => permission !== PermissionFlagsBits.UseExternalEmojis,
+		}));
+		return channel;
+	}
+
+	function guildWithChannels(...channels: { id: string }[]) {
+		return { ...makeGuild(), channels: { cache: new Collection(channels.map((c) => [c.id, c])) } };
+	}
+
+	async function createWith(message: string, channel: { id: string }) {
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: guildWithChannels(channel),
+			client: emojiClient(),
+			options: {
+				subcommand: 'create',
+				strings: { label: 'water', message },
+				channels: { channel },
+				integers: { interval: 60 },
+			},
+		});
+		await guildReminderCommand.execute(interaction as never);
+		return interaction;
+	}
+
+	it("create warns, but saves, when an emoji is from a server the bot isn't in", async () => {
+		const interaction = await createWith('hi <:gone:999>', makePermissiveChannel());
+
+		expect(getGuildReminderByLabel('g1', 'water')?.message).toBe('hi <:gone:999>');
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining("server I'm not in") }),
+		);
+	});
+
+	it('create warns about another server’s emoji where the bot lacks Use External Emojis', async () => {
+		const channel = makeChannelWithoutExternalEmojis();
+		const interaction = await createWith('<:other:222> and <:shrimp:111>', channel);
+
+		const content = (interaction.reply.mock.calls[0]![0] as { content: string }).content;
+		expect(content).toContain(
+			`from another server, **Other Guild**, and I don't have Use External Emojis in <#${channel.id}>`,
+		);
+		expect(content).toContain('`:other:`');
+		expect(content).not.toContain('`:shrimp:`');
+	});
+
+	it('edit warns about a new message’s emoji', async () => {
+		const channel = makePermissiveChannel();
+		await createWith('original', channel);
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: guildWithChannels(channel),
+			client: emojiClient(),
+			options: { subcommand: 'edit', strings: { label: 'water', message: 'now <:gone:999>' } },
+		});
+
+		await guildReminderCommand.execute(interaction as never);
+
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining("server I'm not in") }),
+		);
+	});
+
+	it('edit warns when a new channel lacks Use External Emojis for the saved message', async () => {
+		await createWith('<:other:222>', makePermissiveChannel());
+		const moved = makeChannelWithoutExternalEmojis();
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: guildWithChannels(moved),
+			client: emojiClient(),
+			options: { subcommand: 'edit', strings: { label: 'water' }, channels: { channel: moved } },
+		});
+
+		await guildReminderCommand.execute(interaction as never);
+
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining('Use External Emojis') }),
+		);
+	});
+
+	it('edit checks a new message against the saved channel', async () => {
+		const channel = makeChannelWithoutExternalEmojis();
+		await createWith('original', channel);
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: guildWithChannels(channel),
+			client: emojiClient(),
+			options: { subcommand: 'edit', strings: { label: 'water', message: '<:other:222>' } },
+		});
+
+		await guildReminderCommand.execute(interaction as never);
+
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining('Use External Emojis') }),
+		);
+	});
+
+	it("edit doesn't guess about Use External Emojis when the saved channel isn't cached", async () => {
+		await createWith('original', makeChannelWithoutExternalEmojis());
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: guildWithChannels(),
+			client: emojiClient(),
+			options: { subcommand: 'edit', strings: { label: 'water', message: '<:other:222> <:gone:999>' } },
+		});
+
+		await guildReminderCommand.execute(interaction as never);
+
+		const content = (interaction.reply.mock.calls[0]![0] as { content: string }).content;
+		expect(content).not.toContain('Use External Emojis');
+		expect(content).toContain('`:gone:`');
+	});
+
+	it("edit doesn't repeat the warning when neither the message nor the channel changes", async () => {
+		const channel = makePermissiveChannel();
+		await createWith('<:gone:999>', channel);
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: guildWithChannels(channel),
+			client: emojiClient(),
+			options: { subcommand: 'edit', strings: { label: 'water' }, integers: { interval: 15 } },
+		});
+
+		await guildReminderCommand.execute(interaction as never);
+
+		expect(interaction.reply).toHaveBeenCalledWith({
+			content: 'Reminder `water` updated.',
+			flags: expect.anything(),
+		});
 	});
 });

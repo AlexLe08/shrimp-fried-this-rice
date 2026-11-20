@@ -11,9 +11,10 @@ const db = new Database(dbPath);
 // WAL: the scheduler reads while commands write.
 db.pragma('journal_mode = WAL');
 
-// No migrations yet: CREATE TABLE IF NOT EXISTS never alters an existing
-// table, and production's already has rows. Booleans are INTEGER 0/1; labels
-// are unique per server.
+// The tables as first created. CREATE TABLE IF NOT EXISTS never alters an
+// existing table, so these stay as they are and every later column comes from
+// MIGRATIONS below; a new database and production's go through the same steps.
+// Booleans are INTEGER 0/1; labels are unique per server.
 db.exec(`
 	CREATE TABLE IF NOT EXISTS guild_settings (
 		guild_id TEXT PRIMARY KEY,
@@ -45,6 +46,32 @@ db.exec(`
     );
 `);
 
+// Migration n (from 0) takes PRAGMA user_version from n to n + 1. Append
+// only: production's database has already run the ones here
+// (docs/decisions/0002-schema-migrations-with-user-version.md), except a
+// pre-release reset that deletes that database (decision 0003).
+const MIGRATIONS = [
+	// snoozed_until: epoch ms; a reminder isn't sent before it. 0 = not snoozed.
+	`ALTER TABLE guild_reminders ADD COLUMN snoozed_until INTEGER NOT NULL DEFAULT 0;
+	 ALTER TABLE user_settings ADD COLUMN snoozed_until INTEGER NOT NULL DEFAULT 0;`,
+	// embed: 1 sends the reminder as an embed, 0 as plain text. Reminders made
+	// before the choice existed were already sent as embeds, so they stay so.
+	`ALTER TABLE guild_reminders ADD COLUMN embed INTEGER NOT NULL DEFAULT 1;
+	 ALTER TABLE user_settings ADD COLUMN embed INTEGER NOT NULL DEFAULT 1;`,
+];
+
+const schemaVersion = db.pragma('user_version', { simple: true }) as number;
+if (schemaVersion < MIGRATIONS.length) {
+	// One transaction: a migration that fails partway leaves the database, and
+	// its version, as they were.
+	db.transaction(() => {
+		for (const migration of MIGRATIONS.slice(schemaVersion)) {
+			db.exec(migration);
+		}
+		db.pragma(`user_version = ${MIGRATIONS.length}`);
+	})();
+}
+
 // Row shapes, written by hand: query results are cast to these unchecked,
 // so a column change updates its interface in the same commit.
 export interface GuildSettings {
@@ -61,6 +88,8 @@ export interface GuildReminder {
 	message: string;
 	enabled: number;
 	last_sent_at: number;
+	snoozed_until: number;
+	embed: number;
 }
 
 export interface UserSettings {
@@ -69,6 +98,8 @@ export interface UserSettings {
 	interval_minutes: number;
 	message: string;
 	last_sent_at: number;
+	snoozed_until: number;
+	embed: number;
 }
 
 export interface GuildStatusMessage {
@@ -119,14 +150,22 @@ export function createGuildReminder(reminder: {
 	channelId: string;
 	intervalMinutes: number;
 	message: string;
+	embed?: boolean;
 }): void {
 	db.prepare(
-		`INSERT INTO guild_reminders (guild_id, reminder_label, channel_id, interval_minutes, message)
-		 VALUES (?, ?, ?, ?, ?)`,
-	).run(reminder.guildId, reminder.label, reminder.channelId, reminder.intervalMinutes, reminder.message);
+		`INSERT INTO guild_reminders (guild_id, reminder_label, channel_id, interval_minutes, message, embed)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+	).run(
+		reminder.guildId,
+		reminder.label,
+		reminder.channelId,
+		reminder.intervalMinutes,
+		reminder.message,
+		(reminder.embed ?? true) ? 1 : 0,
+	);
 }
 
-// Writes all three columns back, merged with the current row, rather than
+// Writes all four columns back, merged with the current row, rather than
 // building the SET clause from whichever options were given.
 export function updateGuildReminder(
 	guildId: string,
@@ -135,6 +174,7 @@ export function updateGuildReminder(
 		channelId?: string;
 		intervalMinutes?: number;
 		message?: string;
+		embed?: boolean;
 	},
 ): void {
 	const existing = getGuildReminderByLabel(guildId, label);
@@ -143,10 +183,11 @@ export function updateGuildReminder(
 	const channelId = updates.channelId ?? existing.channel_id;
 	const intervalMinutes = updates.intervalMinutes ?? existing.interval_minutes;
 	const message = updates.message ?? existing.message;
+	const embed = updates.embed === undefined ? existing.embed : updates.embed ? 1 : 0;
 
 	db.prepare(
-		'UPDATE guild_reminders SET channel_id = ?, interval_minutes = ?, message = ? WHERE guild_id = ? AND reminder_label = ?',
-	).run(channelId, intervalMinutes, message, guildId, label);
+		'UPDATE guild_reminders SET channel_id = ?, interval_minutes = ?, message = ?, embed = ? WHERE guild_id = ? AND reminder_label = ?',
+	).run(channelId, intervalMinutes, message, embed, guildId, label);
 }
 
 export function setGuildReminderEnabled(guildId: string, label: string, enabled: boolean): void {
@@ -180,9 +221,61 @@ export function updateGuildReminderLastSentForChannel(reminderId: number, channe
 	);
 }
 
-// Enabled reminders whose interval has passed, in servers whose master toggle
-// is on. LEFT JOIN, not JOIN: a server that never used /reminder master has no
-// guild_settings row, and an inner join silently never fired its reminders.
+// --- Snoozing ---
+// A snooze holds a reminder back until `until`. With skipMissed, last_sent_at
+// moves to `until`, so the next send is a full interval after the snooze ends;
+// without it, a send missed during the snooze goes out at the first poll after.
+// last_sent_at is clamped to `now` first, so re-snoozing (or cancelling) after
+// a skipMissed snooze doesn't keep that snooze's future last_sent_at; cancelling
+// is then the same as the snooze ending now.
+// Accepted race: a snooze set while that reminder's send is in flight has
+// its skipMissed last_sent_at overwritten when the scheduler records the
+// send; snoozed_until still holds, so at worst it sends when the snooze
+// ends instead of an interval later.
+const SNOOZE_SET = `snoozed_until = @until,
+	last_sent_at = CASE WHEN @skipMissed = 1 THEN @until ELSE MIN(last_sent_at, @now) END`;
+
+export function snoozeGuildReminder(
+	guildId: string,
+	label: string,
+	snooze: { until: number; skipMissed: boolean; now: number },
+): void {
+	db.prepare(`UPDATE guild_reminders SET ${SNOOZE_SET} WHERE guild_id = @guildId AND reminder_label = @label`).run({
+		guildId,
+		label,
+		until: snooze.until,
+		skipMissed: snooze.skipMissed ? 1 : 0,
+		now: snooze.now,
+	});
+}
+
+export function unsnoozeGuildReminder(guildId: string, label: string, now: number): void {
+	db.prepare(
+		`UPDATE guild_reminders SET snoozed_until = 0, last_sent_at = MIN(last_sent_at, ?)
+		 WHERE guild_id = ? AND reminder_label = ?`,
+	).run(now, guildId, label);
+}
+
+export function snoozeUser(userId: string, snooze: { until: number; skipMissed: boolean; now: number }): void {
+	db.prepare(`UPDATE user_settings SET ${SNOOZE_SET} WHERE user_id = @userId`).run({
+		userId,
+		until: snooze.until,
+		skipMissed: snooze.skipMissed ? 1 : 0,
+		now: snooze.now,
+	});
+}
+
+export function unsnoozeUser(userId: string, now: number): void {
+	db.prepare('UPDATE user_settings SET snoozed_until = 0, last_sent_at = MIN(last_sent_at, ?) WHERE user_id = ?').run(
+		now,
+		userId,
+	);
+}
+
+// Enabled, unsnoozed reminders whose interval has passed, in servers whose
+// master toggle is on. LEFT JOIN, not JOIN: a server that never used /reminder
+// master has no guild_settings row, and an inner join silently never fired its
+// reminders.
 export function getDueGuildReminders(now: number): GuildReminder[] {
 	return db
 		.prepare(
@@ -190,9 +283,10 @@ export function getDueGuildReminders(now: number): GuildReminder[] {
 			 LEFT JOIN guild_settings gs ON gs.guild_id = gr.guild_id
 			 WHERE gr.enabled = 1
 			   AND (gs.master_enabled IS NULL OR gs.master_enabled = 1)
-			   AND (gr.last_sent_at + gr.interval_minutes * 60000) <= ?`,
+			   AND gr.snoozed_until <= @now
+			   AND (gr.last_sent_at + gr.interval_minutes * 60000) <= @now`,
 		)
-		.all(now) as GuildReminder[];
+		.all({ now }) as GuildReminder[];
 }
 
 export function setGuildStatusMessage(guildId: string, channelId: string, messageId: string): void {
@@ -225,30 +319,39 @@ export function upsertUserSettings(settings: {
 	dmEnabled: boolean;
 	intervalMinutes: number;
 	message: string;
+	embed: boolean;
 }): void {
 	db.prepare(
-		`INSERT INTO user_settings (user_id, dm_enabled, interval_minutes, message)
-		 VALUES (?, ?, ?, ?)
+		`INSERT INTO user_settings (user_id, dm_enabled, interval_minutes, message, embed)
+		 VALUES (?, ?, ?, ?, ?)
 		 ON CONFLICT(user_id) DO UPDATE SET
 		   dm_enabled = excluded.dm_enabled,
 		   interval_minutes = excluded.interval_minutes,
-		   message = excluded.message`,
-	).run(settings.userId, settings.dmEnabled ? 1 : 0, settings.intervalMinutes, settings.message);
+		   message = excluded.message,
+		   embed = excluded.embed`,
+	).run(
+		settings.userId,
+		settings.dmEnabled ? 1 : 0,
+		settings.intervalMinutes,
+		settings.message,
+		settings.embed ? 1 : 0,
+	);
 }
 
 export function updateUserLastSent(userId: string, timestamp: number): void {
 	db.prepare('UPDATE user_settings SET last_sent_at = ? WHERE user_id = ?').run(timestamp, userId);
 }
 
-/** Users who are DM-opted-in and due to receive a reminder. */
+/** Users who are DM-opted-in, not snoozed, and due to receive a reminder. */
 export function getDueUserSettings(now: number): UserSettings[] {
 	return db
 		.prepare(
 			`SELECT * FROM user_settings
 			 WHERE dm_enabled = 1
-			   AND (last_sent_at + interval_minutes * 60000) <= ?`,
+			   AND snoozed_until <= @now
+			   AND (last_sent_at + interval_minutes * 60000) <= @now`,
 		)
-		.all(now) as UserSettings[];
+		.all({ now }) as UserSettings[];
 }
 
 export function deleteUserSettings(userId: string): void {
