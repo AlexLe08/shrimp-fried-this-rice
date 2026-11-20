@@ -61,7 +61,7 @@ Empty folders aren't tracked by git, so `ffxiv/` and `minecraft/` are created by
 - As built: `test/deployCommands.test.ts` snapshots the body `deploy-commands.ts` sends (mocked `REST`), sorted by name and passed through JSON as REST sends it, rather than loading the command files itself. It needs no third copy of the loader, and task 2 can move the commands and replace the loader without touching the test, since `deploy-commands.ts` stays put. One snapshot of the whole list, so a dropped command fails it (a per-command snapshot would only turn obsolete).
 - Deploys: no runtime change.
 
-### ~~2. Feature-folder layout and one command loader~~ (done, #PR)
+### ~~2. Feature-folder layout and one command loader~~ (done, #32)
 
 - Branch `refactor/feature-folders`; PR `refactor: move src into core and reminders feature folders`.
 - `git mv` everything to the target layout, except what tasks 3 to 6 create. Two files wait for their own task: `src/storage.ts` stays where it is until task 3 splits it (its default database path is relative to its own folder, see task 3), and `scheduler.ts` goes to `src/reminders/scheduler.ts` until task 6 splits it. Keep moves and edits apart (a commit of pure moves, then the import fixes) so the diff shows renames.
