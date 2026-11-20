@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { DiscordAPIError, type Client } from 'discord.js';
+import { DiscordAPIError } from 'discord.js';
 import { buildReminderStatusEmbed, refreshGuildStatusMessage } from '../src/reminderEmbed.ts';
 import {
 	createGuildReminder,
@@ -132,7 +132,7 @@ describe('buildReminderStatusEmbed', () => {
 describe('refreshGuildStatusMessage', () => {
 	it('does nothing if no status message is tracked for the guild', async () => {
 		const client = createMockClient();
-		await refreshGuildStatusMessage(client as unknown as Client, 'guild-1');
+		await refreshGuildStatusMessage(client, 'guild-1');
 		expect(client.channels.fetch).not.toHaveBeenCalled();
 	});
 
@@ -155,7 +155,7 @@ describe('refreshGuildStatusMessage', () => {
 			guilds: { 'guild-1': { name: 'Test Server' } },
 		});
 
-		await refreshGuildStatusMessage(client as unknown as Client, 'guild-1');
+		await refreshGuildStatusMessage(client, 'guild-1');
 
 		expect(editMock).toHaveBeenCalledTimes(1);
 		expect(editMock.mock.calls[0]?.[0].embeds[0]).toBeDefined();
@@ -188,7 +188,7 @@ describe('refreshGuildStatusMessage', () => {
 			guilds: { 'guild-1': { name: 'Test Server' } },
 		});
 
-		await refreshGuildStatusMessage(client as unknown as Client, 'guild-1');
+		await refreshGuildStatusMessage(client, 'guild-1');
 
 		expect(getGuildStatusMessage('guild-1')).toBeUndefined();
 	});
@@ -212,7 +212,7 @@ describe('refreshGuildStatusMessage', () => {
 		});
 		const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		await refreshGuildStatusMessage(client as unknown as Client, 'guild-1');
+		await refreshGuildStatusMessage(client, 'guild-1');
 
 		expect(getGuildStatusMessage('guild-1')).toBeDefined(); // still tracked, not cleared
 		expect(consoleSpy).toHaveBeenCalled();

@@ -1,4 +1,10 @@
-import { DiscordAPIError, PermissionFlagsBits, type Client } from 'discord.js';
+import {
+	DiscordAPIError,
+	PermissionFlagsBits,
+	type MessageCreateOptions,
+	type PermissionResolvable,
+	type UserResolvable,
+} from 'discord.js';
 import {
 	getDueGuildReminders,
 	updateGuildReminderLastSent,
@@ -8,7 +14,7 @@ import {
 	updateUserLastSent,
 	type GuildReminder,
 } from './storage.ts';
-import { refreshGuildStatusMessage } from './reminderEmbed.ts';
+import { refreshGuildStatusMessage, type StatusMessageChannel, type StatusMessageClient } from './reminderEmbed.ts';
 import { buildReminderMessage } from './reminderMessage.ts';
 
 /** How often the scheduler checks for due reminders. Should be <= the smallest allowed interval (5 min). */
@@ -24,6 +30,24 @@ const UNKNOWN_CHANNEL = 10003;
 // worth trying again on the next poll.
 function isRefusedByDiscord(error: unknown): error is DiscordAPIError {
 	return error instanceof DiscordAPIError && error.status >= 400 && error.status < 500 && error.status !== 429;
+}
+
+// The part of the client the scheduler uses, so tests can pass a plain fake
+// (see StatusMessageClient).
+export interface SchedulerClient extends StatusMessageClient {
+	user: UserResolvable;
+	channels: { fetch(id: string): Promise<SchedulerChannel | null> };
+	users: { fetch(id: string): Promise<Sendable> };
+}
+
+interface Sendable {
+	send(content: string | MessageCreateOptions): Promise<unknown>;
+}
+
+// Only guild channels have permissionsFor; a DM channel doesn't.
+interface SchedulerChannel extends StatusMessageChannel {
+	isSendable(): this is Sendable;
+	permissionsFor?(user: UserResolvable): { has(permission: PermissionResolvable): boolean } | null;
 }
 
 let pollIntervalID: NodeJS.Timeout | null = null;
@@ -45,7 +69,7 @@ function runCheck(name: string, check: () => Promise<void>): Promise<void> {
 }
 
 // Started from the ClientReady event, so the client is logged in.
-export function startScheduler(client: Client<true>): void {
+export function startScheduler(client: SchedulerClient): void {
 	stopping = false;
 	pollIntervalID = setInterval(() => {
 		guildCheck ??= runCheck('Guild reminder', () => checkGuildReminders(client)).finally(() => {
@@ -70,7 +94,7 @@ export async function stopScheduler(): Promise<void> {
 	console.log('Scheduler stopped.');
 }
 
-async function checkGuildReminders(client: Client<true>): Promise<void> {
+async function checkGuildReminders(client: SchedulerClient): Promise<void> {
 	const now = Date.now();
 	const dueReminders = getDueGuildReminders(now);
 
@@ -122,13 +146,13 @@ async function checkGuildReminders(client: Client<true>): Promise<void> {
 	}
 }
 
-async function disableGuildReminder(client: Client<true>, reminder: GuildReminder, reason: string): Promise<void> {
+async function disableGuildReminder(client: SchedulerClient, reminder: GuildReminder, reason: string): Promise<void> {
 	console.error(`Disabling reminder "${reminder.reminder_label}" (guild ${reminder.guild_id}): ${reason}.`);
 	disableGuildReminderForChannel(reminder.id, reminder.channel_id);
 	await refreshGuildStatusMessage(client, reminder.guild_id);
 }
 
-async function checkUserReminders(client: Client<true>): Promise<void> {
+async function checkUserReminders(client: SchedulerClient): Promise<void> {
 	const now = Date.now();
 	const dueUsers = getDueUserSettings(now);
 

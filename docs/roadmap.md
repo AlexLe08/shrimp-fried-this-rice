@@ -110,6 +110,16 @@ Later item), not a follow-up.
   ones whose server lost the boost for them, and still save. The
   `GuildExpressions` intent keeps the bot's emoji list current, so an
   emoji added after startup isn't flagged.
+- **Narrow client types for the scheduler and status embed** (2026-11-20, #28).
+  `startScheduler` and `refreshGuildStatusMessage` take `SchedulerClient`
+  and `StatusMessageClient`: what they call on the client, down to the
+  channel, user and message, rather than all of `Client`. Narrowing only
+  the parameter wouldn't have been enough, as the fakes' channels aren't
+  discord.js channels either. The tests pass `createMockClient()` without
+  `as unknown as Client`; a real `Client` still fits, checked by `tsc`
+  at every call site. The fakes' `users.fetch` and `guilds.fetch` now
+  reject for an unknown id, as discord.js does, instead of resolving
+  `null`.
 
 ## Next up
 
@@ -150,10 +160,10 @@ runtime dependency is the owner's decision.
   it sends when the snooze ends instead of an interval later (comment in
   `storage.ts`). Fix with `MAX(last_sent_at, ?)` in the send records if it
   ever matters.
-- Narrow `refreshGuildStatusMessage`'s and `startScheduler`'s `Client`
-  parameter to a small interface of what they use (`channels.fetch`,
-  `users.fetch`, `guilds.fetch`), so the test fakes need no
-  `as unknown as Client` cast.
+- Type-check `test/` in CI (for example a `tsconfig.test.json` that
+  `npm run typecheck` also runs). `tsconfig.json` covers only `src/` and
+  Vitest strips types unchecked, so nothing in CI keeps the fakes fitting
+  `SchedulerClient` and `StatusMessageClient`; only the editor does.
 - A minimum coverage threshold in CI (Vitest's `coverage.thresholds`), and
   the HTML coverage report as a CI artifact.
 - Structured logging (for example `pino`) with levels, in place of

@@ -97,8 +97,10 @@ the workflow, indexed in its `README.md`.
   stop the scheduler, destroy the client, close the database, in that
   order. Nothing may touch the database after it closes.
 - Tests are Vitest in `test/`, mirroring `src/`. Discord objects are small
-  `vi.fn()` fakes (`test/mocks.ts`, `test/mockInteraction.ts`), cast with
-  `as unknown as Client` / `as never`; the scheduler is tested through
+  fakes built from `vi.fn()`s (`test/mocks.ts`, `test/mockInteraction.ts`), cast with
+  `as unknown as Client` / `as never`, except where a function takes a
+  narrow interface of what it uses (`SchedulerClient`,
+  `StatusMessageClient`), which the fakes fit; the scheduler is tested through
   `startScheduler` with fake timers, not by exporting its internals.
   Test-only helpers are exported as `__…ForTests` and never used in `src/`.
 - Comments say why, not what: the reason, the constraint, the incident

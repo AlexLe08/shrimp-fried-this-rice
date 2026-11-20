@@ -1,4 +1,4 @@
-import { EmbedBuilder, DiscordAPIError, type Client } from 'discord.js';
+import { EmbedBuilder, DiscordAPIError, type MessageEditOptions } from 'discord.js';
 import { getGuildSettings, getGuildReminders, getGuildStatusMessage, deleteGuildStatusMessage } from './storage.ts';
 import { isSnoozed, discordTime } from './snooze.ts';
 
@@ -48,7 +48,21 @@ export function buildReminderStatusEmbed(guildId: string, guildName: string): Em
 	return embed;
 }
 
-export async function refreshGuildStatusMessage(client: Client, guildId: string): Promise<void> {
+// The part of the client this module uses, so tests can pass a plain fake.
+// A real Client fits it, and every caller passes one, so tsc catches
+// discord.js changing underneath it.
+export interface StatusMessageClient {
+	guilds: { fetch(id: string): Promise<{ name: string }> };
+	channels: { fetch(id: string): Promise<StatusMessageChannel | null> };
+}
+
+export interface StatusMessageChannel {
+	isTextBased(): this is {
+		messages: { fetch(id: string): Promise<{ edit(options: MessageEditOptions): Promise<unknown> }> };
+	};
+}
+
+export async function refreshGuildStatusMessage(client: StatusMessageClient, guildId: string): Promise<void> {
 	const statusMessage = getGuildStatusMessage(guildId);
 	if (!statusMessage) return;
 
