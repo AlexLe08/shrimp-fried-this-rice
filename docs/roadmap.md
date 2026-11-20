@@ -86,9 +86,12 @@ Later item), not a follow-up.
   "Every N minutes" footer, in one fixed colour (per-reminder styles would
   need a schema change). Mentions inside an embed don't ping and links
   don't preview, so `src/reminderMessage.ts` repeats a message's user,
-  role, `@everyone` and `@here` mentions and its links (not
-  `<https://…>` ones) in the message text above the embed.
-  `/reminder create` warns when Embed Links is missing.
+  role, `@everyone` and `@here` mentions (servers only) and its links in
+  the message text above the embed, leaving out code, spoilers, escaped
+  mentions and `<https://…>` links, within 2000 characters.
+  `/reminder create` warns when Embed Links is missing, and the scheduler
+  sends plain text where it is (Discord's docs don't say what happens to
+  a bot's embed without it).
 
 ## Next up
 
