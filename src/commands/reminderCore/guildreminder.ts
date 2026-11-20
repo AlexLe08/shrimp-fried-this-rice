@@ -37,6 +37,7 @@ import {
 } from '../../snooze.ts';
 import { buildReminderStatusEmbed } from '../../reminderEmbed.ts';
 import { refreshGuildStatusMessage } from '../../reminderEmbed.ts';
+import { EMBED_OPTION_DESCRIPTION } from '../../reminderMessage.ts';
 import type { TextChannel } from 'discord.js';
 
 function checkChannelPermissions(
@@ -165,7 +166,8 @@ export default {
 				)
 				.addStringOption((option) =>
 					option.setName('message').setDescription('The reminder text to send').setMaxLength(2000).setRequired(true),
-				),
+				)
+				.addBooleanOption((option) => option.setName('embed').setDescription(EMBED_OPTION_DESCRIPTION)),
 		)
 		.addSubcommand((subcommand) =>
 			subcommand.setName('list').setDescription('List all reminders configured for this server.'),
@@ -220,7 +222,8 @@ export default {
 						.setMinValue(MIN_INTERVAL_MINUTES)
 						.setMaxValue(MAX_INTERVAL_MINUTES),
 				)
-				.addStringOption((option) => option.setName('message').setDescription('New reminder text').setMaxLength(2000)),
+				.addStringOption((option) => option.setName('message').setDescription('New reminder text').setMaxLength(2000))
+				.addBooleanOption((option) => option.setName('embed').setDescription(EMBED_OPTION_DESCRIPTION)),
 		)
 		.addSubcommand((subcommand) =>
 			subcommand
@@ -296,6 +299,7 @@ export default {
 			const channel = interaction.options.getChannel('channel', true);
 			const interval = interaction.options.getInteger('interval', true);
 			const message = interaction.options.getString('message', true);
+			const embed = interaction.options.getBoolean('embed') ?? true;
 
 			if (getGuildReminderByLabel(guildId, label)) {
 				await interaction.reply({
@@ -311,12 +315,13 @@ export default {
 				channelId: channel.id,
 				intervalMinutes: interval,
 				message,
+				embed,
 			});
 
 			const permissionWarning = checkChannelPermissions(interaction, channel as TextChannel);
 
 			await interaction.reply({
-				content: `Created reminder \`${label}\`: every ${interval} minutes in ${channel}.${permissionWarning ? `\n\n${permissionWarning}` : ''}`,
+				content: `Created reminder \`${label}\`: every ${interval} minutes in ${channel}, as ${embed ? 'an embed' : 'plain text'}.${permissionWarning ? `\n\n${permissionWarning}` : ''}`,
 				flags: MessageFlags.Ephemeral,
 			});
 			await refreshGuildStatusMessage(interaction.client, guildId);
@@ -328,6 +333,7 @@ export default {
 			const channel = interaction.options.getChannel('channel');
 			const interval = interaction.options.getInteger('interval');
 			const message = interaction.options.getString('message');
+			const embed = interaction.options.getBoolean('embed');
 
 			if (!getGuildReminderByLabel(guildId, label)) {
 				await interaction.reply({
@@ -337,18 +343,19 @@ export default {
 				return;
 			}
 
-			if (!channel && interval === null && message === null) {
+			if (!channel && interval === null && message === null && embed === null) {
 				await interaction.reply({
-					content: 'Provide at least one field to change: `channel`, `interval`, or `message`.',
+					content: 'Provide at least one field to change: `channel`, `interval`, `message`, or `embed`.',
 					flags: MessageFlags.Ephemeral,
 				});
 				return;
 			}
 
-			const updates: { channelId?: string; intervalMinutes?: number; message?: string } = {};
+			const updates: { channelId?: string; intervalMinutes?: number; message?: string; embed?: boolean } = {};
 			if (channel) updates.channelId = channel.id;
 			if (interval !== null) updates.intervalMinutes = interval;
 			if (message !== null) updates.message = message;
+			if (embed !== null) updates.embed = embed;
 
 			updateGuildReminder(guildId, label, updates);
 
@@ -499,7 +506,8 @@ export default {
 			const now = Date.now();
 			const lines = reminders.map((r) => {
 				const snoozed = isSnoozed(r.snoozed_until, now) ? `, snoozed until ${discordTime(r.snoozed_until, 'f')}` : '';
-				return `• \`${r.reminder_label}\` — every ${r.interval_minutes}m in <#${r.channel_id}> — ${r.enabled ? 'enabled' : 'disabled'}${snoozed}`;
+				const plain = r.embed ? '' : ', plain text';
+				return `• \`${r.reminder_label}\` — every ${r.interval_minutes}m in <#${r.channel_id}> — ${r.enabled ? 'enabled' : 'disabled'}${plain}${snoozed}`;
 			});
 
 			await interaction.reply({

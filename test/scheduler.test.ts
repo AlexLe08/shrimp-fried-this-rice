@@ -84,6 +84,24 @@ describe('scheduler — guild reminders', () => {
 		expect(channel.send).toHaveBeenCalledWith('Drink water!');
 	});
 
+	it('sends plain text for a reminder set to plain text', async () => {
+		createGuildReminder({
+			guildId: 'g1',
+			label: 'water',
+			channelId: 'c1',
+			intervalMinutes: 5,
+			message: 'Drink water!',
+			embed: false,
+		});
+		const channel = createMockChannel();
+		const client = createMockClient({ channels: { c1: channel } });
+
+		startScheduler(client as unknown as Client<true>);
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		expect(channel.send).toHaveBeenCalledWith('Drink water!');
+	});
+
 	it('logs an error and does not throw when the channel is not found', async () => {
 		createGuildReminder({
 			guildId: 'g1',
@@ -359,6 +377,17 @@ describe('scheduler — user DM reminders', () => {
 		await vi.advanceTimersByTimeAsync(60_000);
 
 		expect(user.send).toHaveBeenCalledWith(expect.not.objectContaining({ content: expect.anything() }));
+	});
+
+	it('sends a DM as plain text when the user chose plain text', async () => {
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 5, message: 'Stretch!', embed: false });
+		const user = createMockUser();
+		const client = createMockClient({ users: { u1: user } });
+
+		startScheduler(client as unknown as Client<true>);
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		expect(user.send).toHaveBeenCalledWith('Stretch!');
 	});
 
 	it('logs an error and does not throw when a DM fails to send', async () => {

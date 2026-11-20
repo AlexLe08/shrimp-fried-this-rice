@@ -17,6 +17,7 @@ import {
 	discordTime,
 	describeSnooze,
 } from '../../snooze.ts';
+import { EMBED_OPTION_DESCRIPTION } from '../../reminderMessage.ts';
 
 const DEFAULT_MESSAGE = 'Time for a quick break!';
 const DEFAULT_INTERVAL = 60;
@@ -38,6 +39,7 @@ export default {
 		.addStringOption((option) =>
 			option.setName('message').setDescription('The reminder text to DM you').setMaxLength(2000),
 		)
+		.addBooleanOption((option) => option.setName('embed').setDescription(EMBED_OPTION_DESCRIPTION))
 		.addIntegerOption((option) =>
 			option
 				.setName('snooze')
@@ -67,6 +69,7 @@ export default {
 		const enabledOption = interaction.options.getBoolean('enabled');
 		const intervalOption = interaction.options.getInteger('interval');
 		const messageOption = interaction.options.getString('message');
+		const embedOption = interaction.options.getBoolean('embed');
 		const snoozeOption = interaction.options.getInteger('snooze');
 		const afterSnoozeOption = interaction.options.getString('after_snooze');
 		const now = Date.now();
@@ -79,7 +82,8 @@ export default {
 			return;
 		}
 
-		const changesSettings = enabledOption !== null || intervalOption !== null || messageOption !== null;
+		const changesSettings =
+			enabledOption !== null || intervalOption !== null || messageOption !== null || embedOption !== null;
 
 		if (!changesSettings && snoozeOption === null) {
 			if (!existing) {
@@ -95,7 +99,7 @@ export default {
 				? `\n- Snoozed until ${discordTime(existing.snoozed_until, 'f')}`
 				: '';
 			await interaction.reply({
-				content: `Your current DM reminder settings:\n- Enabled: ${existing.dm_enabled ? 'yes' : 'no'}\n- Interval: every ${existing.interval_minutes} minutes\n- Message: ${existing.message}${snoozedLine}`,
+				content: `Your current DM reminder settings:\n- Enabled: ${existing.dm_enabled ? 'yes' : 'no'}\n- Interval: every ${existing.interval_minutes} minutes\n- Format: ${existing.embed ? 'embed' : 'plain text'}\n- Message: ${existing.message}${snoozedLine}`,
 				flags: MessageFlags.Ephemeral,
 			});
 			return;
@@ -119,15 +123,17 @@ export default {
 			dmEnabled = enabledOption ?? dmEnabled;
 			const intervalMinutes = intervalOption ?? existing?.interval_minutes ?? DEFAULT_INTERVAL;
 			const message = messageOption ?? existing?.message ?? DEFAULT_MESSAGE;
+			const embed = embedOption ?? (existing ? existing.embed === 1 : true);
 
 			upsertUserSettings({
 				userId: interaction.user.id,
 				dmEnabled,
 				intervalMinutes,
 				message,
+				embed,
 			});
 			replyLines.push(
-				`DM reminders ${dmEnabled ? 'enabled' : 'disabled'}. Interval: every ${intervalMinutes} minutes. Message: ${message}`,
+				`DM reminders ${dmEnabled ? 'enabled' : 'disabled'}. Interval: every ${intervalMinutes} minutes. Format: ${embed ? 'embed' : 'plain text'}. Message: ${message}`,
 			);
 		}
 

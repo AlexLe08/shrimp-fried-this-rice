@@ -414,3 +414,65 @@ describe('/reminder status', () => {
 		consoleSpy.mockRestore();
 	});
 });
+
+describe('/reminder embed option', () => {
+	it('create saves plain text when embed is false, and says so', async () => {
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: makeGuild(),
+			options: {
+				subcommand: 'create',
+				strings: { label: 'water', message: 'hi' },
+				channels: { channel: makePermissiveChannel() },
+				integers: { interval: 60 },
+				booleans: { embed: false },
+			},
+		});
+
+		await guildReminderCommand.execute(interaction as never);
+
+		expect(getGuildReminderByLabel('g1', 'water')?.embed).toBe(0);
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining('as plain text') }),
+		);
+	});
+
+	it('create defaults to an embed', async () => {
+		await createBaseline();
+
+		expect(getGuildReminderByLabel('g1', 'water')?.embed).toBe(1);
+	});
+
+	it('edit accepts embed as the only field to change', async () => {
+		await createBaseline();
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: makeGuild(),
+			options: { subcommand: 'edit', strings: { label: 'water' }, booleans: { embed: false } },
+		});
+
+		await guildReminderCommand.execute(interaction as never);
+
+		expect(getGuildReminderByLabel('g1', 'water')).toMatchObject({ embed: 0, message: 'original' });
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining('updated') }),
+		);
+	});
+
+	it('list marks plain-text reminders', async () => {
+		await createBaseline();
+		const edit = createMockInteraction({
+			inCachedGuild: true,
+			guild: makeGuild(),
+			options: { subcommand: 'edit', strings: { label: 'water' }, booleans: { embed: false } },
+		});
+		await guildReminderCommand.execute(edit as never);
+
+		const list = createMockInteraction({ inCachedGuild: true, guild: makeGuild(), options: { subcommand: 'list' } });
+		await guildReminderCommand.execute(list as never);
+
+		expect(list.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining('enabled, plain text') }),
+		);
+	});
+});

@@ -75,3 +75,53 @@ describe('/remindme — update mode', () => {
 		expect(settings?.dm_enabled).toBe(1); // unchanged
 	});
 });
+
+describe('/remindme — embed', () => {
+	it('defaults a new user to embeds, and shows the format', async () => {
+		const interaction = createMockInteraction({
+			user: { id: 'u1', username: 'tester' },
+			options: { booleans: { enabled: true } },
+		});
+		await remindmeCommand.execute(interaction as never);
+
+		expect(getUserSettings('u1')?.embed).toBe(1);
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining('Format: embed') }),
+		);
+	});
+
+	it('switches to plain text on its own, keeping the rest', async () => {
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 30, message: 'hi' });
+
+		const interaction = createMockInteraction({
+			user: { id: 'u1', username: 'tester' },
+			options: { booleans: { embed: false } },
+		});
+		await remindmeCommand.execute(interaction as never);
+
+		expect(getUserSettings('u1')).toMatchObject({ embed: 0, dm_enabled: 1, interval_minutes: 30, message: 'hi' });
+	});
+
+	it('keeps plain text when another option changes', async () => {
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 30, message: 'hi', embed: false });
+
+		const interaction = createMockInteraction({
+			user: { id: 'u1', username: 'tester' },
+			options: { integers: { interval: 15 } },
+		});
+		await remindmeCommand.execute(interaction as never);
+
+		expect(getUserSettings('u1')).toMatchObject({ embed: 0, interval_minutes: 15 });
+	});
+
+	it('shows the format in the settings view', async () => {
+		upsertUserSettings({ userId: 'u1', dmEnabled: true, intervalMinutes: 30, message: 'hi', embed: false });
+
+		const interaction = createMockInteraction({ user: { id: 'u1', username: 'tester' } });
+		await remindmeCommand.execute(interaction as never);
+
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining('Format: plain text') }),
+		);
+	});
+});
