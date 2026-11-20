@@ -16,7 +16,7 @@ Deployed and running in production. What's done, what's next, and candidates for
 - Server reminders (`/reminder`): up to 20 per server, each posting its message to a channel every 5 to 1440 minutes, with a server-wide master toggle. Managing them needs **Manage Server**.
 - A self-updating status embed (`/reminder status`) listing every reminder and when it next sends, refreshed whenever one sends or changes.
 - Personal DM reminders (`/remindme`), opt-in and independent of any server.
-- Reminders arrive as an embed: the reminder's label as the title (`Reminder` for DMs), its message, and how often it repeats. Mentions and links in the message are also posted just above the embed, since Discord doesn't ping mentions or preview links inside one (mentions only in servers; nothing from code, spoilers, escaped mentions or `<https://…>` links). In a channel where the bot lacks Embed Links, the reminder is sent as plain text instead.
+- Reminders arrive as an embed: the reminder's label as the title (`Reminder` for DMs), its message, and how often it repeats. Discord doesn't ping mentions inside an embed, so a server reminder's mentions are also posted just above it (not ones in code, spoilers, or escaped). A message with a link is sent as plain text, as before embeds, because Discord doesn't preview links in a bot message that has its own embed; a link in code, a spoiler or `<https://…>` doesn't count. In a channel where the bot lacks Embed Links, every reminder is sent as plain text.
 - Each command has a 3-second per-user cooldown.
 - Label autocomplete: wherever `/reminder` asks for an existing reminder's `label` (`edit`, `toggle`, `snooze`, `unsnooze`, `delete`), Discord lists the server's reminders to pick from, each with its interval, channel, and whether it's disabled or snoozed. Labels starting with what's typed come first. A typed label that matches none still gets the usual "No reminder found".
 - Snoozing: a server reminder (`/reminder snooze`) or your own DM reminders (`/remindme snooze:`) can be held back for 30 minutes to a week, then resume by themselves. Each snooze chooses what happens when it ends: send one right away if one was missed (the default), or wait a full interval. Active snoozes show in `/reminder list`, `/reminder status` and `/remindme`.
@@ -178,7 +178,7 @@ src/
   eventListener.ts      # wraps each event handler so a rejection is logged, not an unhandled crash
   storage.ts            # SQLite data-access layer (guild settings, guild reminders, user settings, status message tracking) and schema migrations
   snooze.ts             # snooze durations and after-snooze choices shared by /reminder and /remindme
-  reminderMessage.ts    # builds what a reminder sends: an embed, with its mentions and links repeated above it
+  reminderMessage.ts    # builds what a reminder sends: an embed with its mentions above it, or plain text when it has a link
   reminderEmbed.ts       # builds the /reminder status embed; also refreshes the tracked status message when reminders change
   types/
     command.ts           # shared Command interface
@@ -193,7 +193,7 @@ test/
   mocks.ts                        # shared fake Client/channel/user builders (scheduler + embed tests)
   mockInteraction.ts               # shared fake ChatInputCommandInteraction/AutocompleteInteraction builder (command + event tests)
   reminderEmbed.test.ts            # buildReminderStatusEmbed + refreshGuildStatusMessage tests
-  reminderMessage.test.ts          # the embed a reminder sends, and which mentions and links go above it
+  reminderMessage.test.ts          # the embed a reminder sends, which mentions go above it, and when it's plain text
   scheduler.test.ts                # scheduler tests, using fake timers
   schedulerCheckFailure.test.ts    # a poll whose storage query throws is logged, not a crash (mocks storage, so its own file)
   shutdown.test.ts                  # gracefulShutdown orchestration tests (mocked scheduler + storage)

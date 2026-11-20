@@ -81,17 +81,19 @@ Later item), not a follow-up.
   of the cooldown check (one fires per keystroke) and logs a failed one.
   Typing a label by hand still works, so the "No reminder found" check
   stays.
-- **Reminders as embeds** (2026-11-20). Server and DM reminders send an
-  embed: the label as the title (`Reminder` in DMs), the message, and an
-  "Every N minutes" footer, in one fixed colour (per-reminder styles would
-  need a schema change). Mentions inside an embed don't ping and links
-  don't preview, so `src/reminderMessage.ts` repeats a message's user,
-  role, `@everyone` and `@here` mentions (servers only) and its links in
-  the message text above the embed, leaving out code, spoilers, escaped
-  mentions and `<https://…>` links, within 2000 characters.
-  `/reminder create` warns when Embed Links is missing, and the scheduler
-  sends plain text where it is (Discord's docs don't say what happens to
-  a bot's embed without it).
+- **Reminders as embeds** (2026-11-20, #23). Server and DM reminders send
+  an embed: the label as the title (`Reminder` in DMs), the message, and
+  an "Every N minutes" footer, in one fixed colour (per-reminder styles
+  would need a schema change). Checked on the dev server: a mention inside
+  an embed isn't a mention to Discord, and a link isn't previewed in a bot
+  message that has its own embed. So `src/reminderMessage.ts` repeats a
+  server reminder's user, role, `@everyone` and `@here` mentions above the
+  embed (not ones in code, spoilers, or escaped; within 2000 characters),
+  and sends a message with a link as plain text, as before, to keep its
+  preview. `/reminder create` and `edit` warn when Embed Links is missing,
+  and the scheduler sends plain text where it is (Discord's docs don't say
+  what happens to a bot's embed without it; not tested, the dev bot can't
+  change channel permissions).
 
 ## Next up
 
