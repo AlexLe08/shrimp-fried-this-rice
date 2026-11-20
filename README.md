@@ -16,6 +16,7 @@ Deployed and running in production. What's done, what's next, and candidates for
 - Server reminders (`/reminder`): up to 20 per server, each posting its message to a channel every 5 to 1440 minutes, with a server-wide master toggle. Managing them needs **Manage Server**.
 - A self-updating status embed (`/reminder status`) listing every reminder and when it next sends, refreshed whenever one sends or changes.
 - Personal DM reminders (`/remindme`), opt-in and independent of any server.
+- Reminders arrive as an embed: the reminder's label as the title (`Reminder` for DMs), its message, and how often it repeats. Mentions and links in the message are also posted just above the embed, since Discord doesn't ping mentions or preview links inside one; a link written as `<https://…>` stays without a preview.
 - Each command has a 3-second per-user cooldown.
 - Label autocomplete: wherever `/reminder` asks for an existing reminder's `label` (`edit`, `toggle`, `snooze`, `unsnooze`, `delete`), Discord lists the server's reminders to pick from, each with its interval, channel, and whether it's disabled or snoozed. Labels starting with what's typed come first. A typed label that matches none still gets the usual "No reminder found".
 - Snoozing: a server reminder (`/reminder snooze`) or your own DM reminders (`/remindme snooze:`) can be held back for 30 minutes to a week, then resume by themselves. Each snooze chooses what happens when it ends: send one right away if one was missed (the default), or wait a full interval. Active snoozes show in `/reminder list`, `/reminder status` and `/remindme`.
@@ -28,7 +29,7 @@ Deliberate choices from before the [decision records](docs/decisions/):
 
 - `/remindme` (personal DM settings) is keyed only by user ID, not per server. Someone in several servers with this bot has one set of personal DM settings across all of them: a personal reminder, independent of any server.
 - Only one status embed is tracked per server. Re-running `/reminder status` deletes the previous embed (if it still exists) and posts a new one, even in a different channel.
-- `/reminder create` warns, but still saves, when the bot lacks permissions in the channel: an admin may grant them afterwards, and the reminder starts sending once they do.
+- `/reminder create` warns, but still saves, when the bot lacks permissions in the channel (View Channel, Send Messages, Embed Links): an admin may grant them afterwards, and the reminder starts sending once they do.
 
 ## ⚠️ Important: never run local dev against the production bot token
 
@@ -60,7 +61,7 @@ Slash commands are registered **globally** (via `deploycommands`), so they're av
 1. **Create a dedicated local-dev Discord Application** (do not reuse the production one — see the warning above):
    - **Bot tab:** no privileged gateway intents need to be enabled — this project only requests the non-privileged `Guilds` intent.
    - **OAuth2 → URL Generator → Scopes:** `bot`, `applications.commands`
-   - **Bot Permissions:** Send Messages, Embed Links (required for the `/reminder status` embed), Read Message History (required to fetch/delete previously-posted status embeds), View Channel
+   - **Bot Permissions:** Send Messages, Embed Links (reminders and the `/reminder status` embed are embeds), Read Message History (required to fetch/delete previously-posted status embeds), View Channel
    - Use the generated URL to invite this dev bot to your test server.
 
 2. **Clone and install dependencies**
@@ -177,6 +178,7 @@ src/
   eventListener.ts      # wraps each event handler so a rejection is logged, not an unhandled crash
   storage.ts            # SQLite data-access layer (guild settings, guild reminders, user settings, status message tracking) and schema migrations
   snooze.ts             # snooze durations and after-snooze choices shared by /reminder and /remindme
+  reminderMessage.ts    # builds what a reminder sends: an embed, with its mentions and links repeated above it
   reminderEmbed.ts       # builds the /reminder status embed; also refreshes the tracked status message when reminders change
   types/
     command.ts           # shared Command interface
@@ -191,6 +193,7 @@ test/
   mocks.ts                        # shared fake Client/channel/user builders (scheduler + embed tests)
   mockInteraction.ts               # shared fake ChatInputCommandInteraction/AutocompleteInteraction builder (command + event tests)
   reminderEmbed.test.ts            # buildReminderStatusEmbed + refreshGuildStatusMessage tests
+  reminderMessage.test.ts          # the embed a reminder sends, and which mentions and links go above it
   scheduler.test.ts                # scheduler tests, using fake timers
   schedulerCheckFailure.test.ts    # a poll whose storage query throws is logged, not a crash (mocks storage, so its own file)
   shutdown.test.ts                  # gracefulShutdown orchestration tests (mocked scheduler + storage)
