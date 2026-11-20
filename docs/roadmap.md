@@ -121,6 +121,16 @@ changes are cheapest now, while the bot is pre-release (decision 0003).
    Discord's own CDN by re-posting the attachment URL, which expires),
    size limits, and the free tier. Likely a design note or decision record
    before code.
+2. **Rework `/remindme`** (brainstorm in its own session first). One
+   command does everything through optional options: view (no options),
+   update (`enabled`, `interval`, `message`, `embed`), snooze, and `reset`,
+   with rules about which combine. Options to weigh include subcommands
+   like `/reminder`'s, or a wider rework. A known bug to fix on the way:
+   the update reply repeats the whole message, so one near the 2000
+   character limit pushes the reply past Discord's 2000, and the user sees
+   an error although the settings were saved. Command names and options
+   are what users depend on, so a new shape is cheapest now, while the bot
+   is pre-release.
 
 ## Later (candidates, unordered)
 
