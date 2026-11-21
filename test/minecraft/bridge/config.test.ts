@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_AVATARS } from '../../../src/minecraft/bridge/avatars.ts';
 import { DEFAULT_IGNORE } from '../../../src/minecraft/bridge/classify.ts';
 import { ConfigError, loadConfig, parseConfig } from '../../../src/minecraft/bridge/config.ts';
 
@@ -30,6 +31,7 @@ describe('parseConfig', () => {
 			logPath: '/srv/logs/latest.log',
 			webhooks: { chat: CHAT, alerts: ALERTS },
 			ignore: [...DEFAULT_IGNORE],
+			avatars: DEFAULT_AVATARS,
 		});
 	});
 
@@ -78,13 +80,23 @@ describe('parseConfig', () => {
 		expect(problems({ ...valid(), serverName: 'x'.repeat(81) })).toHaveLength(1);
 	});
 
-	it('refuses keys for features not built yet, and misspelt ones', () => {
-		expect(problems({ ...valid(), avatars: {}, crashReportDir: '/srv/crash-reports' })).toEqual([
-			'unknown key "avatars"',
+	it('refuses misspelt keys', () => {
+		expect(problems({ ...valid(), avatar: {}, crashReportDir: '/srv/crash-reports' })).toEqual([
+			'unknown key "avatar"',
 			'unknown key "crashReportDir"',
 		]);
 		expect(problems({ ...valid(), webhooks: { chat: CHAT, alerts: ALERTS, alert: ALERTS } })).toEqual([
 			'unknown key "webhooks.alert"',
+		]);
+	});
+
+	it('accepts avatars, reporting its problems with the rest', () => {
+		const { avatars } = parseConfig({ ...valid(), avatars: { default: 'none', players: { Steve: 'skin' } } });
+		expect(avatars.default).toEqual({ kind: 'none' });
+		expect(avatars.players.get('steve')).toEqual({ kind: 'skin' });
+		expect(problems({ ...valid(), serverName: '', avatars: { default: 'everyone' } })).toEqual([
+			'"serverName" must be a name of 1 to 80 characters',
+			'"avatars.default" must be "skin", "generated" or "none"',
 		]);
 	});
 

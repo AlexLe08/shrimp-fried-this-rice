@@ -128,6 +128,37 @@ describe('createSender', () => {
 		expect(log).toHaveBeenCalledWith(expect.stringContaining('"discord_fan"'));
 	});
 
+	it("sends a post's picture, and batches only lines with the same name and picture", async () => {
+		const { sender, fetch } = setup();
+		const steve = (content: string, avatarUrl?: string): Post => ({
+			...chat('Steve', content),
+			...(avatarUrl === undefined ? {} : { avatarUrl }),
+		});
+		sender.send(steve('one', 'https://x.test/a.png'));
+		sender.send(steve('two', 'https://x.test/a.png'));
+		sender.send(steve('three', 'https://x.test/b.png'));
+		sender.send(steve('four'));
+		await vi.advanceTimersByTimeAsync(2000);
+		expect(fetch.mock.calls.map(([, init]) => JSON.parse(init!.body as string) as object)).toEqual([
+			{ content: 'one\ntwo', username: 'Steve', avatar_url: 'https://x.test/a.png', allowed_mentions: { parse: [] } },
+			{ content: 'three', username: 'Steve', avatar_url: 'https://x.test/b.png', allowed_mentions: { parse: [] } },
+			{ content: 'four', username: 'Steve', allowed_mentions: { parse: [] } },
+		]);
+	});
+
+	it("drops the player's picture when resending under the server's name", async () => {
+		const { sender, fetch } = setup([json(400, { code: 50035 })]);
+		sender.send({ ...chat('discordfan', 'hi'), avatarUrl: 'https://x.test/a.png' });
+		await vi.advanceTimersByTimeAsync(1000);
+		const sent = fetch.mock.calls.map(
+			([, init]) => JSON.parse(init!.body as string) as { username: string; avatar_url?: string },
+		);
+		expect(sent.map((body) => [body.username, body.avatar_url])).toEqual([
+			['discordfan', 'https://x.test/a.png'],
+			['Survival', undefined],
+		]);
+	});
+
 	it('sends a refused name straight to the fallback next time', async () => {
 		const { sender, bodies } = setup([json(400, { code: 50035 })]);
 		sender.send(chat('discordfan', 'hi'));

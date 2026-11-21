@@ -1,3 +1,4 @@
+import { avatarFor, isMojangUuid } from './avatars.ts';
 import { createAlertGate, type AlertGate } from './alertGate.ts';
 import { classify, type BridgeEvent } from './classify.ts';
 import type { BridgeConfig } from './config.ts';
@@ -47,6 +48,23 @@ export function createBridge(options: BridgeOptions): Bridge {
 	let quietTimer: NodeJS.Timeout | null = null;
 	// Per thing that can't be read (the log, the crash-reports folder).
 	const lastReadErrorPost = new Map<string, number>();
+	// By lowercased name, for the server's run: not dropped on leaving, as a
+	// player logging in again while online logs the new UUID before the old
+	// session's leave line.
+	const uuids = new Map<string, string>();
+	let offlineMode = false;
+
+	function track(event: BridgeEvent): void {
+		if (event.type === 'uuid') {
+			uuids.set(event.player.toLowerCase(), event.uuid);
+			if (!isMojangUuid(event.uuid)) offlineMode = true;
+		} else if (event.type === 'stopping' || event.type === 'started') {
+			// A crash logs no stop; a start begins a new run either way, and the
+			// server's online-mode setting may have changed with it.
+			uuids.clear();
+			offlineMode = false;
+		}
+	}
 
 	// The callbacks run from the tailer and from timers: a bug in one must log,
 	// not stop the helper (an exception thrown from a timer would end it).
@@ -86,6 +104,8 @@ export function createBridge(options: BridgeOptions): Bridge {
 	function handle(entry: LogEntry): void {
 		const event = classify(entry, { ignore: config.ignore });
 		if (!event) return;
+		track(event);
+		if (event.type === 'uuid') return;
 		if (event.type === 'alert') {
 			postAlert(event);
 			return;
@@ -93,7 +113,15 @@ export function createBridge(options: BridgeOptions): Bridge {
 		// Start and stop say whether the server is up, so they're kept when the
 		// queue overflows; a lost chat or join line matters less.
 		const droppable = event.type !== 'started' && event.type !== 'stopping';
-		sender.send({ webhook: config.webhooks.chat, droppable, ...eventMessage(event, config.serverName) });
+		const message = eventMessage(event, config.serverName);
+		if (event.type === 'chat') {
+			const avatarUrl = avatarFor(event.player, config.avatars, {
+				uuid: uuids.get(event.player.toLowerCase()),
+				offlineMode,
+			});
+			if (avatarUrl) message.avatarUrl = avatarUrl;
+		}
+		sender.send({ webhook: config.webhooks.chat, droppable, ...message });
 	}
 
 	const flush = guarded('flushing the last entry', () => {
@@ -108,6 +136,8 @@ export function createBridge(options: BridgeOptions): Bridge {
 			let up: boolean | null = null;
 			for (const entry of parseLog(text)) {
 				const event = classify(entry, { ignore: config.ignore });
+				// Players already online when the helper starts keep their UUID.
+				if (event) track(event);
 				if (event?.type === 'started') up = true;
 				else if (event?.type === 'stopping') up = false;
 			}

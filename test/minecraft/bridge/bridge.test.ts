@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAlertGate, DEFAULT_ALERT_GATE } from '../../../src/minecraft/bridge/alertGate.ts';
+import { DEFAULT_AVATARS, hashName } from '../../../src/minecraft/bridge/avatars.ts';
 import { createBridge } from '../../../src/minecraft/bridge/bridge.ts';
 import { DEFAULT_IGNORE } from '../../../src/minecraft/bridge/classify.ts';
 import type { BridgeConfig } from '../../../src/minecraft/bridge/config.ts';
@@ -14,6 +15,7 @@ const config: BridgeConfig = {
 	logPath: '/srv/logs/latest.log',
 	webhooks: { chat: CHAT, alerts: ALERTS },
 	ignore: [...DEFAULT_IGNORE],
+	avatars: DEFAULT_AVATARS,
 };
 const fixture = (name: string) => readFileSync(join(import.meta.dirname, 'fixtures', name), 'utf8');
 
@@ -61,6 +63,103 @@ describe('createBridge', () => {
 			'what is that',
 			'➖ **Steve** left',
 		]);
+	});
+
+	describe('avatars', () => {
+		const ONLINE = '069a79f4-44e9-4726-a5be-fca90e38aaf5';
+		const skins = { ...config, avatars: { default: { kind: 'skin' as const }, players: new Map() } };
+		const avatars = (posts: Post[]) => posts.map(({ username, avatarUrl }) => [username, avatarUrl]);
+
+		it('gives chat a generated picture by default, and server posts none', () => {
+			const { bridge, posts } = setup();
+			bridge.onLines(fixture('vanilla-26.3-startup.log').split('\n'));
+			vi.advanceTimersByTime(1000);
+			const steve = `https://raw.githubusercontent.com/AlexLe08/shrimp-fried-this-rice/main/assets/mcbridge-avatars/${hashName('Steve')}.png`;
+			expect(avatars(posts)).toEqual([
+				['Survival', undefined],
+				['Survival', undefined],
+				['Steve', steve],
+				['Steve', steve],
+				['Survival', undefined],
+			]);
+		});
+
+		it('looks a skin up by the UUID logged at login, or by name when the login was not seen', () => {
+			const { bridge, posts } = setup({ config: skins });
+			bridge.onLines([
+				`[12:00:00] [User Authenticator #1/INFO]: UUID of player Notch is ${ONLINE}`,
+				'[12:00:01] [Server thread/INFO]: Notch joined the game',
+				'[12:00:02] [Server thread/INFO]: <Notch> hi',
+				'[12:00:03] [Server thread/INFO]: <jeb_> logged in before the log rotated',
+			]);
+			vi.advanceTimersByTime(1000);
+			expect(avatars(posts.filter(({ username }) => username !== 'Survival'))).toEqual([
+				['Notch', 'https://mc-heads.net/avatar/069a79f444e94726a5befca90e38aaf5/128'],
+				['jeb_', 'https://mc-heads.net/avatar/jeb_/128'],
+			]);
+		});
+
+		it('keeps the UUID of a player who logs in again while online, whose old session leaves after', () => {
+			const { bridge, posts } = setup({ config: skins });
+			bridge.onLines([
+				`[12:00:00] [User Authenticator #1/INFO]: UUID of player Notch is ${ONLINE}`,
+				'[12:00:01] [Server thread/INFO]: Notch joined the game',
+				`[12:01:00] [User Authenticator #2/INFO]: UUID of player Notch is ${ONLINE}`,
+				'[12:01:00] [Server thread/INFO]: Notch left the game',
+				'[12:01:00] [Server thread/INFO]: Notch joined the game',
+				'[12:01:01] [Server thread/INFO]: <Notch> back',
+			]);
+			vi.advanceTimersByTime(1000);
+			expect(posts.find(({ username }) => username === 'Notch')?.avatarUrl).toBe(
+				'https://mc-heads.net/avatar/069a79f444e94726a5befca90e38aaf5/128',
+			);
+		});
+
+		it('looks no name up once an offline-mode UUID was seen, until the server restarts', () => {
+			const { bridge, posts } = setup({ config: skins });
+			bridge.onLines([
+				'[12:00:00] [User Authenticator #1/INFO]: UUID of player Steve is 5627dd98-e6be-3c21-b8a8-e92344183641',
+				'[12:00:01] [Server thread/INFO]: <Notch> no login line seen for me',
+				'[12:00:02] [Server thread/INFO]: Stopping server',
+				'[12:01:00] [Server thread/INFO]: Done (1.0s)! For help, type "help"',
+				'[12:01:01] [Server thread/INFO]: <Notch> and after a restart',
+			]);
+			vi.advanceTimersByTime(1000);
+			expect(posts.filter(({ username }) => username === 'Notch').map(({ avatarUrl }) => avatarUrl)).toEqual([
+				`https://raw.githubusercontent.com/AlexLe08/shrimp-fried-this-rice/main/assets/mcbridge-avatars/${hashName('Notch')}.png`,
+				'https://mc-heads.net/avatar/Notch/128',
+			]);
+		});
+
+		it('keeps the UUIDs of players online when the helper starts, unless the server stopped since', () => {
+			const stopped = setup({ config: skins });
+			stopped.bridge.onBacklog(
+				[
+					`[11:00:00] [User Authenticator #1/INFO]: UUID of player Notch is ${ONLINE}`,
+					'[11:00:01] [Server thread/INFO]: Notch joined the game',
+					'[11:00:03] [Server thread/INFO]: Stopping server',
+				].join('\n'),
+			);
+			stopped.bridge.onLines(['[12:00:00] [Server thread/INFO]: <Notch> hi']);
+			vi.advanceTimersByTime(1000);
+			expect(avatars(stopped.posts)).toEqual([['Notch', 'https://mc-heads.net/avatar/Notch/128']]);
+
+			const online = setup({ config: skins });
+			online.bridge.onBacklog(`[11:00:00] [User Authenticator #1/INFO]: UUID of player Notch is ${ONLINE}`);
+			online.bridge.onLines(['[12:00:00] [Server thread/INFO]: <Notch> hi']);
+			vi.advanceTimersByTime(1000);
+			expect(avatars(online.posts)).toEqual([
+				['Notch', 'https://mc-heads.net/avatar/069a79f444e94726a5befca90e38aaf5/128'],
+			]);
+		});
+
+		it('posts no picture for a player set to none', () => {
+			const none = { ...config, avatars: { default: { kind: 'none' as const }, players: new Map() } };
+			const { bridge, posts } = setup({ config: none });
+			bridge.onLines(['[12:00:00] [Server thread/INFO]: <Steve> hi']);
+			vi.advanceTimersByTime(1000);
+			expect(posts[0]).not.toHaveProperty('avatarUrl');
+		});
 	});
 
 	it('posts an error with its stack trace once the log goes quiet', () => {

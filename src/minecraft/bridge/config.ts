@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import { parseAvatars, type AvatarConfig } from './avatars.ts';
 import { DEFAULT_IGNORE } from './classify.ts';
 
 export interface BridgeConfig {
@@ -11,9 +12,11 @@ export interface BridgeConfig {
 	webhooks: { chat: string; alerts: string };
 	/** The built-in ignore list plus the config's `ignorePatterns`. */
 	ignore: RegExp[];
+	/** What each player's chat lines show as their picture. */
+	avatars: AvatarConfig;
 }
 
-const KEYS = new Set(['serverName', 'logPath', 'crashReportsDir', 'format', 'webhooks', 'ignorePatterns']);
+const KEYS = new Set(['serverName', 'logPath', 'crashReportsDir', 'format', 'webhooks', 'ignorePatterns', 'avatars']);
 // discord.com, or the older discordapp.com, with the PTB and Canary clients'
 // hosts; an optional API version; then the webhook's id and token.
 const WEBHOOK_URL = /^https:\/\/(?:(?:ptb|canary)\.)?discord(?:app)?\.com\/api\/(?:v\d+\/)?webhooks\/\d+\/[\w-]+$/;
@@ -40,7 +43,7 @@ export function parseConfig(raw: unknown): BridgeConfig {
 		if (!KEYS.has(key)) problems.push(`unknown key "${key}"`);
 	}
 
-	const { serverName, logPath, crashReportsDir, format, webhooks, ignorePatterns } = input;
+	const { serverName, logPath, crashReportsDir, format, webhooks, ignorePatterns, avatars } = input;
 
 	if (typeof serverName !== 'string' || serverName.trim() === '' || serverName.length > 80) {
 		problems.push('"serverName" must be a name of 1 to 80 characters');
@@ -98,6 +101,8 @@ export function parseConfig(raw: unknown): BridgeConfig {
 		}
 	}
 
+	const avatarConfig = parseAvatars(avatars, problems);
+
 	if (problems.length) throw new ConfigError(problems);
 	return {
 		serverName: serverName as string,
@@ -105,6 +110,7 @@ export function parseConfig(raw: unknown): BridgeConfig {
 		...(crashReportsDir === undefined ? {} : { crashReportsDir: crashReportsDir as string }),
 		webhooks: urls,
 		ignore,
+		avatars: avatarConfig,
 	};
 }
 
