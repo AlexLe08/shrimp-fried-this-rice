@@ -1,4 +1,4 @@
-import { escapeMarkdown, type Client } from 'discord.js';
+import { escapeMarkdown } from 'discord.js';
 import { CODE, fitLines } from './discord.ts';
 
 // The client sends a custom emoji in this form whether it was picked or typed
@@ -23,6 +23,15 @@ export interface EmojiDestination {
 	guildId: string;
 	channelId: string;
 	useExternalEmojis: boolean | null;
+}
+
+/** What the warning reads from the client: its emoji, by id. */
+export interface EmojiClient {
+	emojis: {
+		cache: {
+			get(id: string): { available: boolean | null; guild: { id: string; name: string } } | undefined;
+		};
+	};
 }
 
 interface FromServer {
@@ -52,7 +61,7 @@ function list(names: Set<string>): string {
  * Spoilers aren't skipped: an emoji in one renders once it's revealed (checked
  * on the dev server).
  */
-export function unusableEmojiWarning(client: Client, text: string, where: EmojiDestination | null): string | null {
+export function unusableEmojiWarning(client: EmojiClient, text: string, where: EmojiDestination | null): string | null {
 	const matches = [...text.replace(CODE, ' ').matchAll(CUSTOM_EMOJI)];
 	if (matches.length === 0) return null;
 

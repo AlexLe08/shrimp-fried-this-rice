@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Command } from './types/command.ts';
 
-const srcDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const srcDir = path.join(import.meta.dirname, '..');
 
 // Every .ts file in src/<area>/<folder>/, so an area's commands and events
 // load without being listed anywhere. Sorted, as readdir's order depends on

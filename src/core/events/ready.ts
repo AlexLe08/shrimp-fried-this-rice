@@ -1,4 +1,5 @@
 import { Client, Events } from 'discord.js';
+import type { Event } from '../types/event.ts';
 import { startScheduler } from '../scheduler.ts';
 import { dueReminderChecks } from '../../reminders/dueReminders.ts';
 
@@ -10,4 +11,4 @@ export default {
 		console.log(`Ready! Logged in as ${client.user.tag}`);
 		startScheduler(dueReminderChecks(client));
 	},
-};
+} satisfies Event<Events.ClientReady>;
