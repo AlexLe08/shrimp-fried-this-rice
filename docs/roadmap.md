@@ -188,7 +188,7 @@ runtime dependency is the owner's decision.
 - A snooze with "wait a full interval" set while that reminder's send is
   in flight: recording the send overwrites the snooze's `last_sent_at`, so
   it sends when the snooze ends instead of an interval later (comment in
-  `storage.ts`). Fix with `MAX(last_sent_at, ?)` in the send records if it
+  `src/reminders/storage.ts`). Fix with `MAX(last_sent_at, ?)` in the send records if it
   ever matters.
 - Type-check `test/` in CI (for example a `tsconfig.test.json` that
   `npm run typecheck` also runs). `tsconfig.json` covers only `src/` and

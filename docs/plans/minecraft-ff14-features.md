@@ -10,7 +10,7 @@ How to work through it:
 - Facts marked **unverified** must be checked before code relies on them. Facts marked **verified 2026-11-20** were checked against the source named.
 - If the plan turns out wrong, or a simpler design fits better, say so and update this file in the same PR rather than silently diverging from it.
 
-Tracks A, B, C and E are independent apart from two shared pieces: decision record 0004 (feature storage modules) comes first, from [`refactor.md`](refactor.md)'s task 3, and E3's buttons use C4's button routing. Other shared pieces are noted where they occur. Track D (the dashboard) comes after them.
+Tracks A, B, C and E are independent apart from two shared pieces: [decision record 0004](../decisions/0004-feature-storage-modules.md) (feature storage modules) comes first, from [`refactor.md`](refactor.md)'s task 3, and E3's buttons use C4's button routing. Other shared pieces are noted where they occur. Track D (the dashboard) comes after them.
 
 | Track | What it adds | Where it runs |
 |---|---|---|
@@ -36,7 +36,7 @@ Tracks A, B, C and E are independent apart from two shared pieces: decision reco
 
 Added on 2026-11-20, when the plan was brought onto `main`:
 
-- **Feature storage modules.** Each feature's queries live in its own module, sharing one database handle, rather than all of them growing `storage.ts`. As revised by the owner on 2026-11-20: `src/core/database.ts` opens the handle and keeps the `CREATE TABLE`s and `MIGRATIONS`, and each area's storage module keeps its queries and its own limits. This changes CLAUDE.md's "`src/storage.ts` is the only module that touches SQLite", so decision record 0004 and the CLAUDE.md update come with [`refactor.md`](refactor.md)'s task 3, before E1. That refactor also moves `src/` into feature folders; its tasks 2, 3 and 6 update this plan's paths and its `storage.ts` and `scheduler.ts` references.
+- **Feature storage modules.** Each feature's queries live in its own module, sharing one database handle, rather than all of them growing `storage.ts`. As revised by the owner on 2026-11-20: `src/core/database.ts` opens the handle and keeps the `CREATE TABLE`s and `MIGRATIONS`, and each area's storage module keeps its queries and its own limits. [Decision record 0004](../decisions/0004-feature-storage-modules.md) and the CLAUDE.md update came with [`refactor.md`](refactor.md)'s task 3, before E1. That refactor also moves `src/` into feature folders; its tasks 2, 3 and 6 update this plan's paths and its `storage.ts` and `scheduler.ts` references.
 - **Mod-only collection commands are a separate command.** `/collection` is what members use; `/collectionadmin` holds everything that changes a server's collections or someone else's entries, with **Manage Server** as its default permission. A server grants it to a mod role in Server Settings → Integrations, as with `/recruit`. This follows CLAUDE.md's rule that commands changing server settings set `setDefaultMemberPermissions`, and drops the custom mod-role setting.
 - **These tracks go ahead of** the roadmap's earlier Next up items (attachments on reminders, the `/remindme` rework).
 
@@ -229,7 +229,7 @@ Still needed, each in the PR that first uses it: `test/mockInteraction.ts` gains
 
 ### Schema
 
-One new migration appended to `MIGRATIONS` in `src/storage.ts` (decision 0002), not new `CREATE TABLE IF NOT EXISTS` statements. The tables are new, so the change is additive and needs no reset. Follow the existing conventions: snake_case columns, and a hand-written interface per table, changed in the same commit as its columns.
+One new migration appended to `MIGRATIONS` in `src/core/database.ts` (decisions 0002 and 0004), not new `CREATE TABLE IF NOT EXISTS` statements. The tables are new, so the change is additive and needs no reset. Follow the existing conventions: snake_case columns, and a hand-written interface per table, changed in the same commit as its columns.
 
 ```sql
 CREATE TABLE collections (
@@ -268,9 +268,9 @@ CREATE TABLE collection_entries (
 - A row in `collection_entries` means "has it". Removing the row means "does not have it".
 - `collection_members` exists so a member with nothing obtained still appears in "who needs this". A member is added on their first change or by `/collection join`.
 - Deleting a collection must delete its items, members and entries; deleting an item must delete its entries. Do it with deletes inside one transaction, tested. The alternative, `ON DELETE CASCADE`, needs `PRAGMA foreign_keys = ON` on every connection. That pragma can't be set inside a transaction (where migrations run), and it changes the behaviour of the whole connection for one feature.
-- Cap collections per server and items per collection (for example 10 and 500), next to `MAX_REMINDERS_PER_GUILD` in `storage.ts`.
+- Cap collections per server and items per collection (for example 10 and 500), in the collections' own storage module, as `MAX_REMINDERS_PER_GUILD` is in `src/reminders/storage.ts`.
 
-Where the code goes: a feature storage module (see the owner's decisions), for example `src/collectionStorage.ts`. Its exact name and how it gets the handle follow decision record 0004, from [`refactor.md`](refactor.md)'s task 3. `__resetForTests()` clears the new tables.
+Where the code goes: a feature storage module, `src/ffxiv/collections/storage.ts`, which imports the handle from `src/core/database.ts` (decision record 0004). `__resetForTests()` in `src/core/database.ts` clears the new tables.
 
 ### Commands
 
@@ -326,7 +326,7 @@ The member half depends on input 2 above. The open problem is mapping whatever t
 
 ### Steps
 
-- **B2. Feature storage module** (or the module 0004 names) with the migration, its tests (delete cascade in a transaction, caps, `__resetForTests`). (B1, autocomplete, shipped in #22.)
+- **B2. Feature storage module** (`src/ffxiv/collections/storage.ts`) with the migration, its tests (delete cascade in a transaction, caps, `__resetForTests`). (B1, autocomplete, shipped in #22.)
 - **B3. `/collection`**: add, remove, view, join, needs and list, the item and collection autocompletes, and the embed builder, with tests.
 - **B4. `/collectionadmin`**: create, rename, delete, item add, remove and import, entry add and remove, with tests.
 - **B5. `/collectionadmin export`** and the member import chosen above.
@@ -400,7 +400,7 @@ src/ffxiv/lodestone/
   poller.ts          # timer, shared fetch per locale, fan-out to subscribed servers
   newsEmbed.ts       # pure embed builder
   maintenanceEvents.ts  # decide create / update / skip for scheduled events
-src/newsStorage.ts   # tables below (a feature storage module, per decision 0004)
+src/ffxiv/lodestone/storage.ts  # tables below (a feature storage module, per decision 0004)
 src/ffxiv/commands/lodestone.ts
 ```
 
@@ -615,7 +615,7 @@ Both features add a check to `src/reminders/scheduler.ts` beside `guildCheck` an
 
 ### E-recruit: trial FC members, for moderators
 
-Decision record 0004 (feature storage modules) comes from [`refactor.md`](refactor.md)'s task 3, ahead of E1; E1 follows it.
+[Decision record 0004](../decisions/0004-feature-storage-modules.md) (feature storage modules) came from [`refactor.md`](refactor.md)'s task 3, ahead of E1; E1 follows it.
 
 **What a moderator does.** Records a new FC member by **in-game name** with a short note. Nothing ties the entry to a Discord account. After 30 days the bot posts in the moderators' channel, pinging the moderator role: this person joined 30 days ago, here is the note, are they still with us, promote them in game to full member.
 
@@ -661,7 +661,7 @@ CREATE UNIQUE INDEX recruits_open_name
 | `/recruit config channel [role] [days]` | Sets where reminders go, which role is pinged and the default delay. Warns, and still saves, if the bot cannot post there. |
 
 - `name` on every command except `add` is an autocomplete over open entries, built like `/reminder`'s label autocomplete (#22). Like it, a typed name that matches nothing still gets a "not found" reply.
-- Limits: name up to 50 characters, note up to 300. Cap open entries per server, next to the other limits in `storage.ts`.
+- Limits: name up to 50 characters, note up to 300. Cap open entries per server, in the recruits' own storage module (`src/ffxiv/recruit/storage.ts`).
 - The reminder is sent once and moves the entry to `reminded`. It stays in `/recruit list`, shown as overdue, until someone resolves or snoozes it.
 - The reminder's only mention is the configured role, in the message content; set `allowedMentions` to exactly that.
 - Replies to `/recruit` commands are ephemeral, since notes about people should not land in a public channel by accident.
@@ -734,7 +734,7 @@ The reminder channel must be one the reminded member can see, or the mention rea
 
 ### Steps
 
-- **E1. `/recruit`**: the first feature storage module (per decision record 0004, from the refactor), the migration, the commands, the due check in the scheduler, the reminder post, and the README, including its retitle and `CASESTUDY.md`'s Overview (see B's steps). Needs no new intent. The smallest feature in the plan, so it goes first.
+- **E1. `/recruit`**: the first feature storage module (`src/ffxiv/recruit/storage.ts`, per decision record 0004), its migration in `src/core/database.ts`, the commands, the due check in the scheduler, the reminder post, and the README, including its retitle and `CASESTUDY.md`'s Overview (see B's steps). Needs no new intent. The smallest feature in the plan, so it goes first.
 - **E2. Role check-in**: the intent and partial in `src/index.ts`, the member update and member remove event files in `src/ffxiv/events/`, storage and migration, `/rolecheck`, the due check, the reconcile pass, a decision record for the privileged intent, and the README and `ORACLE_CLOUD_DEPLOYMENT.md` setup changes. **Confirm the portal switch is on for both applications before the PR is merged.**
 - **E3. Buttons on both reminders** (optional): Promoted, Left and Snooze on the recruit reminder; Still a guest and Joined the FC on the role check-in, which swap the member's role and so need the bot to have Manage Roles and sit above those roles. Uses the button routing built in C4.
 
