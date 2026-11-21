@@ -51,7 +51,9 @@ Each area's `storage.ts` is like a feature's data layer (its hooks or
 service file), which uses that shared client for its own endpoints, here
 its own tables.
 
-**Why:** TODO(Alex)
+**Why:**
+
+This bot is scaling up to be more than just reminders, so while it's still in a pre-release state, I've decided to start considering features as modules and having a core for functions that features can stem from. This should allow it to be more intuitively read by humans looking for the logic of each feature when digging through the code without having to dig through the core files that may not be relevant. Scale is still fairly small so one db file should remain enough until a case occurs where we may need more than one db.
 
 ## Consequences
 
