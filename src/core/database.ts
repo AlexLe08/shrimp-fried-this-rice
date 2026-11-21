@@ -61,6 +61,34 @@ const MIGRATIONS = [
 	// before the choice existed were already sent as embeds, so they stay so.
 	`ALTER TABLE guild_reminders ADD COLUMN embed INTEGER NOT NULL DEFAULT 1;
 	 ALTER TABLE user_settings ADD COLUMN embed INTEGER NOT NULL DEFAULT 1;`,
+	// /recruit (src/ffxiv/recruit/storage.ts). enabled = 0 pauses a server's
+	// follow-ups after its channel went or Discord refused a post, until
+	// /recruit config is run again. Names are of in-game characters, not
+	// Discord accounts; name_key is the trimmed, lowercased name. status is
+	// pending, reminded (posted, still open), promoted or left; times are epoch
+	// ms. A name is open (pending or reminded) at most once per server, but can
+	// be added again once resolved.
+	`CREATE TABLE recruit_settings (
+		guild_id TEXT PRIMARY KEY,
+		channel_id TEXT NOT NULL,
+		ping_role_id TEXT,
+		follow_up_days INTEGER NOT NULL DEFAULT 30,
+		enabled INTEGER NOT NULL DEFAULT 1
+	);
+	CREATE TABLE recruits (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		guild_id TEXT NOT NULL,
+		name TEXT NOT NULL,
+		name_key TEXT NOT NULL,
+		note TEXT NOT NULL DEFAULT '',
+		added_by TEXT NOT NULL,
+		added_at INTEGER NOT NULL,
+		due_at INTEGER NOT NULL,
+		status TEXT NOT NULL DEFAULT 'pending',
+		resolved_by TEXT,
+		resolved_at INTEGER
+	);
+	CREATE UNIQUE INDEX recruits_open_name ON recruits (guild_id, name_key) WHERE status IN ('pending', 'reminded');`,
 ];
 
 const schemaVersion = db.pragma('user_version', { simple: true }) as number;
@@ -86,5 +114,7 @@ export function __resetForTests(): void {
 	DELETE FROM guild_reminders;
 	DELETE FROM user_settings;
 	DELETE FROM guild_status_messages;
+	DELETE FROM recruit_settings;
+	DELETE FROM recruits;
 	`);
 }
