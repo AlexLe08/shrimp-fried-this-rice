@@ -191,13 +191,16 @@ src/
       interactionCreate.ts  # routes slash command and autocomplete interactions, handles cooldowns + errors (with a hardened, self-catching error fallback)
   reminders/              # /reminder, /remindme and the reminders they send
     commands/
-      reminder.ts         # /reminder
+      reminder.ts         # /reminder: its subcommand list, label autocomplete, and routing to a subcommand
       remindme.ts         # /remindme
+    subcommands/          # one file per /reminder subcommand (create, edit, list, ...): its options and its handler
+      helpers.ts          # finding a reminder by label, and the channel permission and custom emoji warnings
+    options.ts            # option builders shared by /reminder and /remindme (label, interval, message, embed)
     storage.ts            # the reminders' queries, row types and limits (guild settings, guild reminders, user settings, status message tracking)
     scheduler.ts          # polling loop — checks storage.ts for due reminders and sends them
     snooze.ts             # snooze durations and after-snooze choices shared by /reminder and /remindme
     reminderMessage.ts    # builds what a reminder sends: an embed with its mentions above it, or plain text when it has a link
-    statusEmbed.ts        # builds the /reminder status embed; also refreshes the tracked status message when reminders change
+    statusEmbed.ts        # builds the /reminder status embed; replaces the tracked status message, and refreshes it when reminders change
 test/
   setup.ts                       # points core/database.ts at an in-memory DB before any test imports it
   mocks.ts                        # shared fake Client/channel/user builders (scheduler + embed tests)
@@ -227,6 +230,8 @@ test/
       dueReminders.test.ts          # due-reminder boundary/edge-case tests for guild reminders
       snooze.test.ts                # snoozing, cancelling, and the after-snooze choices, for reminders and DMs
     commands/                       # reminder (and its label autocomplete), remindme, and snooze (both commands' snooze options) tests
+    subcommands/
+      registered.test.ts            # every file in src/reminders/subcommands/ is registered by /reminder
     statusEmbed.test.ts             # buildReminderStatusEmbed + refreshGuildStatusMessage tests
     reminderMessage.test.ts         # the embed a reminder sends, which mentions go above it, and when it's plain text
     scheduler.test.ts               # scheduler tests, using fake timers

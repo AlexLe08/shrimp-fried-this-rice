@@ -26,6 +26,11 @@ export const AFTER_SNOOZE_CHOICES = [
 	{ name: 'Wait a full interval after the snooze ends', value: AFTER_SNOOZE_WAIT },
 ];
 
+// The option is `after` in /reminder snooze and `after_snooze` in /remindme,
+// which has no subcommand to scope it.
+export const AFTER_SNOOZE_DESCRIPTION =
+	'What happens when the snooze ends (default: send one right away if it was missed)';
+
 export function snoozeUntil(now: number, durationMinutes: number): number {
 	return now + durationMinutes * MINUTE_MS;
 }

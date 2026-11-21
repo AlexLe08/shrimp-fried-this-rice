@@ -1,22 +1,15 @@
 import { SlashCommandBuilder, ChatInputCommandInteraction } from 'discord.js';
-import {
-	getUserSettings,
-	upsertUserSettings,
-	deleteUserSettings,
-	snoozeUser,
-	unsnoozeUser,
-	MIN_INTERVAL_MINUTES,
-	MAX_INTERVAL_MINUTES,
-} from '../storage.ts';
+import { getUserSettings, upsertUserSettings, deleteUserSettings, snoozeUser, unsnoozeUser } from '../storage.ts';
 import {
 	SNOOZE_DURATION_CHOICES,
 	AFTER_SNOOZE_CHOICES,
+	AFTER_SNOOZE_DESCRIPTION,
 	AFTER_SNOOZE_WAIT,
 	snoozeUntil,
 	isSnoozed,
 	describeSnooze,
 } from '../snooze.ts';
-import { EMBED_OPTION_DESCRIPTION } from '../reminderMessage.ts';
+import { intervalOption, messageOption, embedOption } from '../options.ts';
 import { unusableEmojiWarning } from '../../core/customEmoji.ts';
 import { discordTime, replyEphemeral } from '../../core/discord.ts';
 
@@ -30,17 +23,9 @@ export default {
 		.setName('remindme')
 		.setDescription('Configure personal DM reminders for yourself.')
 		.addBooleanOption((option) => option.setName('enabled').setDescription('Whether you want to receive DM reminders'))
-		.addIntegerOption((option) =>
-			option
-				.setName('interval')
-				.setDescription('How often to DM you, in minutes')
-				.setMinValue(MIN_INTERVAL_MINUTES)
-				.setMaxValue(MAX_INTERVAL_MINUTES),
-		)
-		.addStringOption((option) =>
-			option.setName('message').setDescription('The reminder text to DM you').setMaxLength(2000),
-		)
-		.addBooleanOption((option) => option.setName('embed').setDescription(EMBED_OPTION_DESCRIPTION))
+		.addIntegerOption(intervalOption('How often to DM you, in minutes'))
+		.addStringOption(messageOption('The reminder text to DM you'))
+		.addBooleanOption(embedOption)
 		.addIntegerOption((option) =>
 			option
 				.setName('snooze')
@@ -50,7 +35,7 @@ export default {
 		.addStringOption((option) =>
 			option
 				.setName('after_snooze')
-				.setDescription('What happens when the snooze ends (default: send one right away if it was missed)')
+				.setDescription(AFTER_SNOOZE_DESCRIPTION)
 				.addChoices(...AFTER_SNOOZE_CHOICES),
 		)
 		.addBooleanOption((option) => option.setName('reset').setDescription('Delete all your personal reminder settings')),

@@ -1,7 +1,19 @@
 import { EmbedBuilder, DiscordAPIError, RESTJSONErrorCodes, type MessageEditOptions } from 'discord.js';
-import { isGuildMasterEnabled, getGuildReminders, getGuildStatusMessage, deleteGuildStatusMessage } from './storage.ts';
+import {
+	isGuildMasterEnabled,
+	getGuildReminders,
+	getGuildStatusMessage,
+	setGuildStatusMessage,
+	deleteGuildStatusMessage,
+	type GuildReminder,
+} from './storage.ts';
 import { isSnoozed } from './snooze.ts';
 import { discordTime } from '../core/discord.ts';
+
+// How /reminder list and the status embed both start a reminder's line.
+export function reminderSummary(reminder: GuildReminder): string {
+	return `• \`${reminder.reminder_label}\` — every ${reminder.interval_minutes}m in <#${reminder.channel_id}>`;
+}
 
 export function buildReminderStatusEmbed(guildId: string, guildName: string): EmbedBuilder {
 	const masterEnabled = isGuildMasterEnabled(guildId);
@@ -21,7 +33,7 @@ export function buildReminderStatusEmbed(guildId: string, guildName: string): Em
 	const now = Date.now();
 
 	const lines = reminders.map((r) => {
-		const base = `• \`${r.reminder_label}\` — every ${r.interval_minutes}m in <#${r.channel_id}>`;
+		const base = reminderSummary(r);
 
 		if (!masterEnabled) {
 			return `${base} — ⏸ paused (server master toggle is off)`;
@@ -57,7 +69,9 @@ export interface StatusMessageClient {
 
 export interface StatusMessageChannel {
 	isTextBased(): this is {
-		messages: { fetch(id: string): Promise<{ edit(options: MessageEditOptions): Promise<unknown> }> };
+		messages: {
+			fetch(id: string): Promise<{ edit(options: MessageEditOptions): Promise<unknown>; delete(): Promise<unknown> }>;
+		};
 	};
 }
 
@@ -87,4 +101,34 @@ export async function refreshGuildStatusMessage(client: StatusMessageClient, gui
 			console.error(`Failed to refresh status message for guild ${guildId}:`, error);
 		}
 	}
+}
+
+export interface StatusMessageTarget {
+	send(options: { embeds: EmbedBuilder[] }): Promise<{ channelId: string; id: string }>;
+}
+
+// One status embed per server: posting one in `channel` deletes the previous
+// one, wherever it was, and refreshes go to the new one from then on.
+export async function replaceGuildStatusMessage(
+	client: StatusMessageClient,
+	guildId: string,
+	guildName: string,
+	channel: StatusMessageTarget,
+): Promise<void> {
+	const existing = getGuildStatusMessage(guildId);
+	if (existing) {
+		try {
+			const oldChannel = await client.channels.fetch(existing.channel_id);
+			if (oldChannel && oldChannel.isTextBased()) {
+				const oldMessage = await oldChannel.messages.fetch(existing.message_id);
+				await oldMessage.delete();
+			}
+		} catch (error) {
+			// Already deleted is fine: it's being replaced.
+			console.error(`Could not delete previous status message for guild ${guildId}:`, error);
+		}
+	}
+
+	const message = await channel.send({ embeds: [buildReminderStatusEmbed(guildId, guildName)] });
+	setGuildStatusMessage(guildId, message.channelId, message.id);
 }
