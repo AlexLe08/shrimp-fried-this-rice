@@ -112,11 +112,16 @@ the workflow, indexed in its `README.md`.
   server settings set `setDefaultMemberPermissions` and
   `setContexts(InteractionContextType.Guild)`. Replies about settings are
   ephemeral (`MessageFlags.Ephemeral`).
-- `src/reminders/scheduler.ts` polls every 60 s for due reminders
-  (`last_sent_at + interval <= now`, in SQL) and sends them one by one.
-  One failed send must not stop the batch, crash the process, or retry
-  faster than the reminder's own interval when Discord has refused it
-  for good.
+- `src/core/scheduler.ts` runs a list of named checks (`ScheduledCheck`:
+  `{ name, run(signal) }`) every 60 s, skipping one still running from the
+  last poll, logging one that throws, and aborting their signal on
+  `stopScheduler`, which waits for them. `ready.ts` passes the list; an
+  area adds a check to it (`dueReminderChecks(client)` from
+  `src/reminders/dueReminders.ts`), closing over the client it needs. The
+  reminder checks ask for due reminders (`last_sent_at + interval <= now`,
+  in SQL) and send them one by one. One failed send must not stop the
+  batch, crash the process, or retry faster than the reminder's own
+  interval when Discord has refused it for good.
 - `src/reminders/statusEmbed.ts` builds, replaces and refreshes the
   `/reminder status` embed; anything that changes a server's reminders
   calls `refreshGuildStatusMessage` afterwards.
@@ -127,8 +132,9 @@ the workflow, indexed in its `README.md`.
   fakes built from `vi.fn()`s (`test/mocks.ts`, `test/mockInteraction.ts`), cast with
   `as unknown as Client` / `as never`, except where a function takes a
   narrow interface of what it uses (`SchedulerClient`,
-  `StatusMessageClient`), which the fakes fit; the scheduler is tested through
-  `startScheduler` with fake timers, not by exporting its internals.
+  `StatusMessageClient`), which the fakes fit; the scheduler and its checks are
+  tested through `startScheduler` with fake timers, not by exporting their
+  internals.
   Test-only helpers are exported as `__…ForTests` and never used in `src/`.
 - Comments say why, not what: the reason, the constraint, the incident
   behind a choice. Don't add comments that explain the language or the
