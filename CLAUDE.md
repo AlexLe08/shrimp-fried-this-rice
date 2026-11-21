@@ -36,7 +36,9 @@ the workflow, indexed in its `README.md`.
   `no-floating-promises`/`no-misused-promises` (type-aware) on `src/`
 - `npm run format` / `npm run format:check`: Prettier (tabs, single quotes,
   120 columns; JSON at 2 spaces; Markdown not formatted)
-- `npm run typecheck`: `tsc --noEmit` over `src/`
+- `npm run typecheck`: `tsc --noEmit` over `src/`, then `tsc -p test` over
+  `test/` with the same options (`test/tsconfig.json`), as Vitest strips
+  types without checking them
 - `npm test`: Vitest, `test/**/*.test.ts`, against an in-memory SQLite
   (`test/setup.ts` sets `DB_PATH=':memory:'`); `npm run test:coverage`
   adds coverage (report in `coverage/`); `npm run test:watch` watches

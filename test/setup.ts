@@ -1,1 +1,1 @@
-process.env.DB_PATH = ':memory:';
+process.env['DB_PATH'] = ':memory:';

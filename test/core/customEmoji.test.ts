@@ -1,18 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { Collection, type Client } from 'discord.js';
-import { unusableEmojiWarning } from '../../src/core/customEmoji.ts';
+import { Collection } from 'discord.js';
+import { unusableEmojiWarning, type EmojiClient } from '../../src/core/customEmoji.ts';
 
 const HOME = { guildId: 'g1', channelId: 'c1', useExternalEmojis: true };
 const NO_EXTERNAL = { guildId: 'g1', channelId: 'c1', useExternalEmojis: false };
 
-function clientWith(emojis: { id: string; guildId: string; server?: string; available?: boolean }[]): Client {
+function clientWith(emojis: { id: string; guildId: string; server?: string; available?: boolean }[]): EmojiClient {
 	const cache = new Collection(
 		emojis.map((e) => [
 			e.id,
 			{ id: e.id, available: e.available ?? true, guild: { id: e.guildId, name: e.server ?? `Server ${e.guildId}` } },
 		]),
 	);
-	return { emojis: { cache } } as unknown as Client;
+	return { emojis: { cache } };
 }
 
 const client = clientWith([

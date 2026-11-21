@@ -3,6 +3,7 @@ import guildReminderCommand from '../../../src/reminders/commands/reminder.ts';
 import { createGuildReminder, setGuildReminderEnabled, snoozeGuildReminder } from '../../../src/reminders/storage.ts';
 import { __resetForTests } from '../../../src/core/database.ts';
 import { createMockInteraction } from '../../mockInteraction.ts';
+import { createMockGuild } from '../../mocks.ts';
 
 beforeEach(() => {
 	__resetForTests();
@@ -12,9 +13,8 @@ function addReminder(label: string, guildId = 'g1', channelId = 'c1', intervalMi
 	createGuildReminder({ guildId, label, channelId, intervalMinutes, message: 'hi' });
 }
 
-function makeGuild(channels: Record<string, string> = { c1: 'general' }) {
-	const cache = new Map(Object.entries(channels).map(([id, name]) => [id, { name }]));
-	return { id: 'g1', channels: { cache } };
+function guildWithChannel(channelName = 'general') {
+	return createMockGuild({ channels: [{ id: 'c1', name: channelName }] });
 }
 
 async function autocomplete(focused: string, config: Parameters<typeof createMockInteraction>[0] = {}) {
@@ -22,7 +22,7 @@ async function autocomplete(focused: string, config: Parameters<typeof createMoc
 		isAutocomplete: true,
 		isChatInputCommand: false,
 		inCachedGuild: true,
-		guild: makeGuild(),
+		guild: guildWithChannel(),
 		focused,
 		...config,
 	});
@@ -71,7 +71,7 @@ describe('/reminder label autocomplete', () => {
 		const label = 'x'.repeat(50);
 		addReminder(label);
 
-		const choices = await autocomplete('', { guild: makeGuild({ c1: 'y'.repeat(100) }) });
+		const choices = await autocomplete('', { guild: guildWithChannel('y'.repeat(100)) });
 
 		expect(choices[0]?.name).toHaveLength(100);
 		expect(choices[0]?.value).toBe(label);
@@ -83,7 +83,7 @@ describe('/reminder label autocomplete', () => {
 		setGuildReminderEnabled('g1', 'a', false);
 		snoozeGuildReminder('g1', 'a', { until: now + 3_600_000, skipMissed: false, now });
 
-		const choices = await autocomplete('', { guild: makeGuild({ c1: '💤'.repeat(50) }) });
+		const choices = await autocomplete('', { guild: guildWithChannel('💤'.repeat(50)) });
 		const name = choices[0]?.name ?? '';
 
 		expect(name.startsWith('a · every 60m · disabled · 💤 snoozed · #💤')).toBe(true);

@@ -11,7 +11,8 @@ import {
 	snoozeUser,
 } from '../../../src/reminders/storage.ts';
 import { __resetForTests } from '../../../src/core/database.ts';
-import { createMockInteraction } from '../../mockInteraction.ts';
+import { createMockInteraction, replyContent, type MockOptionsConfig } from '../../mockInteraction.ts';
+import { createMockGuild } from '../../mocks.ts';
 import { refreshGuildStatusMessage } from '../../../src/reminders/statusEmbed.ts';
 
 // Only the refresh is replaced, to check that a snooze change calls it.
@@ -24,17 +25,8 @@ const NOW = 1_800_000_000_000;
 const ONE_MINUTE = 60_000;
 const USER = { id: 'u1', username: 'tester' };
 
-function makeGuild() {
-	return { id: 'g1', name: 'Test Guild', members: { me: {} } };
-}
-
-function guildCommand(options: Parameters<typeof createMockInteraction>[0]['options']) {
-	return createMockInteraction({ inCachedGuild: true, guild: makeGuild(), options });
-}
-
-function replyContent(interaction: ReturnType<typeof createMockInteraction>): string {
-	const [[reply]] = interaction.reply.mock.calls as [[{ content: string }]];
-	return reply.content;
+function guildCommand(options: MockOptionsConfig) {
+	return createMockInteraction({ inCachedGuild: true, guild: createMockGuild(), options });
 }
 
 beforeEach(() => {
@@ -171,7 +163,7 @@ describe('/reminder list', () => {
 });
 
 describe('/remindme snooze', () => {
-	function remindme(options: Parameters<typeof createMockInteraction>[0]['options']) {
+	function remindme(options: MockOptionsConfig) {
 		return createMockInteraction({ user: USER, options });
 	}
 

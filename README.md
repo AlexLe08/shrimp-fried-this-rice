@@ -126,7 +126,7 @@ A GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push and pu
 2. Sets up Node.js 24
 3. Installs dependencies via `npm ci` (not `npm install` — fails loudly if the lockfile is out of sync, rather than silently reconciling)
 4. Runs `npm run lint` and `npm run format:check`
-5. Runs `npm run typecheck`
+5. Runs `npm run typecheck` (`src/`, then `test/`: Vitest strips types without checking them, so the fakes are held to the types they stand in for here)
 6. Runs `npm run test:coverage`
 
 No secrets are required for the `test` job — the whole suite runs against mocked/in-memory data with no real Discord connection. On pushes to `main`, a second `deploy` job ships the result (see [Production Deployment](#production-deployment)).
@@ -205,7 +205,8 @@ src/
     statusEmbed.ts        # builds the /reminder status embed; replaces the tracked status message, and refreshes it when reminders change
 test/
   setup.ts                       # points core/database.ts at an in-memory DB before any test imports it
-  mocks.ts                        # shared fake Client/channel/user builders (scheduler + embed tests)
+  tsconfig.json                  # type-checks the tests with src's options (npm run typecheck); leaves npm run build as it is
+  mocks.ts                        # shared fake Client/guild/channel/user builders (scheduler, embed + command tests)
   mockInteraction.ts               # shared fake ChatInputCommandInteraction/AutocompleteInteraction builder (command + event tests)
   deployCommands.test.ts           # a failed registration sets a nonzero exit code; the registered definitions match a snapshot (mocked REST and dotenv)
   __snapshots__/                   # Vitest snapshots: every command's registered definition
@@ -252,7 +253,7 @@ Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `sc
 | `npm run build` | Compiles to `dist/` via `tsc` (not part of the normal run/deploy path) |
 | `npm run lint` | ESLint (typescript-eslint), including unhandled-promise checks on `src/` |
 | `npm run format` / `format:check` | Formats with Prettier / checks formatting (CI runs the check) |
-| `npm run typecheck` | Type-checks the project without emitting output |
+| `npm run typecheck` | Type-checks `src/`, then `test/` (`test/tsconfig.json`, same options), without emitting output |
 | `npm test` | Runs the Vitest test suite once and exits (see [Testing](#testing)) |
 | `npm run test:watch` | Runs the test suite in watch mode |
 | `npm run test:coverage` | Runs the test suite once with a coverage report |

@@ -3,7 +3,7 @@ import { Collection } from 'discord.js';
 import remindmeCommand from '../../../src/reminders/commands/remindme.ts';
 import { getUserSettings, upsertUserSettings } from '../../../src/reminders/storage.ts';
 import { __resetForTests } from '../../../src/core/database.ts';
-import { createMockInteraction } from '../../mockInteraction.ts';
+import { createMockInteraction, replyContent } from '../../mockInteraction.ts';
 
 beforeEach(() => {
 	__resetForTests();
@@ -146,7 +146,7 @@ describe('/remindme — custom emoji', () => {
 		await remindmeCommand.execute(interaction as never);
 
 		expect(getUserSettings('u1')?.message).toBe('<:shrimp:111> <:gone:999>');
-		const content = (interaction.reply.mock.calls[0]![0] as { content: string }).content;
+		const content = replyContent(interaction);
 		expect(content).toContain('`:gone:`');
 		expect(content).not.toContain('`:shrimp:`');
 	});
