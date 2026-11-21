@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node ./src/index.ts",
     "deploycommands": "node ./src/deploy-commands.ts",
+    "mcbridge": "node ./src/minecraft/bridge/main.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

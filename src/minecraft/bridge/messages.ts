@@ -16,9 +16,9 @@ export function eventMessage(event: NonAlert, serverName: string): Message {
 	const server = (content: string) => ({ content, username: serverName });
 	switch (event.type) {
 		case 'started':
-			return server(`🟢 **${serverName}** is up (started in ${event.seconds} s)`);
+			return server(`🟢 **${escapeMarkdown(serverName)}** is up (started in ${event.seconds} s)`);
 		case 'stopping':
-			return server(`🔴 **${serverName}** is stopping`);
+			return server(`🔴 **${escapeMarkdown(serverName)}** is stopping`);
 		case 'joined':
 			return server(`➕ **${escapeMarkdown(event.player)}** joined`);
 		case 'left':
@@ -83,7 +83,7 @@ export function alertMessage({ alert, repeats, capped }: GatedAlert, serverName:
 	if (repeats > 0) notes.push(`Seen ${repeats} more ${repeats === 1 ? 'time' : 'times'} since it last posted.`);
 	if (capped > 0)
 		notes.push(`${capped} other ${capped === 1 ? 'alert was' : 'alerts were'} held back by the per-minute cap.`);
-	const head = `⚠️ **${serverName}**: ${KIND_TITLE[alert.kind]} (${alert.level})`;
+	const head = `⚠️ **${escapeMarkdown(serverName)}**: ${KIND_TITLE[alert.kind]} (${alert.level})`;
 	const tail = notes.length ? `\n${notes.join(' ')}` : '';
 	const lines = [alert.message, ...alert.details].map(defuse);
 	return { content: fitCodeBlock(head, lines, tail), username: serverName };
@@ -102,7 +102,7 @@ export function summaryMessage(
 		lines.push(`• ${capped} more ${capped === 1 ? 'alert was' : 'alerts were'} held back by the per-minute cap`);
 	if (lines.length === 0) return null;
 	return {
-		content: truncate(`📋 **${serverName}**: since the last alerts\n${lines.join('\n')}`),
+		content: truncate(`📋 **${escapeMarkdown(serverName)}**: since the last alerts\n${lines.join('\n')}`),
 		username: serverName,
 	};
 }
