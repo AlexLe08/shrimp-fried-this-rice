@@ -92,7 +92,14 @@ the workflow, indexed in its `README.md`.
   the bot down after the deploy.
 - `src/reminders/snooze.ts` holds what `/reminder snooze` and `/remindme`
   share: the duration and after-snooze choices, and how a snooze is
-  described.
+  described. `src/reminders/options.ts` holds the option builders they
+  share (`interval`, `message`, `embed`) and `/reminder`'s `label`.
+- `/reminder`'s subcommands are one file each in
+  `src/reminders/subcommands/`, default-exporting
+  `{ name, build, execute }` (`ReminderSubcommand` in its `helpers.ts`).
+  `reminder.ts` registers them from its `SUBCOMMANDS` list, in that order,
+  and routes to them by name; a test fails if a file there is missing from
+  the list.
 - Commands: one file per command under `src/<area>/commands/`,
   default-exporting `{ data, execute, cooldown? }`
   (`src/core/types/command.ts`). `src/core/loadCommands.ts` loads every
@@ -109,7 +116,7 @@ the workflow, indexed in its `README.md`.
   One failed send must not stop the batch, crash the process, or retry
   faster than the reminder's own interval when Discord has refused it
   for good.
-- `src/reminders/statusEmbed.ts` builds and refreshes the
+- `src/reminders/statusEmbed.ts` builds, replaces and refreshes the
   `/reminder status` embed; anything that changes a server's reminders
   calls `refreshGuildStatusMessage` afterwards.
 - `src/core/shutdown.ts` handles SIGTERM/SIGINT (systemd restarts on
