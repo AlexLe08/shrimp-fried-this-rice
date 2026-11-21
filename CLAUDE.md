@@ -107,8 +107,9 @@ the workflow, indexed in its `README.md`.
   `.ts` file there, for both `index.ts` and `deploy-commands.ts`, and
   `index.ts` loads every `.ts` file in `src/<area>/events/`, each
   default-exporting an `Event` (`src/core/types/event.ts`, written
-  `satisfies Event<Events.X>` so `tsc` checks the handler's arguments); anything
-  else (helpers, subcommand handlers) goes outside those two folders. A
+  `satisfies Event<Events.X>` so `tsc` checks the handler's arguments);
+  anything else (helpers, subcommand handlers) goes outside those two
+  folders. A
   changed `data` (name, options, permissions) reaches users only when
   commands are re-registered, which the deploy does. Commands that change
   server settings set `setDefaultMemberPermissions` and

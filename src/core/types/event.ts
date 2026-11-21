@@ -5,5 +5,7 @@ import type { ClientEvents } from 'discord.js';
 export interface Event<Name extends keyof ClientEvents = keyof ClientEvents> {
 	name: Name;
 	once?: boolean;
-	execute(...args: ClientEvents[Name]): unknown;
+	// A property, not a method: TypeScript checks a method's parameters both
+	// ways, so a handler taking a narrower type (one kind of interaction) would pass.
+	execute: (...args: ClientEvents[Name]) => unknown;
 }
