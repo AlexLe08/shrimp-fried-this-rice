@@ -611,7 +611,7 @@ Neither feature is FF14-specific in code. Roles, channels, wording and day count
 Each feature adds a `{ name, run(signal) }` check to the list `src/core/events/ready.ts` passes to `startScheduler`, beside `dueReminderChecks(client)`, and gets the overlap guard, logging and shutdown wait from `src/core/scheduler.ts` with no change there. A run stops its batch once its signal is aborted.
 
 - Each feature's checks take a narrow interface of what they call on the client (for example a guild's `members.fetch` for the role check-in), as `SchedulerClient` is for the reminder checks, and the fakes in `test/mocks.ts` grow to match.
-- These reminders are one-shot, not interval-based. A send Discord refuses for good (missing permissions, channel gone) must not be retried every poll (CLAUDE.md's scheduler rule): mark the row as failed and log it. A channel that no longer exists disables the setting, which `/rolecheck status` and `/recruit config` show, as a disabled reminder shows in `/reminder status`. Network and 5xx errors are retried on the next poll, as for reminders.
+- These reminders are one-shot, not interval-based. A send Discord refuses for good (missing permissions, channel gone) must not be retried every poll (CLAUDE.md's scheduler rule). As built in E1: a channel that no longer exists, or a refused post, pauses the setting (its `enabled` column), logged, and the entries stay pending rather than being marked failed, since the cause holds for every entry in that server and a permission can be granted later. `/recruit list` and `/recruit config` show the pause, and `/recruit config channel:` resumes it. E2's `/rolecheck` should do the same. Network and 5xx errors are retried on the next poll, as for reminders.
 
 ### E-recruit: trial FC members, for moderators
 
@@ -626,7 +626,8 @@ CREATE TABLE recruit_settings (
     guild_id TEXT PRIMARY KEY,
     channel_id TEXT NOT NULL,
     ping_role_id TEXT,
-    follow_up_days INTEGER NOT NULL DEFAULT 30
+    follow_up_days INTEGER NOT NULL DEFAULT 30,
+    enabled INTEGER NOT NULL DEFAULT 1     -- 0: paused after a failed post (added in E1)
 );
 
 CREATE TABLE recruits (
@@ -652,16 +653,16 @@ CREATE UNIQUE INDEX recruits_open_name
 
 | Command | Behaviour |
 |---|---|
-| `/recruit add name note [days]` | Records a trial member. The reminder is due in `days`, or the server default. |
-| `/recruit edit name [note] [new_name] [days]` | Changes the note, the name or the due date. |
-| `/recruit list` | Shows open entries with who added them, the note and when each is due. |
+| `/recruit add name [note] [days]` | Records a trial member. The reminder is due in `days`, or the server default. (Built with the note optional.) |
+| `/recruit edit name [note] [new_name] [days]` | Changes the note, the name or the due date (`days` after the entry was added, as `add` counts it). |
+| `/recruit list [page]` | Shows open entries with who added them, the note and when each is due. (Built with pages, as 100 entries with notes don't fit in one reply.) |
 | `/recruit resolve name outcome` | Closes an entry as `promoted` or `left`. |
 | `/recruit snooze name days` | Pushes the reminder back, for "ask me again next week". |
 | `/recruit remove name` | Deletes an entry made by mistake. |
-| `/recruit config channel [role] [days]` | Sets where reminders go, which role is pinged and the default delay. Warns, and still saves, if the bot cannot post there. |
+| `/recruit config [channel] [role] [no_ping] [days]` | Sets where reminders go, which role is pinged and the default delay; options left out keep their value, and none shows the settings. Warns, and still saves, if the bot cannot post there or ping the role. |
 
 - `name` on every command except `add` is an autocomplete over open entries, built like `/reminder`'s label autocomplete (#22). Like it, a typed name that matches nothing still gets a "not found" reply.
-- Limits: name up to 50 characters, note up to 300. Cap open entries per server, in the recruits' own storage module (`src/ffxiv/recruit/storage.ts`).
+- Limits: name up to 50 characters, note up to 300. Cap open entries per server (100, as built), in the recruits' own storage module (`src/ffxiv/recruit/storage.ts`).
 - The reminder is sent once and moves the entry to `reminded`. It stays in `/recruit list`, shown as overdue, until someone resolves or snoozes it.
 - The reminder's only mention is the configured role, in the message content; set `allowedMentions` to exactly that.
 - Replies to `/recruit` commands are ephemeral, since notes about people should not land in a public channel by accident.
@@ -760,7 +761,7 @@ In addition:
 
 Small PRs, each green on its own. These go ahead of the roadmap's earlier Next up items.
 
-1. E1 (`/recruit`, after the refactor in [`refactor.md`](refactor.md))
+1. E1 (`/recruit`, after the refactor in [`refactor.md`](refactor.md)): done, as three stacked PRs (storage, follow-up check, command)
 2. B2 (collection storage)
 3. B3 (`/collection`)
 4. B4 (`/collectionadmin`)

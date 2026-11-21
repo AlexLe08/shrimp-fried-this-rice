@@ -2,9 +2,9 @@
 
 ![A shrimp hunched over a laptop at a desk](assets/shrimp-check.jpg)
 
-# Shrimp Who Fried That Rice - A Posture & Hydration Reminder Bot
+# Shrimp Who Fried That Rice - A Reminder and Free Company Helper Bot
 
-A Discord bot built with **TypeScript** and **discord.js v14** that periodically sends a preset reminder message (e.g. "Check your posture!" or "Time to drink water!") to a server channel, and optionally as a DM to individual users who opt in.
+A Discord bot built with **TypeScript** and **discord.js v14** that periodically sends a preset reminder message (e.g. "Check your posture!" or "Time to drink water!") to a server channel, and optionally as a DM to individual users who opt in. For FF14 Free Company servers, it also keeps moderators' list of trial members and reminds them to follow up on each one.
 
 ## Status
 
@@ -24,6 +24,7 @@ Deployed and running in production. What's done, what's next, and candidates for
 - Label autocomplete: wherever `/reminder` asks for an existing reminder's `label` (`edit`, `toggle`, `snooze`, `unsnooze`, `delete`), Discord lists the server's reminders to pick from, each with its interval, channel, and whether it's disabled or snoozed. Labels starting with what's typed come first. A typed label that matches none still gets the usual "No reminder found".
 - Snoozing: a server reminder (`/reminder snooze`) or your own DM reminders (`/remindme snooze:`) can be held back for 30 minutes to a week, then resume by themselves. Each snooze chooses what happens when it ends: send one right away if one was missed (the default), or wait a full interval. Active snoozes show in `/reminder list`, `/reminder status` and `/remindme`.
 - Failures are handled per reminder: one whose channel was deleted (or can't take messages) is disabled, and shows as disabled in `/reminder status`; re-enable it with `/reminder edit` to a new channel, then `/reminder toggle`. A send Discord refuses (missing permissions, DMs closed) is retried after the reminder's own interval; network and Discord server errors on the next minute's poll.
+- Trial FC member follow-ups (`/recruit`): moderators record trial members of the Free Company by in-game name (they needn't be on Discord) with a short note, up to 100 open at a time. When an entry's follow-up comes due (30 days by default, per server or per entry), the bot posts once in the moderators' channel, pinging the configured role: who they are, when and by whom they were added, the note, and to promote them in game. The entry stays on `/recruit list` until it's resolved (promoted or left), snoozed or removed. Names are autocompleted from the open entries. Managing it needs **Manage Server**, or a role the server grants `/recruit` to in Server Settings → Integrations; every reply is ephemeral, as the notes are about people.
 - Restarts are clean: on `SIGTERM`/`SIGINT` (every deploy), a send already under way finishes and is recorded, so it isn't repeated after the restart.
 
 ## Design notes
@@ -153,6 +154,9 @@ Key production-specific details, for future reference:
   ```
 - **Deploying updates:** automatic on merge to `main`. The `deploy` job in `.github/workflows/ci.yml` runs after `test` passes, waits for the owner's approval (the `production` environment), then SSHes into the VM and runs `git fetch`, `git reset --hard origin/main`, `npm ci`, restarts the service, and re-runs `deploycommands`, in that order (service restart before command redeployment, so a command-registration hiccup never blocks a code fix from taking effect; a failed registration still turns the job red). It then waits, until 60 s after the restart, for the bot's `Ready! Logged in as` line in the service's journal, and fails the job if the bot hasn't logged in by then; a failed registration doesn't skip this wait. Approving one run deploys whatever `main` is at that moment. Setup and secrets: [`ORACLE_CLOUD_DEPLOYMENT.md`](ORACLE_CLOUD_DEPLOYMENT.md), section 9.
 
+- A follow-up is posted once, so there's no interval to retry it after. When its channel is gone or Discord refuses the post (missing permissions), that server's follow-ups are paused rather than retried each minute or dropped: they stay pending, `/recruit list` and `/recruit config` say why, and `/recruit config channel:` resumes them once the bot can post there. Like `/reminder create`, `/recruit config` warns but saves when the bot lacks permissions, or when the role to ping doesn't allow mentions and the bot lacks Mention Everyone (the post then goes out without the ping).
+- A follow-up's only ping is the configured role: the note is free text, and the moderator who added the entry is named, not pinged.
+
 ## Commands
 
 | Command | Description |
@@ -169,6 +173,13 @@ Key production-specific details, for future reference:
 | `/remindme [enabled] [interval] [message] [embed]` | Views (if called with no options) or updates your personal DM reminder settings; `embed:False` sends them as plain text. Can be run in a server or directly in a DM with the bot. A new message warns about custom emoji the bot can't use. |
 | `/remindme snooze:<duration> [after_snooze]` | Snoozes your DM reminders, with the same durations and `after_snooze` choices as `/reminder snooze`; `snooze:Cancel snooze` ends one early. Can be combined with the options above. |
 | `/remindme reset:true` | Deletes your personal DM reminder settings entirely. |
+| `/recruit add <name> [note] [days]` | Records a trial FC member by in-game name, with an optional note (up to 300 characters). The follow-up is due in `days` (1–365), or the server's default. |
+| `/recruit list [page]` | Lists open trial members, soonest follow-up first: when each is due (or overdue, or already followed up), who added them and when, and the note. A long list is split into pages. |
+| `/recruit edit <name> [note] [new_name] [days]` | Changes an entry's note or name, or its follow-up to `days` after it was added; a new date posts the follow-up again when it comes. |
+| `/recruit resolve <name> <outcome>` | Closes an entry as promoted or left, taking it off the list. |
+| `/recruit snooze <name> <days>` | Moves the follow-up to `days` from now, to ask again later. |
+| `/recruit remove <name>` | Deletes an entry added by mistake. |
+| `/recruit config [channel] [role] [no_ping] [days]` | Sets the channel follow-ups are posted in, the role pinged (`no_ping:True` stops pinging), and the default days for new entries; options left out keep their value. With no options, shows the settings. Resumes paused follow-ups. |
 
 ## Project Structure
 
@@ -203,6 +214,14 @@ src/
     snooze.ts             # snooze durations and after-snooze choices shared by /reminder and /remindme
     reminderMessage.ts    # builds what a reminder sends: an embed with its mentions above it, or plain text when it has a link or is set to it
     statusEmbed.ts        # builds the /reminder status embed; replaces the tracked status message, and refreshes it when reminders change
+  ffxiv/                  # FF14 Free Company features
+    commands/
+      recruit.ts          # /recruit: its subcommand list, name autocomplete, and routing to a subcommand
+    recruit/
+      subcommands/        # one file per /recruit subcommand (add, list, edit, ...): its options and its handler
+        helpers.ts        # finding an open entry by name, shared options, and why follow-ups are held back
+      storage.ts          # the trial members' queries, row types and limits (settings, entries, due follow-ups)
+      followUps.ts        # the scheduler's follow-up check — posts each due follow-up once, pausing a server whose posts fail
 test/
   setup.ts                       # points core/database.ts at an in-memory DB before any test imports it
   tsconfig.json                  # type-checks the tests with src's options (npm run typecheck); leaves npm run build as it is
@@ -240,6 +259,14 @@ test/
     reminderMessage.test.ts         # the embed a reminder sends, which mentions go above it, and when it's plain text
     dueReminders.test.ts            # the reminder checks run by the scheduler, using fake timers
     dueRemindersCheckFailure.test.ts  # a poll whose storage query throws is logged, not a crash (mocks storage, so its own file)
+  ffxiv/
+    commands/
+      recruit.test.ts               # every /recruit subcommand and the name autocomplete
+    recruit/
+      storage.test.ts               # entries, open-name uniqueness, settings, pausing, and the due query
+      followUps.test.ts             # the follow-up check run by the scheduler, using fake timers
+      subcommands/
+        registered.test.ts          # every file in src/ffxiv/recruit/subcommands/ is registered by /recruit
 ```
 
 Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `scripts/` (worktrees, `check.sh` mirroring CI, cleanup after merges), `docs/decisions/`, and `docs/roadmap.md` (status and next steps).
