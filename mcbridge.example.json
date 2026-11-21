@@ -1,6 +1,7 @@
 {
   "serverName": "Survival",
   "logPath": "/path/to/server/logs/latest.log",
+  "crashReportsDir": "/path/to/server/crash-reports",
   "webhooks": {
     "chat": "https://discord.com/api/webhooks/000000000000000000/replace-with-the-chat-webhook-token",
     "alerts": "https://discord.com/api/webhooks/000000000000000000/replace-with-the-alerts-webhook-token"

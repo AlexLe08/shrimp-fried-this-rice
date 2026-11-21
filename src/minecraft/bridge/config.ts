@@ -6,12 +6,14 @@ export interface BridgeConfig {
 	/** Shown in messages, and the sender name for everything but chat. */
 	serverName: string;
 	logPath: string;
+	/** The server's crash-reports folder, watched for new reports; unset, crash reports aren't posted. */
+	crashReportsDir?: string;
 	webhooks: { chat: string; alerts: string };
 	/** The built-in ignore list plus the config's `ignorePatterns`. */
 	ignore: RegExp[];
 }
 
-const KEYS = new Set(['serverName', 'logPath', 'format', 'webhooks', 'ignorePatterns']);
+const KEYS = new Set(['serverName', 'logPath', 'crashReportsDir', 'format', 'webhooks', 'ignorePatterns']);
 // discord.com, or the older discordapp.com, with the PTB and Canary clients'
 // hosts; an optional API version; then the webhook's id and token.
 const WEBHOOK_URL = /^https:\/\/(?:(?:ptb|canary)\.)?discord(?:app)?\.com\/api\/(?:v\d+\/)?webhooks\/\d+\/[\w-]+$/;
@@ -38,7 +40,7 @@ export function parseConfig(raw: unknown): BridgeConfig {
 		if (!KEYS.has(key)) problems.push(`unknown key "${key}"`);
 	}
 
-	const { serverName, logPath, format, webhooks, ignorePatterns } = input;
+	const { serverName, logPath, crashReportsDir, format, webhooks, ignorePatterns } = input;
 
 	if (typeof serverName !== 'string' || serverName.trim() === '' || serverName.length > 80) {
 		problems.push('"serverName" must be a name of 1 to 80 characters');
@@ -50,6 +52,10 @@ export function parseConfig(raw: unknown): BridgeConfig {
 
 	if (typeof logPath !== 'string' || logPath.trim() === '') {
 		problems.push('"logPath" must be the path to the server\'s logs/latest.log');
+	}
+
+	if (crashReportsDir !== undefined && (typeof crashReportsDir !== 'string' || crashReportsDir.trim() === '')) {
+		problems.push('"crashReportsDir" must be the path to the server\'s crash-reports folder');
 	}
 
 	if (format !== undefined && format !== 'vanilla') {
@@ -93,7 +99,13 @@ export function parseConfig(raw: unknown): BridgeConfig {
 	}
 
 	if (problems.length) throw new ConfigError(problems);
-	return { serverName: serverName as string, logPath: logPath as string, webhooks: urls, ignore };
+	return {
+		serverName: serverName as string,
+		logPath: logPath as string,
+		...(crashReportsDir === undefined ? {} : { crashReportsDir: crashReportsDir as string }),
+		webhooks: urls,
+		ignore,
+	};
 }
 
 export async function loadConfig(path: string): Promise<BridgeConfig> {
@@ -117,7 +129,12 @@ export async function loadConfig(path: string): Promise<BridgeConfig> {
 	const config = parseConfig(raw);
 	// Relative to the config file, not to the working folder, which `npm run`
 	// sets to the repository whatever folder it was typed in.
-	return { ...config, logPath: resolve(dirname(path), config.logPath) };
+	const base = dirname(path);
+	return {
+		...config,
+		logPath: resolve(base, config.logPath),
+		...(config.crashReportsDir === undefined ? {} : { crashReportsDir: resolve(base, config.crashReportsDir) }),
+	};
 }
 
 function where(text: string, message: string): string {
