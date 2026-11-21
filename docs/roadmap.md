@@ -152,6 +152,23 @@ Later item), not a follow-up.
   a role the moderator could ping themselves, never `@everyone`. Not yet tried on a live server,
   including whether Mention Everyone lets the bot ping a role that doesn't
   allow mentions.
+- **Minecraft bridge, first version** (2026-11-21, #43 to #47, Track A
+  of [`plans/minecraft-ff14-features.md`](plans/minecraft-ff14-features.md),
+  decision 0005). `mcbridge`, a helper with no dependencies beyond Node 24,
+  runs beside a vanilla server, tails `latest.log`, and posts start and
+  stop, joins and leaves, chat under each player's name (its Markdown
+  escaped, so it reads as typed: the owner's call), and real errors to
+  Discord through webhooks; setup in
+  [`MINECRAFT_BRIDGE.md`](MINECRAFT_BRIDGE.md). The noise rules came from
+  the owner's real 26.3 logs: lag alerts only when it repeats, the same
+  error is posted once and then counted, at most 5 alerts a minute. From
+  review: the tailer follows a replaced log by inode (a new one can outgrow
+  the old offset between polls) and scans only the last 1 MiB at startup;
+  the sender posts with `wait=true` (otherwise Discord reports success for
+  a message it didn't save), bounds its 429 retries, times requests out,
+  and resends a post Discord refuses under a player's name as the server,
+  naming the player on each line. Not yet tried against a real server or
+  webhook, nor on Windows.
 
 ## Next up
 
@@ -168,11 +185,12 @@ them ahead of items 4 and 5.
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the
    group's spreadsheet.
-2. **Minecraft bridge** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
-   A zero-dependency helper beside the Minecraft server that posts
-   start/stop, chat and real errors through a webhook.
-   Started 2026-11-21, ahead of item 1 at the owner's request: the log
-   parser and noise rules first.
+2. **Minecraft bridge, what's left** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
+   The first version is done (Done above). Next: the owner's end-to-end
+   test against their server and a test channel (`MINECRAFT_BRIDGE.md`
+   step 5), which also settles whether Discord refuses `clyde`/`discord`
+   in a message's username and whether it hides the backslashes that
+   escape chat; crash reports (A7); then player avatars (A4b).
 3. **Lodestone news and scheduled events**
    ([Track C](plans/minecraft-ff14-features.md#track-c-lodestone-news-and-scheduled-events)),
    then the **role check-in** after onboarding
