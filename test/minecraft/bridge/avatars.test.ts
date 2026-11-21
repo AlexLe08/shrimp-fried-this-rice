@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
 	avatarFor,
@@ -31,6 +33,15 @@ describe('hashName', () => {
 			const index = hashName(`player${i}`);
 			expect(index).toBeGreaterThanOrEqual(0);
 			expect(index).toBeLessThan(GENERATED_AVATARS);
+		}
+	});
+
+	it('has a bundled PNG for every picture it can pick, and no others', () => {
+		const folder = join(import.meta.dirname, '../../../assets/mcbridge-avatars');
+		const expected = Array.from({ length: GENERATED_AVATARS }, (_, i) => `${i}.png`);
+		expect(readdirSync(folder).sort()).toEqual(expected.sort());
+		for (const file of expected) {
+			expect(readFileSync(join(folder, file)).subarray(1, 4).toString('ascii')).toBe('PNG');
 		}
 	});
 

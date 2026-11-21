@@ -150,7 +150,9 @@ describe('createSender', () => {
 		const { sender, fetch } = setup([json(400, { code: 50035 })]);
 		sender.send({ ...chat('discordfan', 'hi'), avatarUrl: 'https://x.test/a.png' });
 		await vi.advanceTimersByTimeAsync(1000);
-		const sent = fetch.mock.calls.map(([, init]) => JSON.parse(init!.body as string) as Record<string, unknown>);
+		const sent = fetch.mock.calls.map(
+			([, init]) => JSON.parse(init!.body as string) as { username: string; avatar_url?: string },
+		);
 		expect(sent.map((body) => [body.username, body.avatar_url])).toEqual([
 			['discordfan', 'https://x.test/a.png'],
 			['Survival', undefined],

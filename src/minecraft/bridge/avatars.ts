@@ -81,10 +81,11 @@ export function parseAvatars(raw: unknown, problems: string[]): AvatarConfig {
 	for (const key of Object.keys(input)) {
 		if (key !== 'default' && key !== 'players') problems.push(`unknown key "avatars.${key}"`);
 	}
+	const { default: given, players: listed } = input;
 
 	let fallback = DEFAULT_AVATARS.default;
-	if (input.default !== undefined) {
-		const choice = typeof input.default === 'string' ? parseChoice(input.default) : null;
+	if (given !== undefined) {
+		const choice = typeof given === 'string' ? parseChoice(given) : null;
 		// A picked picture or URL for everyone would make every player look the same.
 		if (
 			choice &&
@@ -97,11 +98,11 @@ export function parseAvatars(raw: unknown, problems: string[]): AvatarConfig {
 	}
 
 	const players = new Map<string, AvatarChoice>();
-	if (input.players !== undefined) {
-		if (typeof input.players !== 'object' || input.players === null || Array.isArray(input.players)) {
+	if (listed !== undefined) {
+		if (typeof listed !== 'object' || listed === null || Array.isArray(listed)) {
 			problems.push('"avatars.players" must be an object of player names');
 		} else {
-			for (const [name, value] of Object.entries(input.players as Record<string, unknown>)) {
+			for (const [name, value] of Object.entries(listed as Record<string, unknown>)) {
 				if (!PLAYER_NAME.test(name)) {
 					problems.push(`"avatars.players.${name}" isn't a Minecraft name (letters, digits and _, up to 16)`);
 					continue;
