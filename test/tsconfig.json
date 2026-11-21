@@ -1,0 +1,13 @@
+// Type-checks the tests with src's options, as Vitest strips types without
+// checking them. src is included for its declaration files (the Client
+// augmentation), which no test imports. A file of its own, rather than
+// test/ in the root tsconfig.json, leaves `npm run build` (rootDir ./src)
+// as it is; and as the nearest tsconfig.json, editors use it for tests.
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "noEmit": true
+  },
+  "include": ["**/*", "../src/**/*"]
+}

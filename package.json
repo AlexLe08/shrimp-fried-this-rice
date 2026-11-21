@@ -18,7 +18,7 @@
     "lint": "eslint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p test",
     "zip": "zip -X -r project-export.zip . -x 'node_modules/*' -x '.git/*' -x 'dist/*' -x '.env' -x '*.zip' -x '.DS_Store' -x '__MACOSX/*' -x '*.db*'"
   },
   "keywords": [],

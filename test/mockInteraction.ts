@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 import { Collection } from 'discord.js';
 
-interface MockOptionsConfig {
+export interface MockOptionsConfig {
 	strings?: Record<string, string | null>;
 	integers?: Record<string, number | null>;
 	booleans?: Record<string, boolean | null>;
