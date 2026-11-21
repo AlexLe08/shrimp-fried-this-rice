@@ -6,6 +6,7 @@ export interface MockOptionsConfig {
 	integers?: Record<string, number | null>;
 	booleans?: Record<string, boolean | null>;
 	channels?: Record<string, unknown>;
+	roles?: Record<string, unknown>;
 	subcommand?: string;
 }
 
@@ -49,6 +50,7 @@ export function createMockInteraction(config: MockInteractionConfig = {}) {
 			getInteger: vi.fn((name: string) => options.integers?.[name] ?? null),
 			getBoolean: vi.fn((name: string) => options.booleans?.[name] ?? null),
 			getChannel: vi.fn((name: string) => options.channels?.[name] ?? null),
+			getRole: vi.fn((name: string) => options.roles?.[name] ?? null),
 			getSubcommand: vi.fn(() => options.subcommand ?? ''),
 			getFocused: vi.fn(() => config.focused ?? ''),
 		},

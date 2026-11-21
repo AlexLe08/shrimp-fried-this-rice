@@ -7,6 +7,202 @@ exports[`deploy-commands > registers the same command definitions 1`] = `
       0,
     ],
     "default_member_permissions": "32",
+    "description": "Track trial Free Company members and follow up on them.",
+    "name": "recruit",
+    "options": [
+      {
+        "description": "Record a trial FC member, to be followed up on later.",
+        "name": "add",
+        "options": [
+          {
+            "description": "Their in-game name",
+            "max_length": 50,
+            "name": "name",
+            "required": true,
+            "type": 3,
+          },
+          {
+            "description": "A short note for the follow-up (e.g. who invited them)",
+            "max_length": 300,
+            "name": "note",
+            "required": false,
+            "type": 3,
+          },
+          {
+            "description": "Days until the follow-up (default: the server's, set by /recruit config)",
+            "max_value": 365,
+            "min_value": 1,
+            "name": "days",
+            "required": false,
+            "type": 4,
+          },
+        ],
+        "type": 1,
+      },
+      {
+        "description": "Show open trial members, the soonest follow-up first.",
+        "name": "list",
+        "options": [
+          {
+            "description": "Which page, for a long list",
+            "min_value": 1,
+            "name": "page",
+            "required": false,
+            "type": 4,
+          },
+        ],
+        "type": 1,
+      },
+      {
+        "description": "Change a trial member's note, name or follow-up date.",
+        "name": "edit",
+        "options": [
+          {
+            "autocomplete": true,
+            "description": "The trial member's in-game name",
+            "max_length": 50,
+            "name": "name",
+            "required": true,
+            "type": 3,
+          },
+          {
+            "description": "A new note",
+            "max_length": 300,
+            "name": "note",
+            "required": false,
+            "type": 3,
+          },
+          {
+            "description": "Their corrected in-game name",
+            "max_length": 50,
+            "name": "new_name",
+            "required": false,
+            "type": 3,
+          },
+          {
+            "description": "Follow up this many days after they were added",
+            "max_value": 365,
+            "min_value": 1,
+            "name": "days",
+            "required": false,
+            "type": 4,
+          },
+        ],
+        "type": 1,
+      },
+      {
+        "description": "Close a trial member: promoted, or left.",
+        "name": "resolve",
+        "options": [
+          {
+            "autocomplete": true,
+            "description": "The trial member's in-game name",
+            "max_length": 50,
+            "name": "name",
+            "required": true,
+            "type": 3,
+          },
+          {
+            "choices": [
+              {
+                "name": "Promoted to full member",
+                "value": "promoted",
+              },
+              {
+                "name": "Left the FC",
+                "value": "left",
+              },
+            ],
+            "description": "What happened",
+            "name": "outcome",
+            "required": true,
+            "type": 3,
+          },
+        ],
+        "type": 1,
+      },
+      {
+        "description": "Ask again about a trial member later, counted from now.",
+        "name": "snooze",
+        "options": [
+          {
+            "autocomplete": true,
+            "description": "The trial member's in-game name",
+            "max_length": 50,
+            "name": "name",
+            "required": true,
+            "type": 3,
+          },
+          {
+            "description": "Days from now until the next follow-up",
+            "max_value": 365,
+            "min_value": 1,
+            "name": "days",
+            "required": true,
+            "type": 4,
+          },
+        ],
+        "type": 1,
+      },
+      {
+        "description": "Delete a trial member added by mistake (use resolve for one who was promoted or left).",
+        "name": "remove",
+        "options": [
+          {
+            "autocomplete": true,
+            "description": "The trial member's in-game name",
+            "max_length": 50,
+            "name": "name",
+            "required": true,
+            "type": 3,
+          },
+        ],
+        "type": 1,
+      },
+      {
+        "description": "Set where follow-ups are posted, who is pinged, and after how long. No options shows them.",
+        "name": "config",
+        "options": [
+          {
+            "channel_types": [
+              0,
+            ],
+            "description": "The channel to post follow-ups in (running this again resumes paused ones)",
+            "name": "channel",
+            "required": false,
+            "type": 7,
+          },
+          {
+            "description": "The role to ping with each follow-up",
+            "name": "role",
+            "required": false,
+            "type": 8,
+          },
+          {
+            "description": "Stop pinging a role",
+            "name": "no_ping",
+            "required": false,
+            "type": 5,
+          },
+          {
+            "description": "Default days until a follow-up, for trial members added from now on",
+            "max_value": 365,
+            "min_value": 1,
+            "name": "days",
+            "required": false,
+            "type": 4,
+          },
+        ],
+        "type": 1,
+      },
+    ],
+    "type": 1,
+  },
+  {
+    "contexts": [
+      0,
+    ],
+    "default_member_permissions": "32",
     "description": "Manage this server's periodic reminders.",
     "name": "reminder",
     "options": [

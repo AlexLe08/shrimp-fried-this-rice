@@ -38,12 +38,15 @@ export function createMockGuildChannel(allows: (permission: bigint) => boolean =
 	return Object.assign(createMockChannel(), { permissionsFor: vi.fn(() => ({ has: allows })) });
 }
 
-export function createMockGuild<C extends { id: string }>(options: { channels?: C[] } = {}) {
+export function createMockGuild<C extends { id: string }, R extends { id: string } = { id: string }>(
+	options: { channels?: C[]; roles?: R[] } = {},
+) {
 	return {
 		id: 'g1',
 		name: 'Test Guild',
 		members: { me: {} },
 		channels: { cache: new Collection((options.channels ?? []).map((channel) => [channel.id, channel])) },
+		roles: { cache: new Collection((options.roles ?? []).map((role) => [role.id, role])) },
 	};
 }
 
