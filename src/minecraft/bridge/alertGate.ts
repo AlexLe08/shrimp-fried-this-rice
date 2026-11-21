@@ -20,7 +20,7 @@ export interface AlertGateOptions {
 	lagWindowMs: number;
 	/** The same message again within this long is counted, not posted. */
 	dedupeWindowMs: number;
-	/** At most this many alerts post per minute; the rest are counted. */
+	/** At most this many alerts post per minute; the rest are counted. Crashes are never held back by it. */
 	maxPerMinute: number;
 }
 
@@ -81,7 +81,11 @@ export function createAlertGate(options: AlertGateOptions = DEFAULT_ALERT_GATE):
 			}
 
 			postedTimes = postedTimes.filter((time) => now - time < 60_000);
-			if (postedTimes.length >= options.maxPerMinute) {
+			// A crash follows a burst of the log's own errors, which can fill the
+			// minute's quota just before the report is picked up; it's the one
+			// alert that mustn't become a count. Restarts already space crashes
+			// out, and copies are still held back above.
+			if (alert.kind !== 'crash' && postedTimes.length >= options.maxPerMinute) {
 				cappedSincePost++;
 				return null;
 			}

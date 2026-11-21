@@ -83,7 +83,10 @@ export function createCrashWatcher(options: CrashWatcherOptions): CrashWatcher {
 		try {
 			return (await readdir(options.dir)).filter((name) => name.endsWith('.txt'));
 		} catch (error) {
-			// No folder until the server first crashes.
+			// No folder until the server first crashes. Taken as empty even at
+			// startup, so a folder that only appears later (a share not mounted
+			// yet) has its old reports posted then; the documented setups read a
+			// local folder or a bind mount, which are there from the start.
 			if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
 			throw error;
 		}
@@ -126,7 +129,12 @@ export function createCrashWatcher(options: CrashWatcherOptions): CrashWatcher {
 				text = '';
 				console.error(`[mcbridge] can't read ${path}:`, error);
 			}
-			options.onReport(name, text);
+			try {
+				options.onReport(name, text);
+			} catch (error) {
+				// Not a folder error: the next reports in this listing still go out.
+				console.error('[mcbridge] the crash watcher onReport callback threw:', error);
+			}
 		}
 	}
 

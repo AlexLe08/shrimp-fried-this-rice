@@ -174,7 +174,8 @@ Later item), not a follow-up.
   report, once its size has stopped changing, as a "Crashed" alert with
   the report's description, exception and file name. It goes through the
   alert gate, so a server crashing on every restart posts once and then a
-  count. Reports there at startup aren't posted. Checked only against a
+  count, but never for the per-minute cap (a crash follows a burst of the
+  log's own errors, which could fill it). Reports there at startup aren't posted. Checked only against a
   hand-written report in vanilla's documented layout.
 
 ## Next up

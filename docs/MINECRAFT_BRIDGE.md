@@ -24,7 +24,7 @@ It doesn't post routine noise (anti-cheat kicks, the occasional "Can't keep up!"
 | `Can't keep up!` 5 times in 5 minutes | ⚠️ **Survival**: Lagging: “Can't keep up!” repeated (WARN) |
 | `FAILED TO BIND TO PORT` | ⚠️ **Survival**: Can't bind to its port: the server didn't come up (WARN) |
 | A new file in `crash-reports/` | ⚠️ **Survival**: Crashed (FATAL), then the report's description and exception in a code block, and the report's file name |
-| The server crashing again within 10 minutes | Nothing at first; later, one summary with how many more times it crashed |
+| The server crashing again within 10 minutes | Nothing at first (a crash is never held back by the limit of 5 alerts a minute, only by being a repeat); later, one summary with how many more times it crashed |
 
 Nothing typed in Minecraft can ping anyone: every post turns mentions off, `@everyone` included. Chat reads exactly as typed: Discord formatting in it (`**bold**`, `# heading`, `||spoilers||`, `[text](link)`, `<@id>`, custom emoji) is escaped and shows as plain text. Links stay clickable. Lines that arrive within a second of each other from the same sender are joined into one message.
 
