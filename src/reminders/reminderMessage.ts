@@ -49,3 +49,17 @@ export function buildReminderMessage(
 	const content = mentions ? mentionsOutsideEmbed(visible) : '';
 	return content ? { content, embeds: [embed] } : { embeds: [embed] };
 }
+
+/**
+ * A reminder's send: the embed from buildReminderMessage when `embed` is set
+ * (the reminder's choice, and for a server the channel allowing embeds),
+ * else the text as typed, as before embeds.
+ */
+export function reminderContent(
+	title: string,
+	text: string,
+	intervalMinutes: number,
+	{ embed, mentions = true }: { embed: boolean; mentions?: boolean },
+): string | MessageCreateOptions {
+	return embed ? buildReminderMessage(title, text, intervalMinutes, { mentions }) : text;
+}

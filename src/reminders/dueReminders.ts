@@ -16,14 +16,12 @@ import {
 	type GuildReminder,
 } from './storage.ts';
 import { refreshGuildStatusMessage, type StatusMessageChannel, type StatusMessageClient } from './statusEmbed.ts';
-import { buildReminderMessage } from './reminderMessage.ts';
+import { reminderContent } from './reminderMessage.ts';
 import { isRefusedByDiscord } from '../core/discord.ts';
+import type { ScheduledCheck } from '../core/scheduler.ts';
 
-/** How often the scheduler checks for due reminders. Should be <= the smallest allowed interval (5 min). */
-const POLL_INTERVAL_MS = 60_000;
-
-// The part of the client the scheduler uses, so tests can pass a plain fake
-// (see StatusMessageClient).
+// The part of the client the reminder checks use, so tests can pass a plain
+// fake (see StatusMessageClient).
 export interface SchedulerClient extends StatusMessageClient {
 	user: UserResolvable;
 	channels: { fetch(id: string): Promise<SchedulerChannel | null> };
@@ -40,57 +38,21 @@ interface SchedulerChannel extends StatusMessageChannel {
 	permissionsFor?(user: UserResolvable): { has(permission: PermissionResolvable): boolean } | null;
 }
 
-let pollIntervalID: NodeJS.Timeout | null = null;
-// The check started by an earlier poll, while it runs. A poll that finds
-// one still running skips it, so checks never overlap, and stopScheduler
-// waits for them so shutdown doesn't close the database under a send.
-let guildCheck: Promise<void> | null = null;
-let userCheck: Promise<void> | null = null;
-// Set by stopScheduler: a running check finishes the send it's on and
-// skips the rest of its batch; they're still due after the restart.
-let stopping = false;
-
-// A check that throws (the database failing, say) is logged rather than
-// left as an unhandled rejection, which would crash the process.
-function runCheck(name: string, check: () => Promise<void>): Promise<void> {
-	return check().catch((error: unknown) => {
-		console.error(`${name} check failed:`, error);
-	});
+/** The reminder checks for startScheduler: server reminders and DM reminders. */
+export function dueReminderChecks(client: SchedulerClient): ScheduledCheck[] {
+	return [
+		{ name: 'Guild reminder', run: (signal) => checkGuildReminders(client, signal) },
+		{ name: 'DM reminder', run: (signal) => checkUserReminders(client, signal) },
+	];
 }
 
-// Started from the ClientReady event, so the client is logged in.
-export function startScheduler(client: SchedulerClient): void {
-	stopping = false;
-	pollIntervalID = setInterval(() => {
-		guildCheck ??= runCheck('Guild reminder', () => checkGuildReminders(client)).finally(() => {
-			guildCheck = null;
-		});
-		userCheck ??= runCheck('DM reminder', () => checkUserReminders(client)).finally(() => {
-			userCheck = null;
-		});
-	}, POLL_INTERVAL_MS);
-
-	console.log(`Scheduler started, polling every ${POLL_INTERVAL_MS / 1000}s.`);
-}
-
-/** Stops polling, then resolves once any check already running has finished. */
-export async function stopScheduler(): Promise<void> {
-	stopping = true;
-	if (pollIntervalID) {
-		clearInterval(pollIntervalID);
-		pollIntervalID = null;
-	}
-	await Promise.all([guildCheck, userCheck]);
-	console.log('Scheduler stopped.');
-}
-
-async function checkGuildReminders(client: SchedulerClient): Promise<void> {
+async function checkGuildReminders(client: SchedulerClient, signal: AbortSignal): Promise<void> {
 	const now = Date.now();
 	const dueReminders = getDueGuildReminders(now);
 
 	// One try per reminder: a failed send must not stop the rest of the batch.
 	for (const reminder of dueReminders) {
-		if (stopping) break;
+		if (signal.aborted) break;
 		try {
 			// fetch, not cache.get: a quiet channel may not be cached.
 			const channel = await client.channels.fetch(reminder.channel_id);
@@ -112,15 +74,15 @@ async function checkGuildReminders(client: SchedulerClient): Promise<void> {
 				!('permissionsFor' in channel) ||
 				channel.permissionsFor(client.user)?.has(PermissionFlagsBits.EmbedLinks) !== false;
 			await channel.send(
-				canEmbed && reminder.embed === 1
-					? buildReminderMessage(reminder.reminder_label, reminder.message, reminder.interval_minutes)
-					: reminder.message,
+				reminderContent(reminder.reminder_label, reminder.message, reminder.interval_minutes, {
+					embed: canEmbed && reminder.embed === 1,
+				}),
 			);
 			updateGuildReminderLastSent(reminder.id, now);
 			// Shutting down: the send is recorded, and the embed's next-fire
 			// time is still right after the restart. Refreshing it would only
 			// spend more of the 5 seconds before index.ts forces an exit.
-			if (stopping) break;
+			if (signal.aborted) break;
 			await refreshGuildStatusMessage(client, reminder.guild_id);
 		} catch (error) {
 			console.error(`Failed to send guild reminder "${reminder.reminder_label}":`, error);
@@ -142,18 +104,19 @@ async function disableGuildReminder(client: SchedulerClient, reminder: GuildRemi
 	await refreshGuildStatusMessage(client, reminder.guild_id);
 }
 
-async function checkUserReminders(client: SchedulerClient): Promise<void> {
+async function checkUserReminders(client: SchedulerClient, signal: AbortSignal): Promise<void> {
 	const now = Date.now();
 	const dueUsers = getDueUserSettings(now);
 
 	for (const userSettings of dueUsers) {
-		if (stopping) break;
+		if (signal.aborted) break;
 		try {
 			const user = await client.users.fetch(userSettings.user_id);
 			await user.send(
-				userSettings.embed === 1
-					? buildReminderMessage('Reminder', userSettings.message, userSettings.interval_minutes, { mentions: false })
-					: userSettings.message,
+				reminderContent('Reminder', userSettings.message, userSettings.interval_minutes, {
+					embed: userSettings.embed === 1,
+					mentions: false,
+				}),
 			);
 			updateUserLastSent(userSettings.user_id, now);
 		} catch (error) {
