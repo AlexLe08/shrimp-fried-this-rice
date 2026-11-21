@@ -24,7 +24,7 @@ export function eventMessage(event: NonAlert, serverName: string): Message {
 		case 'left':
 			return server(`➖ **${escapeMarkdown(event.player)}** left`);
 		case 'chat':
-			return { content: event.text, username: event.player };
+			return { content: escapeChat(event.text), username: event.player };
 	}
 }
 
@@ -47,6 +47,35 @@ function defuse(text: string): string {
  */
 export function escapeMarkdown(text: string): string {
 	return text.replace(/[\\*_~`|>#[\]()-]/g, '\\$&');
+}
+
+// A backslash inside a link would become part of it.
+const URL_IN_TEXT = /https?:\/\/\S+/g;
+
+/**
+ * Chat as typed in game, not as Discord formatting (the owner's call): no
+ * headings, spoilers, masked links or code blocks, and `<@id>`, `<#id>`,
+ * `<t:…>` and custom emoji shown as their text. `@everyone` already pings
+ * nobody (the sender turns mentions off); escaped, it isn't highlighted
+ * either. Links are left alone, so they stay clickable.
+ */
+export function escapeChat(text: string): string {
+	let escaped = '';
+	let last = 0;
+	for (const url of text.matchAll(URL_IN_TEXT)) {
+		escaped += escapeChatText(text.slice(last, url.index)) + url[0];
+		last = url.index + url[0].length;
+	}
+	return escaped + escapeChatText(text.slice(last));
+}
+
+function escapeChatText(text: string): string {
+	return (
+		escapeMarkdown(text)
+			.replace(/[<@]/g, '\\$&')
+			// `1. text` at the start would render as a numbered list.
+			.replace(/^(\d+)\./, '$1\\.')
+	);
 }
 
 export function alertMessage({ alert, repeats, capped }: GatedAlert, serverName: string): Message {

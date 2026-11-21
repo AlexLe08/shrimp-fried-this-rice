@@ -217,7 +217,7 @@ This is the owner's explicit requirement: no alerts for routine warnings such as
 - A failed POST logs to the console and does not crash the helper.
 - Each request times out after 15 s. A 429 waits `retry_after` (at least 100 ms, so a zero can't make a tight loop), and a post is dropped after 10 in a row. A post retried after a network error can occasionally appear twice, if Discord saved it before the connection broke; that's accepted.
 - When Discord refuses a player's name, the post goes out under the server's name with each line starting `**Steve:**`, and later posts from that name go straight to the fallback.
-- Player names are escaped where they're shown as text (`__bob__` is a legal name). **Owner's call, open:** chat text is posted as typed, so `# heading`, `||spoilers||` and masked links render (mentions never ping). Escaping it would show it exactly as typed in game instead.
+- Player names are escaped where they're shown as text (`__bob__` is a legal name). Chat text is escaped too (the owner's call, 2026-11-21), so it reads in Discord exactly as typed in game: no headings, spoilers, masked links or code blocks, and `<@id>`, `<#id>`, `<t:…>`, custom emoji and `@everyone` show as their text (mentions never pinged anyway). Links are left alone so they stay clickable. **Unverified** on the live client: that Discord hides each escaping backslash, as its Markdown treats a backslash before punctuation as an escape; check on the dev server in the A5 test.
 
 ### Running it on each OS
 

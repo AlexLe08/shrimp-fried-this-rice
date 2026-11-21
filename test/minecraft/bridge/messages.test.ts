@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { GatedAlert } from '../../../src/minecraft/bridge/alertGate.ts';
 import {
 	alertMessage,
+	escapeChat,
 	eventMessage,
 	MAX_CONTENT,
 	summaryMessage,
@@ -33,11 +34,44 @@ describe('eventMessage', () => {
 		expect(eventMessage({ type: 'joined', player: '__bob__' }, 'S').content).toBe('➕ **\\_\\_bob\\_\\_** joined');
 	});
 
-	it("posts chat under the player's name, as typed", () => {
+	it("posts chat under the player's name, escaped to read as typed", () => {
 		expect(eventMessage({ type: 'chat', player: 'Steve', text: 'hi @everyone' }, 'Survival')).toEqual({
-			content: 'hi @everyone',
+			content: 'hi \\@everyone',
 			username: 'Steve',
 		});
+	});
+});
+
+describe('escapeChat', () => {
+	it('leaves plain chat alone', () => {
+		expect(escapeChat('hello i am here, what is that?')).toBe('hello i am here, what is that?');
+	});
+
+	it('escapes formatting: headings, subtext, quotes, bold, spoilers, code, masked links', () => {
+		expect(escapeChat('# big')).toBe('\\# big');
+		expect(escapeChat('-# small')).toBe('\\-\\# small');
+		expect(escapeChat('> quoted')).toBe('\\> quoted');
+		expect(escapeChat('**bold** __under__ ~~gone~~')).toBe('\\*\\*bold\\*\\* \\_\\_under\\_\\_ \\~\\~gone\\~\\~');
+		expect(escapeChat('||secret||')).toBe('\\|\\|secret\\|\\|');
+		expect(escapeChat('```js')).toBe('\\`\\`\\`js');
+		expect(escapeChat('[free nitro](https://example.com)')).toBe('\\[free nitro\\]\\(https://example.com)');
+	});
+
+	it('shows mentions, channels, timestamps and custom emoji as their text', () => {
+		expect(escapeChat('<@123> <#456> <t:1700000000> <:pog:789> @here')).toBe(
+			'\\<\\@123\\> \\<\\#456\\> \\<t:1700000000\\> \\<:pog:789\\> \\@here',
+		);
+	});
+
+	it('keeps a leading number from becoming a list', () => {
+		expect(escapeChat('1. first')).toBe('1\\. first');
+		expect(escapeChat('it was 1.5 blocks')).toBe('it was 1.5 blocks');
+	});
+
+	it('leaves links intact, so they stay clickable', () => {
+		expect(escapeChat('look at https://example.com/a_b_c?x=1 and *this*')).toBe(
+			'look at https://example.com/a_b_c?x=1 and \\*this\\*',
+		);
 	});
 });
 
