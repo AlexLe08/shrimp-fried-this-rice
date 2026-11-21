@@ -25,7 +25,7 @@ Deployed and running in production. What's done, what's next, and candidates for
 - Snoozing: a server reminder (`/reminder snooze`) or your own DM reminders (`/remindme snooze:`) can be held back for 30 minutes to a week, then resume by themselves. Each snooze chooses what happens when it ends: send one right away if one was missed (the default), or wait a full interval. Active snoozes show in `/reminder list`, `/reminder status` and `/remindme`.
 - Failures are handled per reminder: one whose channel was deleted (or can't take messages) is disabled, and shows as disabled in `/reminder status`; re-enable it with `/reminder edit` to a new channel, then `/reminder toggle`. A send Discord refuses (missing permissions, DMs closed) is retried after the reminder's own interval; network and Discord server errors on the next minute's poll.
 - Trial FC member follow-ups (`/recruit`): moderators record trial members of the Free Company by in-game name (they needn't be on Discord) with a short note, up to 100 open at a time. When an entry's follow-up comes due (30 days by default, per server or per entry), the bot posts once in the moderators' channel, pinging the configured role: who they are, when and by whom they were added, the note, and to promote them in game. The entry stays on `/recruit list` until it's resolved (promoted or left), snoozed or removed. Names are autocompleted from the open entries. Managing it needs **Manage Server**, or a role the server grants `/recruit` to in Server Settings → Integrations; every reply is ephemeral, as the notes are about people.
-- Minecraft bridge (`mcbridge`): a separate helper that runs beside a vanilla Minecraft server and posts its start and stop, joins and leaves, chat (under each player's name, shown as typed, with no pings), real errors (with the stack trace; routine warnings and repeats held back) and crash reports to Discord through webhooks. It needs only Node 24 on the Minecraft host and never uses the bot's token. Setup on Windows, macOS and Linux: [`docs/MINECRAFT_BRIDGE.md`](docs/MINECRAFT_BRIDGE.md).
+- Minecraft bridge (`mcbridge`): a separate helper that runs beside a vanilla Minecraft server and posts its start and stop, joins and leaves, chat (under each player's name and picture: a generated one, or their skin for players who opt in; shown as typed, with no pings), real errors (with the stack trace; routine warnings and repeats held back) and crash reports to Discord through webhooks. It needs only Node 24 on the Minecraft host and never uses the bot's token. Setup on Windows, macOS and Linux: [`docs/MINECRAFT_BRIDGE.md`](docs/MINECRAFT_BRIDGE.md).
 - Restarts are clean: on `SIGTERM`/`SIGINT` (every deploy), a send already under way finishes and is recorded, so it isn't repeated after the restart.
 
 ## Design notes
@@ -234,6 +234,7 @@ src/
       messages.ts         # an event, alert or summary as Discord message text, within 2000 characters
       sender.ts           # posts through the webhooks: batching, rate limits, retries, no mentions, never crashes the helper
       config.ts           # reads and checks mcbridge.json, reporting every problem at once
+      avatars.ts          # the picture beside a player's chat: their skin's head, a generated one, a URL or none
       bridge.ts           # wiring: lines to entries to events, alerts through the gate, posts to the right webhook
       main.ts             # the entrypoint (npm run mcbridge): --config, the tailer, crash watcher and sender, shutdown on SIGINT, SIGTERM, SIGHUP (and SIGBREAK on Windows)
 test/
@@ -290,8 +291,9 @@ test/
       tailer.test.ts                # against temp files: appends, partial lines, truncation, delete and recreate, rotation
       crashReports.test.ts          # a report's description and trace; against temp folders: old reports, half-written ones, a missing folder
       messages.test.ts              # each event's text, alerts' code blocks cut to fit, summaries
-      sender.test.ts                # with a stubbed fetch and fake timers: batching, 429s, the username fallback, retries, overflow
+      sender.test.ts                # with a stubbed fetch and fake timers: batching (by name and picture), 429s, the username fallback, retries, overflow
       config.test.ts                # every config problem reported, unknown keys refused, the committed example accepted
+      avatars.test.ts               # each avatar choice, offline-mode UUIDs, the pinned name hash, a bundled PNG for every picture
       bridge.test.ts                # a real log's posts, stack traces flushed when quiet, summaries, the backlog scan, crash reports, read errors
 ```
 

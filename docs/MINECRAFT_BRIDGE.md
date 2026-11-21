@@ -18,7 +18,7 @@ It doesn't post routine noise (anti-cheat kicks, the occasional "Can't keep up!"
 | `Done (8.1s)! For help, type "help"` | 🟢 **Survival** is up (started in 8.1 s) |
 | `Stopping server` | 🔴 **Survival** is stopping |
 | `Steve joined the game` / `left the game` | ➕ **Steve** joined / ➖ **Steve** left |
-| `<Steve> hello` | `hello`, sent as **Steve** |
+| `<Steve> hello` | `hello`, sent as **Steve**, with Steve's picture (see `avatars`) |
 | An `ERROR` with a stack trace | ⚠️ **Survival**: Error (ERROR), then the message and trace in a code block |
 | The same error again within 10 minutes | Nothing at first; later, one summary with how many times it repeated |
 | `Can't keep up!` 5 times in 5 minutes | ⚠️ **Survival**: Lagging: “Can't keep up!” repeated (WARN) |
@@ -69,7 +69,11 @@ Copy `mcbridge.example.json` to `mcbridge.json` in the repository folder, then f
     "chat": "https://discord.com/api/webhooks/…",
     "alerts": "https://discord.com/api/webhooks/…"
   },
-  "ignorePatterns": []
+  "ignorePatterns": [],
+  "avatars": {
+    "default": "generated",
+    "players": {}
+  }
 }
 ```
 
@@ -82,6 +86,20 @@ Copy `mcbridge.example.json` to `mcbridge.json` in the repository folder, then f
 | `webhooks.alerts` | Errors, crashes, lag, port problems, the log or crash-reports folder becoming unreadable, and summaries of repeats. May be the same URL as `chat`. |
 | `format` | Optional; only `"vanilla"` for now. |
 | `ignorePatterns` | Optional: regular expressions (case-sensitive) for messages that should never alert, added to the built-in list (`was kicked for floating too long`, `moved too quickly!`, `moved wrongly!`). Only lines that would alert are affected: `ERROR` and `FATAL`, a port already in use, and repeated lag. Other warnings are never posted, so they need no pattern. Add one when an error turns out to be harmless and keeps posting. |
+| `avatars` | Optional: the picture beside each player's chat lines. `default` is for players not listed in `players`: `"generated"` (the default) picks one of 10 bundled pictures from the name, so a player keeps theirs and nothing about them leaves Discord; `"skin"` shows their skin's head; `"none"` uses the webhook's own picture. In `players`, by Minecraft name (case doesn't matter), each can also be `"generated:0"` to `"generated:9"` (to part two players who got the same picture) or an `https` link to an image. See below before choosing `skin`. |
+
+**Skins go through a third party.** For `skin`, Discord loads the head from [mc-heads.net](https://mc-heads.net/), so that service learns the player's UUID (or their name, for a player who logged in before `mcbridge` started) each time Discord fetches it. Set it only for players who agreed, for example `"players": { "Steve": "skin" }`. On an offline-mode server, `skin` shows a generated picture instead: those accounts have no Mojang skin, and looking the name up would show whoever owns it.
+
+```json
+"avatars": {
+  "default": "generated",
+  "players": {
+    "Steve": "skin",
+    "Herobrine": "generated:7",
+    "Notch": "https://example.com/notch.png"
+  }
+}
+```
 
 `mcbridge` refuses to start if anything is wrong, and lists every problem at once. That includes keys it doesn't know, so a typo can't be silently ignored. A config saved with a byte order mark (Windows PowerShell 5 does this) is fine.
 
@@ -212,11 +230,12 @@ WantedBy=multi-user.target
 | `rate limited … dropped a post` | Discord was refusing posts for a while; some lines were lost. Very busy chat can do this. |
 | An alert: "mcbridge can't read the crash-reports folder" | `crashReportsDir` points at a file, or the user running `mcbridge` can't list the folder. At most once every 10 minutes, like the log's. |
 | A crash, but no "Crashed" alert | `crashReportsDir` isn't set or points at the wrong folder (a folder that doesn't exist looks the same as no crashes yet), or `mcbridge` wasn't running when the report was written. The crash's `ERROR` lines in the log are still posted as errors. |
+| A player's picture is Discord's default one | Discord couldn't load the image: a broken `https` link in `players`, or mc-heads.net (for `skin`) or GitHub (for generated pictures) not answering. `mcbridge` can't tell, as Discord fetches the image, not `mcbridge`. |
 | No "is up" message | `mcbridge` started after the server. Start it first. |
 
 ## Not yet
 
-- Player avatars: skins for players who opt in, otherwise one of 10 pictures picked from the name (plan step A4b).
+- Players choosing their own picture in game (for example `!avatar skin`).
 - Paper, Fabric and Forge log formats.
 - Deaths, advancements, `/say` and `/me`.
 - Discord to Minecraft chat.
