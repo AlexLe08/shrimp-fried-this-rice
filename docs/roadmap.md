@@ -156,7 +156,8 @@ Later item), not a follow-up.
   of [`plans/minecraft-ff14-features.md`](plans/minecraft-ff14-features.md),
   decision 0005). `mcbridge`, a helper with no dependencies beyond Node 24,
   runs beside a vanilla server, tails `latest.log`, and posts start and
-  stop, joins and leaves, chat under each player's name, and real errors to
+  stop, joins and leaves, chat under each player's name (its Markdown
+  escaped, so it reads as typed: the owner's call), and real errors to
   Discord through webhooks; setup in
   [`MINECRAFT_BRIDGE.md`](MINECRAFT_BRIDGE.md). The noise rules came from
   the owner's real 26.3 logs: lag alerts only when it repeats, the same
@@ -188,9 +189,8 @@ them ahead of items 4 and 5.
    The first version is done (Done above). Next: the owner's end-to-end
    test against their server and a test channel (`MINECRAFT_BRIDGE.md`
    step 5), which also settles whether Discord refuses `clyde`/`discord`
-   in a message's username; whether chat text should have its Markdown
-   escaped (the owner's call); crash reports (A7); then player avatars
-   (A4b).
+   in a message's username and whether it hides the backslashes that
+   escape chat; crash reports (A7); then player avatars (A4b).
 3. **Lodestone news and scheduled events**
    ([Track C](plans/minecraft-ff14-features.md#track-c-lodestone-news-and-scheduled-events)),
    then the **role check-in** after onboarding
