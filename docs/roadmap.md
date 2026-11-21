@@ -171,6 +171,8 @@ them ahead of items 4 and 5.
 2. **Minecraft bridge** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
    A zero-dependency helper beside the Minecraft server that posts
    start/stop, chat and real errors through a webhook.
+   Started 2026-11-21, ahead of item 1 at the owner's request: the log
+   parser and noise rules first.
 3. **Lodestone news and scheduled events**
    ([Track C](plans/minecraft-ff14-features.md#track-c-lodestone-news-and-scheduled-events)),
    then the **role check-in** after onboarding

@@ -222,6 +222,12 @@ src/
         helpers.ts        # finding an open entry by name, shared options, and why follow-ups are held back
       storage.ts          # the trial members' queries, row types and limits (settings, entries, due follow-ups)
       followUps.ts        # the scheduler's follow-up check — posts each due follow-up once, pausing a server whose posts fail
+  minecraft/
+    bridge/               # mcbridge, a helper that runs beside a Minecraft server (in progress; the bot never loads it)
+      formats.ts          # the log line prefix of each server flavor (vanilla so far)
+      parseLine.ts        # log lines to entries, with stack trace lines attached to the entry they follow
+      classify.ts         # an entry to a bridge event (start, stop, join, leave, chat, alert) or nothing
+      alertGate.ts        # holds back routine alerts: lag that doesn't repeat, duplicates, more than a few a minute
 test/
   setup.ts                       # points core/database.ts at an in-memory DB before any test imports it
   tsconfig.json                  # type-checks the tests with src's options (npm run typecheck); leaves npm run build as it is
@@ -267,6 +273,12 @@ test/
       followUps.test.ts             # the follow-up check run by the scheduler, using fake timers
       subcommands/
         registered.test.ts          # every file in src/ffxiv/recruit/subcommands/ is registered by /recruit
+  minecraft/
+    bridge/
+      fixtures/                     # vanilla 26.3 logs from the owner's server (player names replaced), and a hand-written error log
+      parseLine.test.ts             # line prefixes, stack traces, and the fixtures read as entries
+      classify.test.ts              # the events found in the fixtures, and each rule (impersonation in chat, ignore list, levels)
+      alertGate.test.ts             # lag repeats, de-duplication with counts, and the per-minute cap
 ```
 
 Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `scripts/` (worktrees, `check.sh` mirroring CI, cleanup after merges), `docs/decisions/`, and `docs/roadmap.md` (status and next steps).

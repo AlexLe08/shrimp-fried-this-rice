@@ -44,7 +44,7 @@ Added on 2026-11-20, when the plan was brought onto `main`:
 
 Ask for each before the step that needs it.
 
-1. **A real `logs/latest.log` sample** from the vanilla server covering: a full startup, a chat line, a join and leave, the harmless "floating" warnings, and (if one exists) a real error. These become test fixtures. Needed for A2.
+1. **A real `logs/latest.log` sample** from the vanilla server covering: a full startup, a chat line, a join and leave, the harmless "floating" warnings, and (if one exists) a real error. These become test fixtures. Needed for A2. *Received 2026-11-21*: a startup with a join, chat and leave, and a stop through RCON, from a vanilla 26.3 server in a Docker container (now `test/minecraft/bridge/fixtures/`, player names replaced). No real error or "floating" warning yet; add one as a fixture when it turns up.
 2. **The existing mount spreadsheet's layout** (or a CSV export): what the rows and columns are, and how members are named in it (character name, nickname, Discord name). Needed for B5. Do not commit member data to the repo.
 3. **Discord webhook URL(s)** for the Minecraft channel(s), created by the owner in Server Settings → Integrations → Webhooks. These are secrets: they live only in the helper's config file, which A5 adds to `.gitignore` (`mcbridge*.json`), like `.env`.
 4. **For Lodestone news**: which region's Lodestone to follow (NA, EU, FR, DE, JP), which channel gets the posts, and which data center the group plays on (used to filter maintenance events). All are set at runtime with commands. The bot also needs the **Create Events** permission added to its role in the server.
@@ -55,7 +55,7 @@ Ask for each before the step that needs it.
 
 ## Track A: Minecraft bridge
 
-Decision record (in the first Track A PR): a separate helper process that posts through a webhook, kept in this repository, rather than anything that uses the bot's token.
+Decision record ([0005](../decisions/0005-minecraft-bridge-webhook-helper.md), in the first Track A PR): a separate helper process that posts through a webhook, kept in this repository, rather than anything that uses the bot's token.
 
 ### The constraint that shapes the design
 
@@ -94,6 +94,7 @@ src/minecraft/bridge/
   tailer.ts          # polling file tailer
   parseLine.ts       # raw line -> { time, thread, level, logger?, message } | continuation
   classify.ts        # parsed entry -> bridge event | null
+  alertGate.ts       # stateful alert rules: lag that repeats, de-duplication, the per-minute cap
   sender.ts          # queue, batching, rate limiting, webhook POST
   formats.ts         # per-flavor line-prefix patterns
 test/minecraft/bridge/
@@ -119,11 +120,40 @@ A git-ignored JSON file, path passed as `--config`. One helper process per Minec
     "alerts": "https://discord.com/api/webhooks/..."    // errors; may be the same URL
   },
   "ignorePatterns": [],                     // extra regexes added to the built-in ignore list
-  "playerAvatars": false                    // if true, set avatar_url from a public skin-head service
+  "avatars": { "default": "generated", "players": {} }   // see Player avatars
 }
 ```
 
 Add `mcbridge*.json` to `.gitignore` in A5.
+
+### Player avatars (proposed 2026-11-21; confirm with the owner before building)
+
+The owner wants chat lines to show players' skins, but only for players who agree to their name going to a skin service, and players who don't should still look like different speakers. Discord shows each chat line's `username` (the player's name) either way. Opting out is about the third-party service, not about Discord.
+
+In the first version the helper's config decides, since it belongs to whoever runs the server:
+
+```jsonc
+"avatars": {
+  "default": "generated",          // for players not listed: skin | generated | none
+  "players": {
+    "Steve": "skin",               // opted in: their skin's head
+    "Alex": "generated",           // opted out: a picture picked from their name
+    "Herobrine": "generated:7",    // a generated picture, chosen by hand (two players hashed to the same one)
+    "Notch": "https://example.com/notch.png"   // their own picture
+  }
+}
+```
+
+- **`skin`**: a head render from a public skin service, by name or by UUID (the log gives it on login: `UUID of player Steve is …`). The URL goes in the webhook's `avatar_url`, so Discord fetches it and the service sees the player's name or UUID. That's what a player opts into. **Unverified**: which service (mc-heads.net, minotar.net, crafatar.com are candidates; check each is up, serves PNG, and its terms and rate limits), and whether Discord fetches `avatar_url` itself or through its media proxy.
+- **`generated`**: one of a fixed set of pictures, picked by a stable hash of the lowercased name, so a player keeps the same one across restarts and nothing goes to a third party. Two sources:
+  - Discord's own default avatars (`cdn.discordapp.com/embed/avatars/N.png`). These are first-party, but there are only a handful (**unverified**: 6, `N` = 0 to 5), so with several players two will often look alike.
+  - **Recommended**: a set of about 16 to 24 distinct PNGs drawn for this repo, which is public, so Discord can load them from `raw.githubusercontent.com` (**unverified** that Discord loads `avatar_url` from there). There are fewer collisions, and `generated:N` fixes any that happen.
+- **A URL**: any `https` image the player picked.
+- **`none`**: the webhook's own avatar.
+
+If a picture's URL is broken, Discord shows its default avatar. The helper can't tell, because Discord fetches the image, not the helper. Avatar choice is a pure function (`avatarFor(player, config)`), tested without I/O, in its own PR after the sender (A4).
+
+Later, possibly its own session: players choose in game, for example by typing `!avatar skin` in chat. The helper reads it like any chat line (the sender's name is trustworthy because chat matching is anchored) and stores choices in a JSON file beside the config. Open questions: whether the line should also be relayed to Discord, and whether a player can opt out of their name appearing in Discord at all (an alias).
 
 ### Log line formats
 
@@ -131,7 +161,7 @@ Normalise every flavor to `{ time, thread, level, logger?, message }`. Lines tha
 
 | Flavor | Prefix shape | Status |
 |---|---|---|
-| Vanilla | `[12:34:56] [Server thread/INFO]: message` | Unverified; confirm against the owner's sample |
+| Vanilla | `[12:34:56] [Server thread/INFO]: message` | Verified 2026-11-21 against the owner's 26.3 log. Thread names can contain `/` (`[RCON Client /0:0:0:0:0:0:0:1 #2/INFO]`), so the level is the last `/LEVEL]` |
 | Fabric | Same as vanilla | Unverified; confirm with a fixture before claiming support |
 | Paper / Spigot | Same as vanilla in `latest.log`; console shows `[12:34:56 INFO]: message` | Unverified; confirm with a fixture |
 | Forge / NeoForge | `[12Nov2026 12:34:56.789] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: message` | Unverified; confirm with a fixture |
@@ -142,9 +172,9 @@ Only vanilla ships in the first version. Each further flavor is one new pattern 
 
 | Event | Trigger | Goes to |
 |---|---|---|
-| Server started | `Done (8.123s)! For help, type "help"` | chat |
-| Server stopping | `Stopping server` | chat |
-| Player joined / left | `Steve joined the game` / `Steve left the game` | chat |
+| Server started | `Done (8.123s)! For help, type "help"` (verified 2026-11-21) | chat |
+| Server stopping | `Stopping server` (verified 2026-11-21) | chat |
+| Player joined / left | `System chat: Steve joined the game` / `… left the game` in 26.3 (verified 2026-11-21); older versions omit `System chat: ` (both accepted) | chat |
 | Chat | `<Steve> hello`, optionally prefixed `[Not Secure] ` | chat, with `username` set to the player |
 | Error | Any entry at `ERROR` or `FATAL`, with its stack trace | alerts |
 | Crash | A new file appears in `crashReportsDir` | alerts |
@@ -152,7 +182,7 @@ Only vanilla ships in the first version. Each further flavor is one new pattern 
 
 Chat matching must be anchored at the start of the message, so a player typing `<Admin> hi` cannot impersonate another sender.
 
-Later additions, not in the first version: deaths, advancements, `/say` and `/me` lines.
+Later additions, not in the first version: deaths (in 26.3 also `System chat: `, for example `System chat: Steve fell from a high place`), advancements, `/say` and `/me` lines. Also seen in the owner's log and posted as nothing: `Server empty for 60 seconds, pausing`, `Player Steve standing on air - force-sending blocks below` (`INFO`, often a hundred an hour), and `System chat: [Rcon: Stopping the server]` before a stop through RCON.
 
 ### Telling real issues from noise
 
@@ -161,13 +191,13 @@ This is the owner's explicit requirement: no alerts for routine warnings such as
 1. **`INFO` and below**: never an alert.
 2. **`WARN`**: ignored by default. Alert only if it matches the allow-list:
    - `FAILED TO BIND TO PORT` (vanilla logs this at `WARN`, and it means the server did not come up)
-   - `Can't keep up! Is the server overloaded?`, but only when it repeats (for example 5 times in 5 minutes)
+   - `Can't keep up! Is the server overloaded?`, but only when it repeats (5 times in 5 minutes). The owner's log has these in pairs every 5 to 10 minutes as a matter of course, which this threshold leaves alone.
 3. **`ERROR` / `FATAL`**: alert, unless it matches the ignore list.
 4. **Ignore list** (built-in, extendable through `ignorePatterns`): `was kicked for floating too long`, `moved too quickly!`, `moved wrongly!`. Grow this from the owner's real log.
 5. **Stack traces**: collect continuation lines into the entry they belong to. Flush when the next prefixed line arrives or after about one second of silence. Post as one code block, truncated to fit 2000 characters.
 6. **De-duplication**: the same normalised message within 10 minutes is posted once, then summarised as a count. Cap alerts at a few per minute overall.
 
-`classify.ts` should be a pure function over parsed entries so every rule above is unit-tested from fixtures.
+`classify.ts` is a pure function over parsed entries, tested from fixtures. The rules that depend on what came before (lag repeats, de-duplication, the cap) are in `alertGate.ts`, with the time passed in. Its `summaries(now)` returns the count of a burst that stopped, which the helper calls every so often, so the count is posted even if the message never comes back.
 
 ### Tailer behaviour
 
@@ -196,12 +226,15 @@ Document in a new `docs/MINECRAFT_BRIDGE.md`: install Node 24, copy the repo, cr
 
 The helper must be running before the server starts, otherwise the "started" message is missed.
 
+The owner's server runs in a Docker container (an image whose console prints `[init]` lines). The helper runs on the host and reads the log through the container's data volume, so `logPath` is the host side of `/data`, for example `<volume>/logs/latest.log`. The container's console output (JVM warnings, the image's setup lines) never reaches `latest.log`, so it can't cause alerts.
+
 ### Steps
 
-- **A1. Parser and classifier.** `formats.ts`, `parseLine.ts`, `classify.ts` with fixture-driven tests. No I/O.
-- **A2. Fixtures from the owner's real log.** Adjust patterns and the ignore list to match.
+- **A1. Parser and classifier.** `formats.ts`, `parseLine.ts`, `classify.ts`, `alertGate.ts` with fixture-driven tests. No I/O.
+- **A2. Fixtures from the owner's real log.** Adjust patterns and the ignore list to match. A1 and A2 went in one PR, with decision record 0005.
 - **A3. Tailer.** Tested against temp files: append, truncate, delete and recreate, partial lines.
 - **A4. Sender.** Tested with a stubbed `fetch`: batching, 429 handling, mention suppression, truncation, the username fallback.
+- **A4b. Player avatars** ([above](#player-avatars-proposed-2026-11-21-confirm-with-the-owner-before-building)), once the owner confirms the design and the unverified facts are checked.
 - **A5. `main.ts`, config, `npm run mcbridge`, the `.gitignore` entry.** Manual end-to-end test against the owner's server and a test channel.
 - **A6. `docs/MINECRAFT_BRIDGE.md`**, with the README's Features, Project Structure and Available Scripts updated in the same PR.
 
@@ -766,12 +799,13 @@ Small PRs, each green on its own. These go ahead of the roadmap's earlier Next u
 3. B3 (`/collection`)
 4. B4 (`/collectionadmin`)
 5. B5 (import and export)
-6. A1 + A2 (parser and classifier, with the Track A record)
-7. A3 + A4 + A5 + A6 (tailer, sender, entrypoint, docs)
-8. C0 + C1 + C2 (Lodestone news posting, with the Track C record)
-9. C3 (automatic maintenance events)
-10. C4 (manual events for other announcements)
-11. C5 (auto mode)
-12. E2 (role check-in), after the Server Members Intent is switched on
-13. B6, E3, and anything from the "later" lists
-14. Track D (dashboard), starting with D0
+6. A1 + A2 (parser and classifier, with the Track A record). The owner moved Track A ahead of B on 2026-11-21.
+7. A3 + A4 + A5 + A6 (tailer, sender, entrypoint, docs), split if too big to review
+8. A4b (player avatars), once its design is confirmed
+9. C0 + C1 + C2 (Lodestone news posting, with the Track C record)
+10. C3 (automatic maintenance events)
+11. C4 (manual events for other announcements)
+12. C5 (auto mode)
+13. E2 (role check-in), after the Server Members Intent is switched on
+14. B6, E3, and anything from the "later" lists
+15. Track D (dashboard), starting with D0
