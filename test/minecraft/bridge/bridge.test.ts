@@ -163,6 +163,49 @@ describe('createBridge', () => {
 		expect(posts[0]!.username).toBe('My_SMP_');
 	});
 
+	it('posts a crash report as an alert, and a crash loop once with a count', () => {
+		const { bridge, posts } = setup();
+		const report = fixture('vanilla-synthetic-crash-report.txt');
+		bridge.onCrashReport('crash-2026-11-21_12.06.03-server.txt', report);
+		bridge.onCrashReport('crash-2026-11-21_12.06.33-server.txt', report);
+		expect(posts).toHaveLength(1);
+		expect(posts[0]).toMatchObject({ webhook: ALERTS, username: 'Survival', droppable: false });
+		expect(posts[0]!.content).toBe(
+			[
+				'⚠️ **Survival**: Crashed (FATAL)',
+				'```',
+				'Exception in server tick loop',
+				'java.lang.IllegalStateException: Example failure',
+				'\tat net.minecraft.server.MinecraftServer.tickServer(MinecraftServer.java:1000)',
+				'\tat net.minecraft.server.MinecraftServer.runServer(MinecraftServer.java:900)',
+				'\tat java.base/java.lang.Thread.run(Thread.java:1583)',
+				'```',
+				'Full report: `crash-2026-11-21_12.06.03-server.txt` in the crash-reports folder.',
+			].join('\n'),
+		);
+		bridge.postSummaries({ final: true });
+		expect(posts[1]!.content).toContain('Crashed repeated 1 more time: `Exception in server tick loop`');
+	});
+
+	it('still posts a crash report it could not make sense of', () => {
+		const { bridge, posts } = setup();
+		bridge.onCrashReport('crash-x-server.txt', '');
+		expect(posts[0]!.content).toContain('A new crash report (no description in it)');
+		expect(posts[0]!.content).toContain('`crash-x-server.txt`');
+	});
+
+	it('posts a crash-reports folder read error, rate-limited apart from the log', () => {
+		const { bridge, posts } = setup({ config: { ...config, crashReportsDir: '/srv/crash-reports' } });
+		const eacces = Object.assign(new Error('EACCES'), { code: 'EACCES' });
+		bridge.onReadError(eacces);
+		bridge.onCrashReportError(eacces);
+		bridge.onCrashReportError(eacces);
+		expect(posts.map(({ content }) => content)).toEqual([
+			"⚠️ **Survival**: mcbridge can't read the server log (EACCES). Nothing is posted until it can.",
+			"⚠️ **Survival**: mcbridge can't read the crash-reports folder (EACCES). Crashes aren't posted until it can.",
+		]);
+	});
+
 	it('posts a log read error as an alert', () => {
 		const { bridge, posts } = setup();
 		bridge.onReadError(Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' }));

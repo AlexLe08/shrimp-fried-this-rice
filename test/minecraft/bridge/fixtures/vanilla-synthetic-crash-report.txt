@@ -1,0 +1,19 @@
+---- Minecraft Crash Report ----
+// Don't do that.
+
+Time: 2026-11-21 12:06:03
+Description: Exception in server tick loop
+
+java.lang.IllegalStateException: Example failure
+	at net.minecraft.server.MinecraftServer.tickServer(MinecraftServer.java:1000)
+	at net.minecraft.server.MinecraftServer.runServer(MinecraftServer.java:900)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+
+
+A detailed walkthrough of the error, its code path and all known details is as follows:
+---------------------------------------------------------------------------------------
+
+-- System Details --
+Details:
+	Minecraft Version: 26.3
+	Operating System: Linux (amd64) version 6.8.0

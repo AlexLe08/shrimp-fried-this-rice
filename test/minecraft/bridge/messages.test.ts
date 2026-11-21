@@ -97,6 +97,15 @@ describe('alertMessage', () => {
 		expect(alertMessage(lag, 'S').content).toContain('Lagging');
 	});
 
+	it('names a crash and the report file to look in', () => {
+		const crash = gated('Exception in server tick loop', ['java.lang.IllegalStateException: boom']);
+		crash.alert = { ...crash.alert, kind: 'crash', level: 'FATAL', file: 'crash-2026-11-21_12.06.03-server.txt' };
+		expect(alertMessage(crash, 'Survival').content).toBe(
+			'⚠️ **Survival**: Crashed (FATAL)\n```\nException in server tick loop\njava.lang.IllegalStateException: boom\n```' +
+				'\nFull report: `crash-2026-11-21_12.06.03-server.txt` in the crash-reports folder.',
+		);
+	});
+
 	it('says how often it repeated and how many the cap held back', () => {
 		const content = alertMessage(gated('boom', [], { repeats: 3, capped: 1 }), 'S').content;
 		expect(

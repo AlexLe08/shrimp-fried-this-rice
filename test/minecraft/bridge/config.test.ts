@@ -79,13 +79,25 @@ describe('parseConfig', () => {
 	});
 
 	it('refuses keys for features not built yet, and misspelt ones', () => {
-		expect(problems({ ...valid(), crashReportsDir: '/srv/crash-reports', avatars: {} })).toEqual([
-			'unknown key "crashReportsDir"',
+		expect(problems({ ...valid(), avatars: {}, crashReportDir: '/srv/crash-reports' })).toEqual([
 			'unknown key "avatars"',
+			'unknown key "crashReportDir"',
 		]);
 		expect(problems({ ...valid(), webhooks: { chat: CHAT, alerts: ALERTS, alert: ALERTS } })).toEqual([
 			'unknown key "webhooks.alert"',
 		]);
+	});
+
+	it('accepts crashReportsDir, and refuses one that is not a path', () => {
+		expect(parseConfig({ ...valid(), crashReportsDir: '/srv/crash-reports' }).crashReportsDir).toBe(
+			'/srv/crash-reports',
+		);
+		expect(parseConfig(valid())).not.toHaveProperty('crashReportsDir');
+		for (const crashReportsDir of ['', ' ', 3]) {
+			expect(problems({ ...valid(), crashReportsDir })).toEqual([
+				'"crashReportsDir" must be the path to the server\'s crash-reports folder',
+			]);
+		}
 	});
 
 	it('refuses a channel link or an http URL in place of a webhook', () => {
@@ -142,6 +154,17 @@ describe('loadConfig', () => {
 			await writeFile(path, `\uFEFF${JSON.stringify({ ...valid(), logPath: 'server/logs/latest.log' })}`);
 			const config = await loadConfig(path);
 			expect(config.logPath).toBe(join(dir, 'server/logs/latest.log'));
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("reads a relative crashReportsDir from the config file's folder", async () => {
+		const dir = await mkdtemp(join(tmpdir(), 'mcbridge-config-'));
+		try {
+			const path = join(dir, 'mcbridge.json');
+			await writeFile(path, JSON.stringify({ ...valid(), crashReportsDir: 'server/crash-reports' }));
+			expect((await loadConfig(path)).crashReportsDir).toBe(join(dir, 'server/crash-reports'));
 		} finally {
 			await rm(dir, { recursive: true, force: true });
 		}

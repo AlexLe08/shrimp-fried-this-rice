@@ -1,7 +1,7 @@
 import type { LogLevel } from './formats.ts';
 import type { LogEntry } from './parseLine.ts';
 
-export type AlertKind = 'error' | 'bind-failed' | 'lag';
+export type AlertKind = 'error' | 'bind-failed' | 'lag' | 'crash';
 
 export type BridgeEvent =
 	| { type: 'started'; seconds: number }
@@ -9,7 +9,15 @@ export type BridgeEvent =
 	| { type: 'joined'; player: string }
 	| { type: 'left'; player: string }
 	| { type: 'chat'; player: string; text: string }
-	| { type: 'alert'; kind: AlertKind; level: LogLevel; message: string; details: string[] };
+	| {
+			type: 'alert';
+			kind: AlertKind;
+			level: LogLevel;
+			message: string;
+			details: string[];
+			/** A crash report's file name, shown with the alert but not part of what makes two alerts the same. */
+			file?: string;
+	  };
 
 /**
  * Messages that are never an alert, whatever their level: routine anti-cheat

@@ -32,6 +32,7 @@ const KIND_TITLE: Record<AlertKind, string> = {
 	error: 'Error',
 	'bind-failed': "Can't bind to its port: the server didn't come up",
 	lag: "Lagging: “Can't keep up!” repeated",
+	crash: 'Crashed',
 };
 
 // Log text goes inside a code block; three backticks in a row anywhere in
@@ -80,6 +81,7 @@ function escapeChatText(text: string): string {
 
 export function alertMessage({ alert, repeats, capped }: GatedAlert, serverName: string): Message {
 	const notes: string[] = [];
+	if (alert.file) notes.push(`Full report: \`${inline(alert.file)}\` in the crash-reports folder.`);
 	if (repeats > 0) notes.push(`Seen ${repeats} more ${repeats === 1 ? 'time' : 'times'} since it last posted.`);
 	if (capped > 0)
 		notes.push(`${capped} other ${capped === 1 ? 'alert was' : 'alerts were'} held back by the per-minute cap.`);
