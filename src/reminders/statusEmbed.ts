@@ -1,6 +1,7 @@
-import { EmbedBuilder, DiscordAPIError, type MessageEditOptions } from 'discord.js';
+import { EmbedBuilder, DiscordAPIError, RESTJSONErrorCodes, type MessageEditOptions } from 'discord.js';
 import { isGuildMasterEnabled, getGuildReminders, getGuildStatusMessage, deleteGuildStatusMessage } from './storage.ts';
-import { isSnoozed, discordTime } from './snooze.ts';
+import { isSnoozed } from './snooze.ts';
+import { discordTime } from '../core/discord.ts';
 
 export function buildReminderStatusEmbed(guildId: string, guildName: string): EmbedBuilder {
 	const masterEnabled = isGuildMasterEnabled(guildId);
@@ -39,8 +40,7 @@ export function buildReminderStatusEmbed(guildId: string, guildName: string): Em
 			return `${base} — due on next check`;
 		}
 
-		const nextFireSeconds = Math.floor(nextFireMs / 1000);
-		return `${base} — next <t:${nextFireSeconds}:R>`;
+		return `${base} — next ${discordTime(nextFireMs, 'R')}`;
 	});
 
 	embed.setDescription(lines.join('\n'));
@@ -75,10 +75,13 @@ export async function refreshGuildStatusMessage(client: StatusMessageClient, gui
 		const embed = buildReminderStatusEmbed(guildId, guild.name);
 		await message.edit({ embeds: [embed] });
 	} catch (error) {
-		// Only a deleted message or channel (10008 Unknown Message, 10003 Unknown
-		// Channel) clears the stored reference; anything else may be transient,
-		// so it's logged and tried again on the next refresh.
-		if (error instanceof DiscordAPIError && (error.code === 10008 || error.code === 10003)) {
+		// Only a deleted message or channel clears the stored reference; anything
+		// else may be transient, so it's logged and tried again on the next
+		// refresh.
+		if (
+			error instanceof DiscordAPIError &&
+			(error.code === RESTJSONErrorCodes.UnknownMessage || error.code === RESTJSONErrorCodes.UnknownChannel)
+		) {
 			deleteGuildStatusMessage(guildId);
 		} else {
 			console.error(`Failed to refresh status message for guild ${guildId}:`, error);

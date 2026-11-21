@@ -1,6 +1,8 @@
 // Shared by /reminder snooze and /remindme, which offer the same choices. Not
 // under commands/: everything there is loaded as a command.
 
+import { discordTime } from '../core/discord.ts';
+
 const MINUTE_MS = 60_000;
 
 // Fixed choices rather than a free number of minutes: a week is 10080 minutes,
@@ -30,11 +32,6 @@ export function snoozeUntil(now: number, durationMinutes: number): number {
 
 export function isSnoozed(snoozedUntil: number, now: number): boolean {
 	return snoozedUntil > now;
-}
-
-// A Discord timestamp: shown in each reader's own time zone.
-export function discordTime(ms: number, style: 'f' | 'R'): string {
-	return `<t:${Math.floor(ms / 1000)}:${style}>`;
 }
 
 export function describeSnooze(until: number, skipMissed: boolean): string {

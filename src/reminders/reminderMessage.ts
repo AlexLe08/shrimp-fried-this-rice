@@ -1,14 +1,12 @@
 import { EmbedBuilder, type MessageCreateOptions } from 'discord.js';
+import { CODE, DISCORD_MESSAGE_LIMIT, fitLines } from '../core/discord.ts';
 
 const REMINDER_COLOR = 0x5865f2;
-const MESSAGE_LIMIT = 2000;
 
 // The `embed` option of /reminder create, /reminder edit and /remindme.
 export const EMBED_OPTION_DESCRIPTION =
 	'Send as an embed (default: yes). Messages with links, or without Embed Links, are plain text';
 
-// Code shows its text as typed, so a mention, link or emoji in it is only text.
-export const CODE = /```[\s\S]*?```|`[^`\n]*`/g;
 // Code and spoilers are where an author keeps a mention from pinging or a
 // link from showing, so they don't count for either.
 const HIDDEN = new RegExp(`${CODE.source}|\\|\\|[\\s\\S]*?\\|\\|`, 'g');
@@ -23,13 +21,7 @@ const LINK = /(?<!<)https?:\/\/\S/;
 function mentionsOutsideEmbed(visible: string): string {
 	// Many short mentions joined by spaces can outgrow the text they came
 	// from; content over Discord's limit would be refused on every send.
-	let content = '';
-	for (const mention of new Set(visible.match(MENTION) ?? [])) {
-		const next = content ? `${content} ${mention}` : mention;
-		if (next.length > MESSAGE_LIMIT) break;
-		content = next;
-	}
-	return content;
+	return fitLines([...new Set(visible.match(MENTION) ?? [])], DISCORD_MESSAGE_LIMIT, { separator: ' ' });
 }
 
 /**

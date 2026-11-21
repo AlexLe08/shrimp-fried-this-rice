@@ -1,5 +1,5 @@
 import { escapeMarkdown, type Client } from 'discord.js';
-import { CODE } from '../reminders/reminderMessage.ts';
+import { CODE, fitLines } from './discord.ts';
 
 // The client sends a custom emoji in this form whether it was picked or typed
 // (checked on the dev server: picker, `:` autocomplete and mobile alike).
@@ -11,7 +11,8 @@ const CUSTOM_EMOJI = /<a?:(\w{2,32}):(\d+)>/g;
 // length hard to bound otherwise.
 const WARNING_LIMIT = 1000;
 // 15 names of up to 36 characters, the sentence and an escaped server name
-// keep one line under the limit, so the first line always fits.
+// keep one line, and the "…and N more" after it, under the limit, so the
+// first line always fits.
 const NAMES_PER_LINE = 15;
 
 /**
@@ -39,16 +40,6 @@ function list(names: Set<string>): string {
 	const all = [...names];
 	const shown = all.slice(0, NAMES_PER_LINE).join(', ');
 	return all.length > NAMES_PER_LINE ? `${shown} and ${all.length - NAMES_PER_LINE} more` : shown;
-}
-
-function fit(lines: string[]): string {
-	let warning = '';
-	for (const [i, line] of lines.entries()) {
-		const next = warning ? `${warning}\n${line}` : line;
-		if (warning && next.length > WARNING_LIMIT) return `${warning}\n…and ${lines.length - i} more warnings like these.`;
-		warning = next;
-	}
-	return warning;
 }
 
 /**
@@ -103,5 +94,7 @@ export function unusableEmojiWarning(client: Client, text: string, where: EmojiD
 			`⚠️ These emoji are from another server, ${server}, and I don't have Use External Emojis in ${place}, so they'll show as text until I do: ${list(names)}.`,
 		);
 	}
-	return lines.length > 0 ? fit(lines) : null;
+	return lines.length > 0
+		? fitLines(lines, WARNING_LIMIT, { more: (leftOut) => `\n…and ${leftOut} more warnings like these.` })
+		: null;
 }
