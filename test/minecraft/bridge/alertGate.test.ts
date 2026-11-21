@@ -86,4 +86,15 @@ describe('createAlertGate', () => {
 		expect(gate.check(withCause('java.lang.NullPointerException'), MINUTE)).not.toBeNull();
 		expect(gate.check(withCause('java.lang.NullPointerException'), 2 * MINUTE)).toBeNull();
 	});
+
+	it('never holds back a crash for the per-minute cap, but still de-duplicates it', () => {
+		const gate = createAlertGate(DEFAULT_ALERT_GATE);
+		for (let index = 0; index < DEFAULT_ALERT_GATE.maxPerMinute; index++) {
+			expect(gate.check(alert('error', `error ${'x'.repeat(index)}`), 0)).not.toBeNull();
+		}
+		expect(gate.check(alert('error', 'one too many'), 0)).toBeNull();
+		const crash = { ...alert('crash', 'Exception in server tick loop'), level: 'FATAL' as const };
+		expect(gate.check(crash, 1)).toMatchObject({ alert: crash, capped: 1 });
+		expect(gate.check(crash, 2)).toBeNull();
+	});
 });

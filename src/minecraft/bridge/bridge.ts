@@ -1,6 +1,7 @@
 import { createAlertGate, type AlertGate } from './alertGate.ts';
-import { classify } from './classify.ts';
+import { classify, type BridgeEvent } from './classify.ts';
 import type { BridgeConfig } from './config.ts';
+import { parseCrashReport } from './crashReports.ts';
 import { alertMessage, escapeMarkdown, eventMessage, summaryMessage } from './messages.ts';
 import { createEntryAssembler, parseLog, type LogEntry } from './parseLine.ts';
 import type { Sender } from './sender.ts';
@@ -12,7 +13,7 @@ export interface BridgeOptions {
 	gate?: AlertGate;
 	/** How long the log stays quiet before a stack trace still collecting lines is posted. Defaults to 1 s. */
 	quietMs?: number;
-	/** At most one "can't read the log" alert per this long. Defaults to 10 minutes. */
+	/** At most one "can't read the log" (or crash-reports folder) alert per this long. Defaults to 10 minutes. */
 	readErrorEveryMs?: number;
 }
 
@@ -28,6 +29,10 @@ export interface Bridge {
 	 * whose window hasn't ended.
 	 */
 	postSummaries(options?: { final?: boolean }): void;
+	/** A new crash report, posted as an alert through the gate, so a server crashing on every restart posts a count, not every crash. */
+	onCrashReport(file: string, text: string): void;
+	/** The crash-reports folder can't be listed: posted like a log read error, or crashes would go unreported unnoticed. */
+	onCrashReportError(error: unknown): void;
 	/** Posts the entry still collecting lines, for shutdown. */
 	flush(): void;
 }
@@ -40,7 +45,8 @@ export function createBridge(options: BridgeOptions): Bridge {
 	const readErrorEveryMs = options.readErrorEveryMs ?? 10 * 60_000;
 	const assembler = createEntryAssembler();
 	let quietTimer: NodeJS.Timeout | null = null;
-	let lastReadErrorPost = -Infinity;
+	// Per thing that can't be read (the log, the crash-reports folder).
+	const lastReadErrorPost = new Map<string, number>();
 
 	// The callbacks run from the tailer and from timers: a bug in one must log,
 	// not stop the helper (an exception thrown from a timer would end it).
@@ -54,14 +60,34 @@ export function createBridge(options: BridgeOptions): Bridge {
 		};
 	}
 
+	function postAlert(alert: Extract<BridgeEvent, { type: 'alert' }>): void {
+		const gated = gate.check(alert, Date.now());
+		if (gated) {
+			sender.send({ webhook: config.webhooks.alerts, droppable: false, ...alertMessage(gated, config.serverName) });
+		}
+	}
+
+	function readError(path: string, what: string, consequence: string, error: unknown): void {
+		const reason = (error as NodeJS.ErrnoException).code ?? String(error);
+		log(`can't read ${path}: ${String(error)}`);
+		// The tailer reports an error again whenever one follows a good read, so
+		// a flaky disk or share could otherwise post one every poll.
+		const now = Date.now();
+		if (now - (lastReadErrorPost.get(what) ?? -Infinity) < readErrorEveryMs) return;
+		lastReadErrorPost.set(what, now);
+		sender.send({
+			webhook: config.webhooks.alerts,
+			username: config.serverName,
+			droppable: false,
+			content: `⚠️ **${escapeMarkdown(config.serverName)}**: mcbridge can't read ${what} (${reason}). ${consequence}`,
+		});
+	}
+
 	function handle(entry: LogEntry): void {
 		const event = classify(entry, { ignore: config.ignore });
 		if (!event) return;
 		if (event.type === 'alert') {
-			const gated = gate.check(event, Date.now());
-			if (gated) {
-				sender.send({ webhook: config.webhooks.alerts, droppable: false, ...alertMessage(gated, config.serverName) });
-			}
+			postAlert(event);
 			return;
 		}
 		// Start and stop say whether the server is up, so they're kept when the
@@ -107,19 +133,26 @@ export function createBridge(options: BridgeOptions): Bridge {
 			}
 		}),
 		onReadError: guarded('reporting a read error', (error: unknown) => {
-			const reason = (error as NodeJS.ErrnoException).code ?? String(error);
-			log(`can't read ${config.logPath}: ${String(error)}`);
-			// The tailer reports an error again whenever one follows a good read, so
-			// a flaky disk or share could otherwise post one every poll.
-			const now = Date.now();
-			if (now - lastReadErrorPost < readErrorEveryMs) return;
-			lastReadErrorPost = now;
-			sender.send({
-				webhook: config.webhooks.alerts,
-				username: config.serverName,
-				droppable: false,
-				content: `⚠️ **${escapeMarkdown(config.serverName)}**: mcbridge can't read the server log (${reason}). Nothing is posted until it can.`,
+			readError(config.logPath, 'the server log', 'Nothing is posted until it can.', error);
+		}),
+		onCrashReport: guarded('posting a crash report', (file: string, text: string) => {
+			const { description, exception } = parseCrashReport(text);
+			postAlert({
+				type: 'alert',
+				kind: 'crash',
+				level: 'FATAL',
+				message: description ?? 'A new crash report (no description in it)',
+				details: exception,
+				file,
 			});
+		}),
+		onCrashReportError: guarded('reporting a crash-reports read error', (error: unknown) => {
+			readError(
+				config.crashReportsDir ?? 'crashReportsDir',
+				'the crash-reports folder',
+				"Crashes aren't posted until it can.",
+				error,
+			);
 		}),
 		postSummaries: guarded('posting summaries', ({ final = false }: { final?: boolean } = {}) => {
 			const message = summaryMessage(gate.summaries(final ? Infinity : Date.now()), config.serverName);

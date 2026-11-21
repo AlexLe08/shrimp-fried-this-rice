@@ -169,6 +169,14 @@ Later item), not a follow-up.
   and resends a post Discord refuses under a player's name as the server,
   naming the player on each line. Not yet tried against a real server or
   webhook, nor on Windows.
+- **Minecraft bridge crash reports** (2026-11-21, Track A7). An optional
+  `crashReportsDir`: `mcbridge` polls it every 5 s and posts each new
+  report, once its size has stopped changing, as a "Crashed" alert with
+  the report's description, exception and file name. It goes through the
+  alert gate, so a server crashing on every restart posts once and then a
+  count, but never for the per-minute cap (a crash follows a burst of the
+  log's own errors, which could fill it). Reports there at startup aren't posted. Checked only against a
+  hand-written report in vanilla's documented layout.
 
 ## Next up
 
@@ -190,7 +198,10 @@ them ahead of items 4 and 5.
    test against their server and a test channel (`MINECRAFT_BRIDGE.md`
    step 5), which also settles whether Discord refuses `clyde`/`discord`
    in a message's username and whether it hides the backslashes that
-   escape chat; crash reports (A7); then player avatars (A4b).
+   escape chat; then player avatars (A4b). Crash reports (A7) are done, but
+   only against a hand-written report: the owner's test can set
+   `crashReportsDir` and copy an old report into the folder under a new
+   name (`MINECRAFT_BRIDGE.md` step 5).
 3. **Lodestone news and scheduled events**
    ([Track C](plans/minecraft-ff14-features.md#track-c-lodestone-news-and-scheduled-events)),
    then the **role check-in** after onboarding

@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createBridge } from './bridge.ts';
 import { ConfigError, loadConfig } from './config.ts';
+import { createCrashWatcher } from './crashReports.ts';
 import { createSender } from './sender.ts';
 import { createTailer } from './tailer.ts';
 
@@ -44,6 +45,13 @@ const tailer = createTailer({
 	onBacklog: bridge.onBacklog,
 	onError: bridge.onReadError,
 });
+const crashWatcher = config.crashReportsDir
+	? createCrashWatcher({
+			dir: config.crashReportsDir,
+			onReport: bridge.onCrashReport,
+			onError: bridge.onCrashReportError,
+		})
+	: null;
 const summaries = setInterval(() => bridge.postSummaries(), SUMMARY_INTERVAL_MS);
 
 let stopping = false;
@@ -59,7 +67,7 @@ async function shutdown(signal: string): Promise<void> {
 	const forceExit = setTimeout(() => process.exit(1), 10_000);
 	forceExit.unref();
 	clearInterval(summaries);
-	await tailer.stop();
+	await Promise.all([tailer.stop(), crashWatcher?.stop()]);
 	bridge.flush();
 	bridge.postSummaries({ final: true });
 	await sender.close(5000);
@@ -81,4 +89,8 @@ if (!existsSync(config.logPath)) {
 		`[mcbridge] ${config.logPath} doesn't exist yet; waiting for it. If the server has run before, check logPath.`,
 	);
 }
+if (config.crashReportsDir) {
+	console.log(`[mcbridge] watching ${config.crashReportsDir} for new crash reports`);
+}
 tailer.start();
+crashWatcher?.start();
