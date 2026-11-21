@@ -95,7 +95,7 @@ Empty folders aren't tracked by git, so `ffxiv/` and `minecraft/` are created by
 - As built: the one fitting function is `fitLines(lines, limit, { separator, more })`, returning as many lines as fit with the `more(left out)` text counted towards the limit (`fitList` passes the limit minus its header). Two edge cases now behave alike where the copies differed. First, the emoji warning's "…and N more warnings" line used to sit outside its 1000-character budget and now counts towards it; the longest possible first line is 930 characters (a 100-character server name of `|`, `~` or `\`, each escaped), 964 with that suffix, so the first line still always fits. Second, the cooldown reply's timestamp is rounded down to the second, as every other `discordTime` is, instead of to the nearest one: a relative "in N seconds" can't show the difference. Error codes use `RESTJSONErrorCodes` from discord.js directly; no wrapper was needed. `deferReply` and the error fallback's `followUp` keep their own flags (task 7 tidies the latter).
 - Deploys: no runtime change.
 
-### ~~5. `/reminder`: one handler per subcommand~~ (done, PR number on merge)
+### ~~5. `/reminder`: one handler per subcommand~~ (done, #35)
 
 - Branch `refactor/reminder-subcommands`; PR `refactor: split /reminder into one handler per subcommand`. If it grows past a comfortable review, make it two PRs: the helpers, then the split.
 - `execute` dispatches from a table of subcommand handlers in `src/reminders/subcommands/` instead of a 300-line `if` chain.
