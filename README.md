@@ -36,7 +36,7 @@ Deliberate choices from before the [decision records](docs/decisions/):
 
 ## ⚠️ Important: never run local dev against the production bot token
 
-**This bit us once already — worth reading before touching `.env`.** Discord dispatches every interaction to *every* live process connected with the same bot token. Running `npm run dev` locally with the same `DISCORD_TOKEN` as the production VM means **two independent processes handle every command simultaneously**, each with its own separate `reminders.db` that silently drifts out of sync with the other. Symptoms we actually hit from this: reminders firing twice, `"Interaction has already been acknowledged"` errors, and a status embed that only updated from whichever process happened to have it tracked.
+**This bit us once already — worth reading before touching `.env`.** Discord dispatches every interaction to *every* live process connected with the same bot token. Running `npm run dev` locally with the same `DISCORD_TOKEN` as the production VM means **two independent processes handle every command simultaneously**, each with its own separate `bot.db` that silently drifts out of sync with the other. Symptoms we actually hit from this: reminders firing twice, `"Interaction has already been acknowledged"` errors, and a status embed that only updated from whichever process happened to have it tracked.
 
 **The fix:** create a **second, separate Discord Application** in the [Developer Portal](https://discord.com/developers/applications) exclusively for local development, with its own token, invited separately to your test server. Never point your local `.env` at the same token the VM uses. See [Local Setup](#local-setup) below for the exact settings this dev application needs.
 
@@ -95,7 +95,7 @@ Slash commands are registered **globally** (via `deploycommands`), so they're av
    npm start        # runs the bot once, no auto-restart
    ```
 
-   On first run, `reminders.db` (a SQLite file) is created automatically in the project root — no manual database setup needed. This local database is entirely separate from the production VM's.
+   On first run, `bot.db` (a SQLite file) is created automatically in the project root — no manual database setup needed. This local database is entirely separate from the production VM's.
 
 ## Testing
 
@@ -109,7 +109,7 @@ npm run test:coverage # run once with a coverage report (terminal + HTML in cove
 
 **Current coverage:** ~98% statements / ~99% lines across the codebase (excluding `index.ts`, `deploy-commands.ts`, and `src/core/types/**`, which are deliberately excluded — see below).
 
-**Test isolation:** each test run uses an in-memory SQLite database (`DB_PATH=':memory:'`, set in `test/setup.ts`), completely separate from your real local `reminders.db`. Tests never touch real dev or production data. Most test files also call a test-only `__resetForTests()` helper between tests, exported from `core/database.ts` specifically for this purpose (not used anywhere in application code).
+**Test isolation:** each test run uses an in-memory SQLite database (`DB_PATH=':memory:'`, set in `test/setup.ts`), completely separate from your real local `bot.db`. Tests never touch real dev or production data. Most test files also call a test-only `__resetForTests()` helper between tests, exported from `core/database.ts` specifically for this purpose (not used anywhere in application code).
 
 **Mocking approach:** rather than a mocking library, tests use Vitest's built-in `vi.fn()` to build small, purpose-built fake objects for discord.js interactions, channels, users, and clients (see `test/mocks.ts` and `test/mockInteraction.ts`). `scheduler.ts` is tested through its real public interface using Vitest's fake timers (`vi.advanceTimersByTimeAsync`) rather than exporting its private polling functions just to make them directly callable.
 
@@ -139,10 +139,10 @@ The bot runs continuously on an **Oracle Cloud Infrastructure "Always Free" VM**
 
 Key production-specific details, for future reference:
 
-- **Persistence:** since this is a real VM (not a container-based PaaS), `reminders.db` lives on the VM's normal persistent disk — no special volume configuration needed, and it's untouched by deploys (it's git-ignored, and the deploy's `git reset --hard` only resets tracked files).
+- **Persistence:** since this is a real VM (not a container-based PaaS), `bot.db` lives on the VM's normal persistent disk — no special volume configuration needed, and it's untouched by deploys (it's git-ignored, and the deploy's `git reset --hard` only resets tracked files).
 - **Secrets:** `.env` is created directly on the VM (never committed, never pulled from git) with the production bot token and client ID — using the separate **production** Discord Application, never the local-dev one.
 - **Native module:** `better-sqlite3` 13 ships a prebuilt `linux-arm64` binary, so installing it on the VM compiles nothing. npm still runs its `node-gyp` step, which needs `python3`; `build-essential` is the fallback for a version or platform without a prebuilt binary (see [`ORACLE_CLOUD_DEPLOYMENT.md`](ORACLE_CLOUD_DEPLOYMENT.md), section 6).
-- **Schema migrations:** run by `core/database.ts` when the bot starts, so the deploy's restart applies any new ones to `reminders.db`. A migration that fails rolls back and the bot exits, which the deploy's login check reports; systemd then restarts it every 5 seconds, failing the same way, and no reminders send until a fix is deployed.
+- **Schema migrations:** run by `core/database.ts` when the bot starts, so the deploy's restart applies any new ones to `bot.db`. A migration that fails rolls back and the bot exits, which the deploy's login check reports; systemd then restarts it every 5 seconds, failing the same way, and no reminders send until a fix is deployed.
 - **npm install-scripts:** `better-sqlite3`'s native build step (which only builds when no prebuilt binary matches) is explicitly approved via the `allowScripts` field committed in `package.json` — required for npm v12+'s install-script security gating.
 - **Graceful shutdown:** `systemctl restart`/`stop` send `SIGTERM`, which `src/core/shutdown.ts` handles by stopping the scheduler (and waiting for any send already under way), destroying the Discord client, and closing the database connection before the process exits — rather than the process being killed mid-operation. `Ctrl+C` during local `npm run dev` sends `SIGINT`, handled identically.
 - **Service management:** the bot runs under a systemd unit (`discordbotshrimp.service`). Common commands:
@@ -177,7 +177,7 @@ src/
   index.ts                # client setup, command/event loading, login (systemd starts this file, so it stays here)
   deploy-commands.ts      # registers slash commands globally with Discord's API
   core/                   # bot plumbing and Discord helpers any area may use
-    database.ts           # opens SQLite (reminders.db in the project root), creates the tables and runs schema migrations for every area
+    database.ts           # opens SQLite (bot.db in the project root), creates the tables and runs schema migrations for every area
     loadCommands.ts       # finds every area's commands/ and events/ files; the one command list for index.ts and deploy-commands.ts
     shutdown.ts           # graceful SIGTERM/SIGINT handling — stops the scheduler, destroys the client, closes the database
     eventListener.ts      # wraps each event handler so a rejection is logged, not an unhandled crash
@@ -207,7 +207,7 @@ test/
     database/
       closeDatabase.test.ts         # isolated in its own file — closing the DB connection is irreversible within a test file
       migrations.test.ts            # migrations on a database built like production's before them, and on a new one
-      databasePath.test.ts          # the default database path is reminders.db in the project root
+      databasePath.test.ts          # the default database path is bot.db in the project root
     loadCommands.test.ts            # which command and event files are found, and the commands they load
     shutdown.test.ts                # gracefulShutdown orchestration tests (mocked scheduler + database)
     eventListener.test.ts           # rejected and throwing handlers are logged
@@ -247,7 +247,7 @@ Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `sc
 | `npm run test:watch` | Runs the test suite in watch mode |
 | `npm run test:coverage` | Runs the test suite once with a coverage report |
 | `npm run deploycommands` | Registers slash commands globally with Discord's API |
-| `npm run zip` | Bundles the project (excluding `node_modules`, `dist`, `.env`, `reminders.db`, etc.) into a shareable zip |
+| `npm run zip` | Bundles the project (excluding `node_modules`, `dist`, `.env`, `bot.db`, etc.) into a shareable zip |
 
 ## License
 

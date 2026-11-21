@@ -5,12 +5,11 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// From the project root, not this file's folder: production's reminders.db
-// has always been there, and a default that moved with this file would open a
-// new, empty database without any error (the tests use DB_PATH, and *.db* is
-// gitignored).
+// From the project root, not this file's folder: a default that moved with
+// this file would open a new, empty database without any error (the tests use
+// DB_PATH, and *.db* is gitignored). One file for every area (decision 0004).
 export function databasePath(): string {
-	return process.env['DB_PATH'] ?? path.join(__dirname, '..', '..', 'reminders.db');
+	return process.env['DB_PATH'] ?? path.join(__dirname, '..', '..', 'bot.db');
 }
 
 export const db = new Database(databasePath());

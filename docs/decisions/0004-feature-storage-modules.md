@@ -40,7 +40,16 @@ list, `closeDatabase` and `__resetForTests`. Each area has its own
 storage module (`src/reminders/storage.ts` first), or one per feature in
 an area that holds several (`src/ffxiv/recruit/storage.ts`), the only
 code that queries that area's tables; it imports `db` and keeps its
-queries, row interfaces and limits.
+queries, row interfaces and limits. Every area shares the one database
+file, renamed from `reminders.db` to `bot.db` now that it holds more than
+reminders.
+
+In frontend terms: `core/database.ts` is like the module that creates
+the app's single API client and exports it. It sets up the connection and
+the schema, and then stays out of the way: queries don't pass through it.
+Each area's `storage.ts` is like a feature's data layer (its hooks or
+service file), which uses that shared client for its own endpoints, here
+its own tables.
 
 **Why:** TODO(Alex)
 
@@ -63,9 +72,14 @@ queries, row interfaces and limits.
   now rewrites the `CREATE TABLE`s in `core/database.ts`. Decisions 0002
   and 0003 name `storage.ts` because that's where the schema was when they
   were made.
-- The default database path is resolved from the project root, pinned by
-  `test/core/database/databasePath.test.ts`, so production keeps opening
-  its existing `reminders.db`.
+- The default database path is `bot.db`, resolved from the project root
+  and pinned by `test/core/database/databasePath.test.ts`, so moving
+  `database.ts` can't silently point it somewhere else.
+- The rename reset production, as a decision 0003 reset does: the deploy
+  opened a new, empty `bot.db`, and the test reminders in `reminders.db`
+  were left behind, with the owner's agreement (pre-release, no users).
+  The old `reminders.db` and its `-wal`/`-shm` files stay on the VM until
+  deleted by hand.
 - Worth revisiting if an area needs a database of its own (for example a
-  large cache that shouldn't share the reminders' file or its WAL), or
+  large cache that shouldn't share `bot.db` or its WAL), or
   cross-area queries become common enough to want a shared query layer.

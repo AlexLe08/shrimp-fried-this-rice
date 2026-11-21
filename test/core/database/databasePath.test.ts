@@ -9,9 +9,9 @@ afterEach(() => {
 // Production sets no DB_PATH: a default that drifted from the project root
 // would open a new, empty database there without any error.
 describe('databasePath', () => {
-	it('defaults to reminders.db in the project root', () => {
+	it('defaults to bot.db in the project root', () => {
 		vi.stubEnv('DB_PATH', undefined);
-		expect(databasePath()).toBe(path.join(import.meta.dirname, '..', '..', '..', 'reminders.db'));
+		expect(databasePath()).toBe(path.join(import.meta.dirname, '..', '..', '..', 'bot.db'));
 	});
 
 	it('uses DB_PATH when it is set', () => {
