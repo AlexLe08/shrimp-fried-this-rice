@@ -3,10 +3,6 @@ import { CODE, DISCORD_MESSAGE_LIMIT, fitLines } from '../core/discord.ts';
 
 const REMINDER_COLOR = 0x5865f2;
 
-// The `embed` option of /reminder create, /reminder edit and /remindme.
-export const EMBED_OPTION_DESCRIPTION =
-	'Send as an embed (default: yes). Messages with links, or without Embed Links, are plain text';
-
 // Code and spoilers are where an author keeps a mention from pinging or a
 // link from showing, so they don't count for either.
 const HIDDEN = new RegExp(`${CODE.source}|\\|\\|[\\s\\S]*?\\|\\|`, 'g');
