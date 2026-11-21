@@ -9,6 +9,10 @@ import path from 'node:path';
 let dir: string;
 let dbPath: string;
 
+// user_version once every migration has run: 0 added snoozed_until, 1 embed,
+// 2 the /recruit tables.
+const LATEST_VERSION = 3;
+
 function createPreMigrationDatabase(): void {
 	const db = new Database(dbPath);
 	db.exec(`
@@ -92,8 +96,7 @@ describe('schema migrations', () => {
 			snoozed_until: 0,
 			embed: 1,
 		});
-		// One per migration: 0 added snoozed_until, 1 added embed.
-		expect(inspect()).toMatchObject({ version: 2 });
+		expect(inspect()).toMatchObject({ version: LATEST_VERSION });
 	});
 
 	it('gives a new database the same schema', async () => {
@@ -101,7 +104,7 @@ describe('schema migrations', () => {
 		storage.closeDatabase();
 
 		const { version, reminderColumns, userColumns } = inspect();
-		expect(version).toBe(2);
+		expect(version).toBe(LATEST_VERSION);
 		expect(reminderColumns).toEqual(expect.arrayContaining(['snoozed_until', 'embed']));
 		expect(userColumns).toEqual(expect.arrayContaining(['snoozed_until', 'embed']));
 	});
@@ -129,11 +132,11 @@ describe('schema migrations', () => {
 		const storage = await openStorage();
 		expect(storage.getGuildReminderByLabel('g1', 'water')?.snoozed_until).toBe(0);
 		storage.closeDatabase();
-		expect(inspect().version).toBe(2);
+		expect(inspect().version).toBe(LATEST_VERSION);
 	});
 
 	// Production's database ran migration 0 when snoozing shipped (#20).
-	it('takes a database at version 1 to 2, sending its reminders as embeds', async () => {
+	it('takes a database at version 1 to the latest, sending its reminders as embeds', async () => {
 		createPreMigrationDatabase();
 		const db = new Database(dbPath);
 		db.exec(`
@@ -151,6 +154,31 @@ describe('schema migrations', () => {
 
 		expect(reminder).toMatchObject({ message: 'drink', last_sent_at: 12345, snoozed_until: 999, embed: 1 });
 		expect(user).toMatchObject({ message: 'stretch', embed: 1 });
-		expect(inspect().version).toBe(2);
+		expect(inspect().version).toBe(LATEST_VERSION);
+	});
+
+	// Production's database ran migrations 0 and 1 (#20, #24).
+	it('takes a database at version 2 to the latest, adding the /recruit tables and keeping its reminders', async () => {
+		createPreMigrationDatabase();
+		const db = new Database(dbPath);
+		db.exec(`
+			ALTER TABLE guild_reminders ADD COLUMN snoozed_until INTEGER NOT NULL DEFAULT 0;
+			ALTER TABLE user_settings ADD COLUMN snoozed_until INTEGER NOT NULL DEFAULT 0;
+			ALTER TABLE guild_reminders ADD COLUMN embed INTEGER NOT NULL DEFAULT 1;
+			ALTER TABLE user_settings ADD COLUMN embed INTEGER NOT NULL DEFAULT 1;
+			UPDATE guild_reminders SET embed = 0;
+		`);
+		db.pragma('user_version = 2');
+		db.close();
+
+		const storage = await openStorage();
+		const recruit = await import('../../../src/ffxiv/recruit/storage.ts');
+		expect(storage.getGuildReminderByLabel('g1', 'water')).toMatchObject({ message: 'drink', embed: 0 });
+		expect(recruit.setRecruitSettings('g1', { channelId: 'c1' })).toMatchObject({ follow_up_days: 30, enabled: 1 });
+		expect(
+			recruit.addRecruit({ guildId: 'g1', name: 'Alex Le', note: '', addedBy: 'u1', addedAt: 1, dueAt: 2 }),
+		).toMatchObject({ name_key: 'alex le', status: 'pending' });
+		storage.closeDatabase();
+		expect(inspect().version).toBe(LATEST_VERSION);
 	});
 });
