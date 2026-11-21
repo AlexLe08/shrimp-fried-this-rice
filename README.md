@@ -99,7 +99,7 @@ Slash commands are registered **globally** (via `deploycommands`), so they're av
 
 ## Testing
 
-Tests are written with [Vitest](https://vitest.dev) and cover the entire codebase — persistence (`core/database.ts` and `reminders/storage.ts`), the scheduler, the status embed builder, both event handlers, and every command file.
+Tests are written with [Vitest](https://vitest.dev) and cover the entire codebase — persistence (`core/database.ts` and `reminders/storage.ts`), the scheduler and its due-reminder checks, the status embed builder, both event handlers, and every command file.
 
 ```bash
 npm test              # run once and exit
@@ -111,13 +111,13 @@ npm run test:coverage # run once with a coverage report (terminal + HTML in cove
 
 **Test isolation:** each test run uses an in-memory SQLite database (`DB_PATH=':memory:'`, set in `test/setup.ts`), completely separate from your real local `bot.db`. Tests never touch real dev or production data. Most test files also call a test-only `__resetForTests()` helper between tests, exported from `core/database.ts` specifically for this purpose (not used anywhere in application code).
 
-**Mocking approach:** rather than a mocking library, tests use Vitest's built-in `vi.fn()` to build small, purpose-built fake objects for discord.js interactions, channels, users, and clients (see `test/mocks.ts` and `test/mockInteraction.ts`). `scheduler.ts` is tested through its real public interface using Vitest's fake timers (`vi.advanceTimersByTimeAsync`) rather than exporting its private polling functions just to make them directly callable.
+**Mocking approach:** rather than a mocking library, tests use Vitest's built-in `vi.fn()` to build small, purpose-built fake objects for discord.js interactions, channels, users, and clients (see `test/mocks.ts` and `test/mockInteraction.ts`). The scheduler (`core/scheduler.ts`) and the reminder checks it runs (`reminders/dueReminders.ts`) are tested through their real public interface, `startScheduler`, using Vitest's fake timers (`vi.advanceTimersByTimeAsync`) rather than exporting their private functions just to make them directly callable.
 
 **What's excluded from the coverage target, and why:**
 - `index.ts` and `deploy-commands.ts` — bootstrap/entrypoint scripts that scan the filesystem and immediately connect to Discord on load, with no exported functions to test in isolation. Restructuring them purely to hit a coverage number wasn't judged worthwhile; they're exercised in practice every time the bot runs. `test/deployCommands.test.ts` does run `deploy-commands.ts`, with a mocked `REST`, to check the exit code the deploy job relies on, but it stays out of the coverage figures. It also matches the command definitions it registers against a snapshot (`test/__snapshots__/`), so a change to a command's name, options, descriptions, choices or permissions fails the tests unless the snapshot is updated (`npx vitest run -u`) in the same PR.
 - `src/core/types/**` — interfaces and module augmentation only, no runtime logic to execute.
 
-**Known, accepted gaps within the covered files:** a handful of narrow branches remain untested — e.g. a couple of individual reply-wording branches, and the scheduler's overlap-guard "skip this tick" path (which would require a more elaborate concurrent-timer test to trigger deliberately). These were judged not worth chasing further once the suite comfortably exceeded its coverage goal; none represent untested core logic.
+**Known, accepted gaps within the covered files:** a handful of narrow branches remain untested — e.g. a couple of individual reply-wording branches. These were judged not worth chasing further once the suite comfortably exceeded its coverage goal; none represent untested core logic.
 
 ## Continuous Integration
 
@@ -180,6 +180,7 @@ src/
     database.ts           # opens SQLite (bot.db in the project root), creates the tables and runs schema migrations for every area
     loadCommands.ts       # finds every area's commands/ and events/ files; the one command list for index.ts and deploy-commands.ts
     shutdown.ts           # graceful SIGTERM/SIGINT handling — stops the scheduler, destroys the client, closes the database
+    scheduler.ts          # polling loop — runs a list of named checks every 60 s, one at a time each, and waits for them on shutdown
     eventListener.ts      # wraps each event handler so a rejection is logged, not an unhandled crash
     customEmoji.ts        # finds custom emoji in a reminder's text that the bot can't use where it sends
     discord.ts            # shared Discord helpers: ephemeral replies, timestamps, fitting text under Discord's limits, refused requests
@@ -187,7 +188,7 @@ src/
       command.ts          # shared Command interface
       types.d.ts          # module augmentation (adds `commands`/`cooldowns` to discord.js's Client)
     events/
-      ready.ts            # ClientReady handler — also starts the scheduler
+      ready.ts            # ClientReady handler — also starts the scheduler with every area's checks
       interactionCreate.ts  # routes slash command and autocomplete interactions, handles cooldowns + errors (with a hardened, self-catching error fallback)
   reminders/              # /reminder, /remindme and the reminders they send
     commands/
@@ -197,9 +198,9 @@ src/
       helpers.ts          # finding a reminder by label, and the channel permission and custom emoji warnings
     options.ts            # option builders shared by /reminder and /remindme (label, interval, message, embed)
     storage.ts            # the reminders' queries, row types and limits (guild settings, guild reminders, user settings, status message tracking)
-    scheduler.ts          # polling loop — checks storage.ts for due reminders and sends them
+    dueReminders.ts       # the scheduler's reminder checks — asks storage.ts for due server and DM reminders and sends them
     snooze.ts             # snooze durations and after-snooze choices shared by /reminder and /remindme
-    reminderMessage.ts    # builds what a reminder sends: an embed with its mentions above it, or plain text when it has a link
+    reminderMessage.ts    # builds what a reminder sends: an embed with its mentions above it, or plain text when it has a link or is set to it
     statusEmbed.ts        # builds the /reminder status embed; replaces the tracked status message, and refreshes it when reminders change
 test/
   setup.ts                       # points core/database.ts at an in-memory DB before any test imports it
@@ -214,6 +215,7 @@ test/
       databasePath.test.ts          # the default database path is bot.db in the project root
     loadCommands.test.ts            # which command and event files are found, and the commands they load
     shutdown.test.ts                # gracefulShutdown orchestration tests (mocked scheduler + database)
+    scheduler.test.ts               # the polling loop with fake checks: every poll, a throwing check, the overlap guard, stopping
     eventListener.test.ts           # rejected and throwing handlers are logged
     customEmoji.test.ts             # which custom emoji are warned about, per server, channel permission and DM
     discord.test.ts                 # the shared Discord helpers in core/discord.ts
@@ -234,8 +236,8 @@ test/
       registered.test.ts            # every file in src/reminders/subcommands/ is registered by /reminder
     statusEmbed.test.ts             # buildReminderStatusEmbed + refreshGuildStatusMessage tests
     reminderMessage.test.ts         # the embed a reminder sends, which mentions go above it, and when it's plain text
-    scheduler.test.ts               # scheduler tests, using fake timers
-    schedulerCheckFailure.test.ts   # a poll whose storage query throws is logged, not a crash (mocks storage, so its own file)
+    dueReminders.test.ts            # the reminder checks run by the scheduler, using fake timers
+    dueRemindersCheckFailure.test.ts  # a poll whose storage query throws is logged, not a crash (mocks storage, so its own file)
 ```
 
 Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `scripts/` (worktrees, `check.sh` mirroring CI, cleanup after merges), `docs/decisions/`, and `docs/roadmap.md` (status and next steps).

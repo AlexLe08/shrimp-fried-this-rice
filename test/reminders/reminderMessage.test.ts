@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { EmbedBuilder } from 'discord.js';
-import { buildReminderMessage } from '../../src/reminders/reminderMessage.ts';
+import { buildReminderMessage, reminderContent } from '../../src/reminders/reminderMessage.ts';
 
 function build(text: string) {
 	const message = buildReminderMessage('water', text, 60);
@@ -88,5 +88,23 @@ describe('buildReminderMessage', () => {
 				expect(build(text).embed?.description).toBe(text);
 			}
 		});
+	});
+});
+
+describe('reminderContent', () => {
+	it("is buildReminderMessage's embed when embed is set", () => {
+		expect(reminderContent('water', '<@1> drink', 60, { embed: true })).toEqual(
+			buildReminderMessage('water', '<@1> drink', 60),
+		);
+	});
+
+	it('passes mentions: false on, for DMs', () => {
+		expect(reminderContent('Reminder', '<@1> drink', 60, { embed: true, mentions: false })).toEqual(
+			buildReminderMessage('Reminder', '<@1> drink', 60, { mentions: false }),
+		);
+	});
+
+	it('is the text as typed when embed is off', () => {
+		expect(reminderContent('water', '<@1> drink', 60, { embed: false })).toBe('<@1> drink');
 	});
 });

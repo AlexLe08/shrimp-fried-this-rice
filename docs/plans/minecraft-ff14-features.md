@@ -406,8 +406,8 @@ src/ffxiv/commands/lodestone.ts
 
 ### Polling
 
-- One timer, started from `src/core/events/ready.ts` beside `startScheduler`. Reuse `src/reminders/scheduler.ts`'s patterns: one check at a time (a tick that finds the last one running skips), `runCheck` so a throwing check is logged rather than an unhandled rejection, and a `stopping` flag.
-- **Shutdown:** `src/core/shutdown.ts` stops the poller and **waits for a fetch or post under way**, as it does for `stopScheduler`, before it destroys the client and closes the database. Nothing may touch the database after it closes.
+- A check in `src/core/scheduler.ts`'s list (passed from `src/core/events/ready.ts`), which gives it one run at a time (a poll that finds the last one running skips it), logging of a run that throws, and an `AbortSignal` that `stopScheduler` aborts. The scheduler polls every 60 s, so the check fetches only when its own period has passed since the last fetch; if that proves awkward, give the scheduler a per-check interval then (the refactor left a general poller until C2 needs one).
+- **Shutdown:** `stopScheduler` already **waits for a fetch or post under way** before `src/core/shutdown.ts` destroys the client and closes the database; the check stops its batch when its signal is aborted. Nothing may touch the database after it closes.
 - Poll every 5 to 10 minutes. Fetch **once per locale in use**, then fan out to every subscribed server. Never fetch per server.
 - Set a request timeout (`AbortSignal.timeout`) and a generic `User-Agent`. A failed fetch logs and waits for the next tick.
 - A send Discord refuses for good (the channel is gone, missing permissions) follows the scheduler's rule: it must not be retried every tick. A deleted channel removes or disables that subscription and shows it in `/lodestone list`.
@@ -602,15 +602,15 @@ Security work (CSRF protection, session expiry, rate limiting) belongs in D1, no
 
 ## Track E: Membership follow-ups
 
-Two separate features that share one idea: store a due date in the database and let the existing poller in `src/reminders/scheduler.ts` act on it. Thirty days is far too long to hold in a timer, and the database row survives restarts and deploys.
+Two separate features that share one idea: store a due date in the database and let the existing poller in `src/core/scheduler.ts` act on it. Thirty days is far too long to hold in a timer, and the database row survives restarts and deploys.
 
 Neither feature is FF14-specific in code. Roles, channels, wording and day counts are all configuration.
 
 ### How the due checks fit the scheduler
 
-Both features add a check to `src/reminders/scheduler.ts` beside `guildCheck` and `userCheck`: its own promise variable, started in `startScheduler`'s interval through `runCheck` (overlap guard and logging), and added to the promises `stopScheduler` waits for, which today are only those two.
+Each feature adds a `{ name, run(signal) }` check to the list `src/core/events/ready.ts` passes to `startScheduler`, beside `dueReminderChecks(client)`, and gets the overlap guard, logging and shutdown wait from `src/core/scheduler.ts` with no change there. A run stops its batch once its signal is aborted.
 
-- `SchedulerClient` grows only by what the new checks call (for example a guild's `members.fetch` for the role check-in), and the fakes in `test/mocks.ts` grow to match.
+- Each feature's checks take a narrow interface of what they call on the client (for example a guild's `members.fetch` for the role check-in), as `SchedulerClient` is for the reminder checks, and the fakes in `test/mocks.ts` grow to match.
 - These reminders are one-shot, not interval-based. A send Discord refuses for good (missing permissions, channel gone) must not be retried every poll (CLAUDE.md's scheduler rule): mark the row as failed and log it. A channel that no longer exists disables the setting, which `/rolecheck status` and `/recruit config` show, as a disabled reminder shows in `/reminder status`. Network and 5xx errors are retried on the next poll, as for reminders.
 
 ### E-recruit: trial FC members, for moderators

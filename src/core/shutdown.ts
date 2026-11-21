@@ -1,5 +1,5 @@
 import type { Client } from 'discord.js';
-import { stopScheduler } from '../reminders/scheduler.ts';
+import { stopScheduler } from './scheduler.ts';
 import { closeDatabase } from './database.ts';
 
 let isShuttingDown = false;

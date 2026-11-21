@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../src/reminders/scheduler.ts', () => ({ stopScheduler: vi.fn() }));
+vi.mock('../../src/core/scheduler.ts', () => ({ stopScheduler: vi.fn() }));
 vi.mock('../../src/core/database.ts', () => ({ closeDatabase: vi.fn() }));
 
 import { shutdown, __resetShutdownStateForTests } from '../../src/core/shutdown.ts';
-import { stopScheduler } from '../../src/reminders/scheduler.ts';
+import { stopScheduler } from '../../src/core/scheduler.ts';
 import { closeDatabase } from '../../src/core/database.ts';
 
 beforeEach(() => {
