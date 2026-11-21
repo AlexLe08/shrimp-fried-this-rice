@@ -1,11 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import guildReminderCommand from '../../../src/reminders/commands/reminder.ts';
-import {
-	createGuildReminder,
-	setGuildReminderEnabled,
-	snoozeGuildReminder,
-	__resetForTests,
-} from '../../../src/storage.ts';
+import { createGuildReminder, setGuildReminderEnabled, snoozeGuildReminder } from '../../../src/reminders/storage.ts';
+import { __resetForTests } from '../../../src/core/database.ts';
 import { createMockInteraction } from '../../mockInteraction.ts';
 
 beforeEach(() => {

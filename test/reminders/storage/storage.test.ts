@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createGuildReminder, getGuildReminderByLabel, __resetForTests } from '../../src/storage.ts';
+import { createGuildReminder, getGuildReminderByLabel } from '../../../src/reminders/storage.ts';
+import { __resetForTests } from '../../../src/core/database.ts';
 
 beforeEach(() => {
 	__resetForTests();

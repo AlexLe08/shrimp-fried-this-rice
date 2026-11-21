@@ -9,8 +9,8 @@ import {
 	setGuildStatusMessage,
 	getGuildStatusMessage,
 	snoozeGuildReminder,
-	__resetForTests,
-} from '../../src/storage.ts';
+} from '../../src/reminders/storage.ts';
+import { __resetForTests } from '../../src/core/database.ts';
 import { createMockClient, createMockChannel } from '../mocks.ts';
 
 beforeEach(() => {

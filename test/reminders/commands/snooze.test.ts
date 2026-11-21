@@ -9,8 +9,8 @@ import {
 	upsertUserSettings,
 	getUserSettings,
 	snoozeUser,
-	__resetForTests,
-} from '../../../src/storage.ts';
+} from '../../../src/reminders/storage.ts';
+import { __resetForTests } from '../../../src/core/database.ts';
 import { createMockInteraction } from '../../mockInteraction.ts';
 import { refreshGuildStatusMessage } from '../../../src/reminders/statusEmbed.ts';
 

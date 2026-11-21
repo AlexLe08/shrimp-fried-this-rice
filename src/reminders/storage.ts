@@ -1,76 +1,4 @@
-import Database from 'better-sqlite3';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const dbPath = process.env['DB_PATH'] ?? path.join(__dirname, '..', 'reminders.db');
-const db = new Database(dbPath);
-
-// WAL: the scheduler reads while commands write.
-db.pragma('journal_mode = WAL');
-
-// The tables as first created. CREATE TABLE IF NOT EXISTS never alters an
-// existing table, so these stay as they are and every later column comes from
-// MIGRATIONS below; a new database and production's go through the same steps.
-// Booleans are INTEGER 0/1; labels are unique per server.
-db.exec(`
-	CREATE TABLE IF NOT EXISTS guild_settings (
-		guild_id TEXT PRIMARY KEY,
-		master_enabled INTEGER NOT NULL DEFAULT 1
-	);
-
-	CREATE TABLE IF NOT EXISTS guild_reminders (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		guild_id TEXT NOT NULL,
-		reminder_label TEXT NOT NULL,
-		channel_id TEXT NOT NULL,
-		interval_minutes INTEGER NOT NULL,
-		message TEXT NOT NULL,
-		enabled INTEGER NOT NULL DEFAULT 1,
-		last_sent_at INTEGER NOT NULL DEFAULT 0,
-		UNIQUE(guild_id, reminder_label)
-	);
-	CREATE TABLE IF NOT EXISTS user_settings (
-		user_id TEXT PRIMARY KEY,
-		dm_enabled INTEGER NOT NULL DEFAULT 0,
-		interval_minutes INTEGER NOT NULL DEFAULT 60,
-		message TEXT NOT NULL DEFAULT 'Time for a quick break!',
-		last_sent_at INTEGER NOT NULL DEFAULT 0
-	);
-    CREATE TABLE IF NOT EXISTS guild_status_messages (
-        guild_id TEXT PRIMARY KEY,
-        channel_id TEXT NOT NULL,
-        message_id TEXT NOT NULL
-    );
-`);
-
-// Migration n (from 0) takes PRAGMA user_version from n to n + 1. Append
-// only: production's database has already run the ones here
-// (docs/decisions/0002-schema-migrations-with-user-version.md), except a
-// pre-release reset that deletes that database (decision 0003).
-const MIGRATIONS = [
-	// snoozed_until: epoch ms; a reminder isn't sent before it. 0 = not snoozed.
-	`ALTER TABLE guild_reminders ADD COLUMN snoozed_until INTEGER NOT NULL DEFAULT 0;
-	 ALTER TABLE user_settings ADD COLUMN snoozed_until INTEGER NOT NULL DEFAULT 0;`,
-	// embed: 1 sends the reminder as an embed, 0 as plain text. Reminders made
-	// before the choice existed were already sent as embeds, so they stay so.
-	`ALTER TABLE guild_reminders ADD COLUMN embed INTEGER NOT NULL DEFAULT 1;
-	 ALTER TABLE user_settings ADD COLUMN embed INTEGER NOT NULL DEFAULT 1;`,
-];
-
-const schemaVersion = db.pragma('user_version', { simple: true }) as number;
-if (schemaVersion < MIGRATIONS.length) {
-	// One transaction: a migration that fails partway leaves the database, and
-	// its version, as they were.
-	db.transaction(() => {
-		for (const migration of MIGRATIONS.slice(schemaVersion)) {
-			db.exec(migration);
-		}
-		db.pragma(`user_version = ${MIGRATIONS.length}`);
-	})();
-}
+import { db } from '../core/database.ts';
 
 // Row shapes, written by hand: query results are cast to these unchecked,
 // so a column change updates its interface in the same commit.
@@ -127,6 +55,11 @@ export function getGuildSettings(guildId: string): GuildSettings | undefined {
 
 // No row means enabled (the column's default): the row exists only once
 // /reminder master has been used.
+export function isGuildMasterEnabled(guildId: string): boolean {
+	const settings = getGuildSettings(guildId);
+	return settings ? settings.master_enabled === 1 : true;
+}
+
 export function setGuildMasterEnabled(guildId: string, enabled: boolean): void {
 	db.prepare(
 		`INSERT INTO guild_settings (guild_id, master_enabled)
@@ -166,7 +99,8 @@ export function createGuildReminder(reminder: {
 }
 
 // Writes all four columns back, merged with the current row, rather than
-// building the SET clause from whichever options were given.
+// building the SET clause from whichever options were given. Returns the
+// updated row, or undefined if there is no such reminder.
 export function updateGuildReminder(
 	guildId: string,
 	label: string,
@@ -176,9 +110,9 @@ export function updateGuildReminder(
 		message?: string;
 		embed?: boolean;
 	},
-): void {
+): GuildReminder | undefined {
 	const existing = getGuildReminderByLabel(guildId, label);
-	if (!existing) return;
+	if (!existing) return undefined;
 
 	const channelId = updates.channelId ?? existing.channel_id;
 	const intervalMinutes = updates.intervalMinutes ?? existing.interval_minutes;
@@ -188,6 +122,8 @@ export function updateGuildReminder(
 	db.prepare(
 		'UPDATE guild_reminders SET channel_id = ?, interval_minutes = ?, message = ?, embed = ? WHERE guild_id = ? AND reminder_label = ?',
 	).run(channelId, intervalMinutes, message, embed, guildId, label);
+
+	return { ...existing, channel_id: channelId, interval_minutes: intervalMinutes, message, embed };
 }
 
 export function setGuildReminderEnabled(guildId: string, label: string, enabled: boolean): void {
@@ -356,18 +292,4 @@ export function getDueUserSettings(now: number): UserSettings[] {
 
 export function deleteUserSettings(userId: string): void {
 	db.prepare('DELETE FROM user_settings WHERE user_id = ?').run(userId);
-}
-
-export function closeDatabase(): void {
-	db.close();
-}
-
-// Test-only: clears every table between tests.
-export function __resetForTests(): void {
-	db.exec(`
-	DELETE FROM guild_settings;
-	DELETE FROM guild_reminders;
-	DELETE FROM user_settings;
-	DELETE FROM guild_status_messages;
-	`);
 }
