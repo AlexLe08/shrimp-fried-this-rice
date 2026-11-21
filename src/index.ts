@@ -4,6 +4,7 @@ import 'dotenv/config';
 import { shutdown } from './core/shutdown.ts';
 import { toEventListener } from './core/eventListener.ts';
 import { findAreaModules, loadCommands } from './core/loadCommands.ts';
+import type { Event } from './core/types/event.ts';
 
 // GuildExpressions keeps each server's emoji current after startup, so an
 // emoji added since then isn't warned about as one the bot can't use.
@@ -31,10 +32,7 @@ for (const command of await loadCommands()) {
 }
 
 for (const fileUrl of findAreaModules('events')) {
-	const eventModule = (await import(fileUrl)) as {
-		default: { name: string; once: boolean; execute: (...args: unknown[]) => Promise<void> };
-	};
-	const event = eventModule.default;
+	const event = ((await import(fileUrl)) as { default: Event }).default;
 	const listener = toEventListener(event.name, event.execute);
 	if (event.once) {
 		client.once(event.name, listener);

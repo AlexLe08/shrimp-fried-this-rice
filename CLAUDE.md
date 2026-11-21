@@ -105,8 +105,11 @@ the workflow, indexed in its `README.md`.
   default-exporting `{ data, execute, cooldown? }`
   (`src/core/types/command.ts`). `src/core/loadCommands.ts` loads every
   `.ts` file there, for both `index.ts` and `deploy-commands.ts`, and
-  `index.ts` loads every `.ts` file in `src/<area>/events/`; anything
-  else (helpers, subcommand handlers) goes outside those two folders. A
+  `index.ts` loads every `.ts` file in `src/<area>/events/`, each
+  default-exporting an `Event` (`src/core/types/event.ts`, written
+  `satisfies Event<Events.X>` so `tsc` checks the handler's arguments);
+  anything else (helpers, subcommand handlers) goes outside those two
+  folders. A
   changed `data` (name, options, permissions) reaches users only when
   commands are re-registered, which the deploy does. Commands that change
   server settings set `setDefaultMemberPermissions` and
@@ -132,7 +135,7 @@ the workflow, indexed in its `README.md`.
   fakes built from `vi.fn()`s (`test/mocks.ts`, `test/mockInteraction.ts`), cast with
   `as unknown as Client` / `as never`, except where a function takes a
   narrow interface of what it uses (`SchedulerClient`,
-  `StatusMessageClient`), which the fakes fit; the scheduler and its checks are
+  `StatusMessageClient`, `EmojiClient`), which the fakes fit; the scheduler and its checks are
   tested through `startScheduler` with fake timers, not by exporting their
   internals.
   Test-only helpers are exported as `__…ForTests` and never used in `src/`.

@@ -186,6 +186,7 @@ src/
     discord.ts            # shared Discord helpers: ephemeral replies, timestamps, fitting text under Discord's limits, refused requests
     types/
       command.ts          # shared Command interface
+      event.ts            # shared Event interface, typed by the event's name
       types.d.ts          # module augmentation (adds `commands`/`cooldowns` to discord.js's Client)
     events/
       ready.ts            # ClientReady handler — also starts the scheduler with every area's checks
