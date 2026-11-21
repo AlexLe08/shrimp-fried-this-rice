@@ -130,7 +130,11 @@ Later item), not a follow-up.
   in `core/discord.ts` (#34); `/reminder` as one handler per subcommand
   (#35); the scheduler running a list of named checks, so a feature adds
   one (#36); interaction routing, a typed `Event`, and `EmojiClient`
-  (#37); shared guild, channel and reply fakes in the tests (#38).
+  (#37); shared guild, channel and reply fakes in the tests, and
+  `npm run typecheck` (so CI) checking `test/` too, through
+  `test/tsconfig.json` (#38). A dropped import in #38 had passed lint
+  and `typecheck` and failed only when the tests ran, as Vitest strips
+  types unchecked.
 
 ## Next up
 
@@ -194,17 +198,6 @@ runtime dependency is the owner's decision.
   it sends when the snooze ends instead of an interval later (comment in
   `src/reminders/storage.ts`). Fix with `MAX(last_sent_at, ?)` in the send records if it
   ever matters.
-- Type-check `test/` in CI (for example a `tsconfig.test.json` that
-  `npm run typecheck` also runs). `tsconfig.json` covers only `src/` and
-  Vitest strips types unchecked, so nothing in CI keeps the fakes fitting
-  `SchedulerClient` and `StatusMessageClient`; only the editor does.
-  In the refactor's last PR, a dropped import passed lint and
-  `typecheck` and failed only when the tests ran. Tried on 2026-11-21 with
-  `src/` and `test/` together: three errors, two from
-  `Parameters<typeof createMockInteraction>[0]['options']` in
-  `test/reminders/commands/snooze.test.ts` (the parameter is optional, so
-  `undefined` is in the type) and one from `process.env.DB_PATH` in
-  `test/setup.ts` (`noPropertyAccessFromIndexSignature`).
 - A minimum coverage threshold in CI (Vitest's `coverage.thresholds`), and
   the HTML coverage report as a CI artifact.
 - Structured logging (for example `pino`) with levels, in place of
