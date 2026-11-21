@@ -21,7 +21,9 @@ let controller = new AbortController();
 // Each check started by an earlier poll, while it runs. A poll that finds a
 // check still running skips it, so a check never overlaps itself, and
 // stopScheduler waits for them so shutdown doesn't close the database under
-// a send.
+// a send. Keyed by check object, so it assumes one startScheduler per
+// process (ClientReady fires once): a second list wouldn't be blocked by the
+// first's running checks.
 const running = new Map<ScheduledCheck, Promise<void>>();
 
 // A check that throws (the database failing, say) is logged rather than
