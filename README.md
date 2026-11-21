@@ -205,7 +205,7 @@ src/
     statusEmbed.ts        # builds the /reminder status embed; replaces the tracked status message, and refreshes it when reminders change
 test/
   setup.ts                       # points core/database.ts at an in-memory DB before any test imports it
-  mocks.ts                        # shared fake Client/channel/user builders (scheduler + embed tests)
+  mocks.ts                        # shared fake Client/guild/channel/user builders (scheduler, embed + command tests)
   mockInteraction.ts               # shared fake ChatInputCommandInteraction/AutocompleteInteraction builder (command + event tests)
   deployCommands.test.ts           # a failed registration sets a nonzero exit code; the registered definitions match a snapshot (mocked REST and dotenv)
   __snapshots__/                   # Vitest snapshots: every command's registered definition

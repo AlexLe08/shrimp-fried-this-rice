@@ -120,48 +120,52 @@ Later item), not a follow-up.
   at every call site. The fakes' `users.fetch` and `guilds.fetch` now
   reject for an unknown id, as discord.js does, instead of resolving
   `null`.
+- **Refactor before the feature tracks** (2026-11-20 to 11-21, #31 to
+  #38, [`plans/refactor.md`](plans/refactor.md)). No behaviour change,
+  held to by a snapshot of every registered command (#31). `src/` split
+  into `core/` and `reminders/` feature folders with one command loader
+  (#32); the database in `core/database.ts`, each area's queries in its
+  own `storage.ts`, decision 0004, and the file renamed `bot.db`, which
+  reset production (#33); shared reply, time and message-length helpers
+  in `core/discord.ts` (#34); `/reminder` as one handler per subcommand
+  (#35); the scheduler running a list of named checks, so a feature adds
+  one (#36); interaction routing, a typed `Event`, and `EmojiClient`
+  (#37); shared guild, channel and reply fakes in the tests (#38).
 
 ## Next up
 
 Feature work, in this order unless the owner says otherwise. Schema
 changes are cheapest now, while the bot is pre-release (decision 0003).
 
-Items 2 to 5 are designed in
+Items 1 to 4 are designed in
 [`plans/minecraft-ff14-features.md`](plans/minecraft-ff14-features.md),
 which has their PR order (its "Suggested pull request order"), the inputs
 to ask the owner for, and which facts are still unverified. The owner put
-them ahead of items 6 and 7.
+them ahead of items 5 and 6.
 
-1. **Refactor before the feature tracks**
-   ([`plans/refactor.md`](plans/refactor.md)). Eight small PRs, no
-   behaviour change: feature folders (`src/core/`, `src/reminders/`, later
-   `src/ffxiv/` and `src/minecraft/`), shared Discord helpers, `/reminder`
-   split into one handler per subcommand, the scheduler running a list of
-   checks, and decision record 0004 (feature storage modules), brought
-   forward from E1.
-2. **Trial FC member follow-ups (`/recruit`)**
+1. **Trial FC member follow-ups (`/recruit`)**
    ([Track E, E1](plans/minecraft-ff14-features.md#e-recruit-trial-fc-members-for-moderators)).
    Moderators record trial members by in-game name; 30 days later the bot
    pings them to check in. First of the features, because it's the
-   smallest; it follows decision record 0004 from item 1.
-3. **Collection tracker (`/collection`, `/collectionadmin`)**
+   smallest; it follows decision record 0004 (feature storage modules).
+2. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the
    group's spreadsheet.
-4. **Minecraft bridge** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
+3. **Minecraft bridge** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
    A zero-dependency helper beside the Minecraft server that posts
    start/stop, chat and real errors through a webhook.
-5. **Lodestone news and scheduled events**
+4. **Lodestone news and scheduled events**
    ([Track C](plans/minecraft-ff14-features.md#track-c-lodestone-news-and-scheduled-events)),
    then the **role check-in** after onboarding
    ([Track E, E2](plans/minecraft-ff14-features.md#e-role-check-in-after-choosing-a-role)),
    which needs the Server Members Intent switched on first.
-6. **File or audio attachments on reminders** (bundled sounds or user
+5. **File or audio attachments on reminders** (bundled sounds or user
    uploads). Open questions first: where uploads live (the VM's disk, or
    Discord's own CDN by re-posting the attachment URL, which expires),
    size limits, and the free tier. Likely a design note or decision record
    before code.
-7. **Rework `/remindme`** (brainstorm in its own session first). One
+6. **Rework `/remindme`** (brainstorm in its own session first). One
    command does everything through optional options: view (no options),
    update (`enabled`, `interval`, `message`, `embed`), snooze, and `reset`,
    with rules about which combine. Options to weigh include subcommands
@@ -194,6 +198,13 @@ runtime dependency is the owner's decision.
   `npm run typecheck` also runs). `tsconfig.json` covers only `src/` and
   Vitest strips types unchecked, so nothing in CI keeps the fakes fitting
   `SchedulerClient` and `StatusMessageClient`; only the editor does.
+  In the refactor's last PR, a dropped import passed lint and
+  `typecheck` and failed only when the tests ran. Tried on 2026-11-21 with
+  `src/` and `test/` together: three errors, two from
+  `Parameters<typeof createMockInteraction>[0]['options']` in
+  `test/reminders/commands/snooze.test.ts` (the parameter is optional, so
+  `undefined` is in the type) and one from `process.env.DB_PATH` in
+  `test/setup.ts` (`noPropertyAccessFromIndexSignature`).
 - A minimum coverage threshold in CI (Vitest's `coverage.thresholds`), and
   the HTML coverage report as a CI artifact.
 - Structured logging (for example `pino`) with levels, in place of
