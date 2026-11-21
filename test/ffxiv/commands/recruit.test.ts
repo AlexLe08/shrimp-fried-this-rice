@@ -205,6 +205,20 @@ describe('/recruit resolve, snooze and remove', () => {
 	});
 });
 
+describe('/recruit edit and snooze, when follow-ups are held back', () => {
+	it('say so when the date changes', async () => {
+		addOpen('Alex Le');
+
+		expect(await run('snooze', { strings: { name: 'Alex Le' }, integers: { days: 2 } })).toContain(
+			'/recruit config channel:',
+		);
+		expect(await run('edit', { strings: { name: 'Alex Le' }, integers: { days: 2 } })).toContain(
+			'/recruit config channel:',
+		);
+		expect(await run('edit', { strings: { name: 'Alex Le', note: 'x' } })).not.toContain('⚠️');
+	});
+});
+
 describe('/recruit list', () => {
 	it('lists open entries, soonest first, with their state and note', async () => {
 		const posted = addOpen('Posted', { dueAt: NOW - 2 * DAY_MS, note: 'asked about raids' });
@@ -223,6 +237,11 @@ describe('/recruit list', () => {
 			`**Overdue** — follow-up overdue since <t:${seconds(NOW - DAY_MS)}:R> · added <t:${seconds(NOW)}:R> by <@mod1>`,
 			`**Later** — follow-up <t:${seconds(NOW + 5 * DAY_MS)}:R> · added <t:${seconds(NOW)}:R> by <@mod1>`,
 		]);
+	});
+
+	it('keeps a note with a line break on its quoted line', async () => {
+		addOpen('Alex Le', { note: 'one\ntwo' });
+		expect(await run('list')).toContain('> one two');
 	});
 
 	it('says when there are none, and why follow-ups are held back', async () => {
@@ -305,28 +324,79 @@ describe('/recruit config', () => {
 		expect(getRecruitSettings('g1')?.channel_id).toBe('c1');
 	});
 
-	it("warns when the role can't be mentioned by the bot, checking the saved channel", async () => {
+	// A guild whose channel c1 lets the bot (the guild's members.me) and the
+	// moderator running the command each have only the permissions given.
+	function guildWith(perms: { bot: bigint[]; mod: bigint[] }, role: { id: string }) {
+		const guild = createMockGuild({ roles: [role] });
+		const channel = {
+			id: 'c1',
+			permissionsFor: (who: unknown) => ({
+				has: (permission: bigint) => (who === guild.members.me ? perms.bot : perms.mod).includes(permission),
+			}),
+		};
+		guild.channels.cache.set('c1', channel as never);
+		return guild;
+	}
+	const POST = [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages];
+	const unmentionable = { id: 'r1', mentionable: false, toString: () => '<@&r1>' };
+
+	it("warns when the bot can't mention a role the moderator can, and saves it", async () => {
 		setRecruitSettings('g1', { channelId: 'c1' });
-		const saved = Object.assign(
-			createMockGuildChannel((p) => p !== PermissionFlagsBits.MentionEveryone),
-			{ id: 'c1' },
+
+		const reply = await run(
+			'config',
+			{ roles: { role: unmentionable } },
+			guildWith({ bot: POST, mod: [PermissionFlagsBits.MentionEveryone] }, unmentionable),
 		);
-		const role = { id: 'r1', mentionable: false, toString: () => '<@&r1>' };
 
-		const reply = await run('config', { roles: { role } }, createMockGuild({ channels: [saved], roles: [role] }));
-
-		expect(reply).toContain("<@&r1> doesn't allow anyone to mention it");
+		expect(reply).toContain("⚠️ <@&r1> doesn't allow anyone to mention it");
 		expect(getRecruitSettings('g1')?.ping_role_id).toBe('r1');
 
-		// Mention Everyone covers it.
-		const withMentionEveryone = Object.assign(createMockGuildChannel(), { id: 'c1' });
+		// The bot's Mention Everyone covers it.
 		expect(
 			await run(
 				'config',
 				{ integers: { days: 9 } },
-				createMockGuild({ channels: [withMentionEveryone], roles: [role] }),
+				guildWith({ bot: [...POST, PermissionFlagsBits.MentionEveryone], mod: [] }, unmentionable),
 			),
 		).not.toContain('⚠️');
+	});
+
+	it("refuses a role the moderator couldn't mention themselves, even if the bot could", async () => {
+		setRecruitSettings('g1', { channelId: 'c1' });
+
+		const reply = await run(
+			'config',
+			{ roles: { role: unmentionable } },
+			guildWith({ bot: [...POST, PermissionFlagsBits.MentionEveryone], mod: POST }, unmentionable),
+		);
+
+		expect(reply).toContain("you can't mention it yourself");
+		expect(getRecruitSettings('g1')?.ping_role_id).toBeNull();
+	});
+
+	it("falls back to the moderator's server-wide permissions when the channel isn't cached", async () => {
+		const interaction = createMockInteraction({
+			inCachedGuild: true,
+			guild: createMockGuild(),
+			memberPermissions: { has: (permission) => permission !== PermissionFlagsBits.MentionEveryone },
+			options: { subcommand: 'config', channels: {}, roles: { role: unmentionable } },
+		});
+		setRecruitSettings('g1', { channelId: 'c-uncached' });
+
+		await recruitCommand.execute(interaction as never);
+
+		expect(replyContent(interaction)).toContain("you can't mention it yourself");
+		expect(getRecruitSettings('g1')?.ping_role_id).toBeNull();
+	});
+
+	it('refuses @everyone', async () => {
+		const everyone = { id: 'g1', mentionable: true };
+
+		expect(await run('config', { channels: { channel: channel() }, roles: { role: everyone } })).toContain(
+			"can't ping @everyone",
+		);
+		expect(getRecruitSettings('g1')).toBeUndefined();
 	});
 });
 

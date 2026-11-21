@@ -7,6 +7,7 @@ import {
 } from 'discord.js';
 import {
 	getOpenRecruitByName,
+	getRecruitSettings,
 	MAX_FOLLOW_UP_DAYS,
 	MAX_RECRUIT_NAME_LENGTH,
 	MIN_FOLLOW_UP_DAYS,
@@ -77,4 +78,10 @@ export function followUpsBlockedNotice(settings: RecruitSettings | undefined): s
 		return `⚠️ Follow-ups are paused: I couldn't post in <#${settings.channel_id}>. Give me View Channel and Send Messages there, or pick another channel, then run \`/recruit config channel:\` to resume.`;
 	}
 	return null;
+}
+
+// A reply about when a follow-up comes, with why it won't, if it won't.
+export function withBlockedNotice(guildId: string, reply: string): string {
+	const blocked = followUpsBlockedNotice(getRecruitSettings(guildId));
+	return blocked ? `${reply}\n\n${blocked}` : reply;
 }

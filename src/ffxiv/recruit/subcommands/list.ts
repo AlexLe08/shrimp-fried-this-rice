@@ -1,5 +1,6 @@
 import { getOpenRecruits, getRecruitSettings, type Recruit } from '../storage.ts';
 import { DISCORD_MESSAGE_LIMIT, discordTime, replyEphemeral } from '../../../core/discord.ts';
+import { quotedNote } from '../followUps.ts';
 import { followUpsBlockedNotice, shownName, type RecruitSubcommand } from './helpers.ts';
 
 // Room left on each page for the header and the page line.
@@ -11,7 +12,7 @@ function entryLine(recruit: Recruit, now: number): string {
 	else if (recruit.due_at <= now) due = `follow-up overdue since ${discordTime(recruit.due_at, 'R')}`;
 	else due = `follow-up ${discordTime(recruit.due_at, 'R')}`;
 	const line = `${shownName(recruit.name)} — ${due} · added ${discordTime(recruit.added_at, 'R')} by <@${recruit.added_by}>`;
-	return recruit.note ? `${line}\n> ${recruit.note}` : line;
+	return recruit.note ? `${line}\n${quotedNote(recruit.note)}` : line;
 }
 
 // Whole entries per page, as many as fit: a page is the same for everyone

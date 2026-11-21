@@ -6,7 +6,14 @@ import {
 	updateRecruit,
 } from '../storage.ts';
 import { discordTime, replyEphemeral } from '../../../core/discord.ts';
-import { daysOption, findRecruit, nameOption, shownName, type RecruitSubcommand } from './helpers.ts';
+import {
+	daysOption,
+	findRecruit,
+	nameOption,
+	shownName,
+	withBlockedNotice,
+	type RecruitSubcommand,
+} from './helpers.ts';
 
 export default {
 	name: 'edit',
@@ -60,6 +67,7 @@ export default {
 					: `follow-up ${discordTime(updated.due_at, 'R')}, on ${discordTime(updated.due_at, 'f')}`,
 			);
 		}
-		await replyEphemeral(interaction, `Updated ${shownName(updated.name)}: ${changes.join('; ')}.`);
+		const reply = `Updated ${shownName(updated.name)}: ${changes.join('; ')}.`;
+		await replyEphemeral(interaction, days === null ? reply : withBlockedNotice(interaction.guildId, reply));
 	},
 } satisfies RecruitSubcommand;

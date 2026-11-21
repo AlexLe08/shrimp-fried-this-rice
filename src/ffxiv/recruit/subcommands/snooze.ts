@@ -1,6 +1,13 @@
 import { DAY_MS, updateRecruit } from '../storage.ts';
 import { discordTime, replyEphemeral } from '../../../core/discord.ts';
-import { daysOption, findRecruit, nameOption, shownName, type RecruitSubcommand } from './helpers.ts';
+import {
+	daysOption,
+	findRecruit,
+	nameOption,
+	shownName,
+	withBlockedNotice,
+	type RecruitSubcommand,
+} from './helpers.ts';
 
 export default {
 	name: 'snooze',
@@ -18,7 +25,10 @@ export default {
 		if (!updated) return;
 		await replyEphemeral(
 			interaction,
-			`I'll follow up on ${shownName(updated.name)} again ${discordTime(updated.due_at, 'R')}, on ${discordTime(updated.due_at, 'f')}.`,
+			withBlockedNotice(
+				interaction.guildId,
+				`I'll follow up on ${shownName(updated.name)} again ${discordTime(updated.due_at, 'R')}, on ${discordTime(updated.due_at, 'f')}.`,
+			),
 		);
 	},
 } satisfies RecruitSubcommand;

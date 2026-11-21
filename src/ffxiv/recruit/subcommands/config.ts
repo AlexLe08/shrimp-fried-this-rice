@@ -41,6 +41,23 @@ function warnings(
 	return found;
 }
 
+// The bot pings the role on every follow-up, so it must be one the moderator
+// could ping themselves: otherwise /recruit, which a server can grant to a
+// role under Integrations, would let them ping a role they can't. @everyone
+// is refused outright: the role picker offers it, and it isn't a group of
+// moderators.
+function roleRefusal(
+	interaction: GuildCommandInteraction,
+	role: Role,
+	channel: GuildBasedChannel | undefined,
+): string | null {
+	if (role.id === interaction.guildId) return "Follow-ups can't ping @everyone. Pick a moderator role.";
+	if (role.mentionable) return null;
+	const memberPerms = channel?.permissionsFor(interaction.member) ?? interaction.memberPermissions;
+	if (memberPerms.has(PermissionFlagsBits.MentionEveryone)) return null;
+	return `${role} doesn't allow anyone to mention it, and you can't mention it yourself (Mention Everyone), so I won't ping it for you. Turn on "Allow anyone to @mention this role" in its settings, or ask someone who can mention it.`;
+}
+
 export default {
 	name: 'config',
 	build: (subcommand) =>
@@ -76,6 +93,15 @@ export default {
 			const blocked = followUpsBlockedNotice(settings);
 			await replyEphemeral(interaction, describeSettings(settings) + (blocked ? `\n\n${blocked}` : ''));
 			return;
+		}
+
+		if (role) {
+			const target = channel ?? interaction.guild.channels.cache.get(getRecruitSettings(guildId)?.channel_id ?? '');
+			const refusal = roleRefusal(interaction, role, target);
+			if (refusal) {
+				await replyEphemeral(interaction, refusal);
+				return;
+			}
 		}
 
 		const saved = setRecruitSettings(guildId, {
