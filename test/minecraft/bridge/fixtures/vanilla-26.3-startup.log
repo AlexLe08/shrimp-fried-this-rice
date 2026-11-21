@@ -1,0 +1,35 @@
+[11:48:03] [ServerMain/INFO]: Environment: Environment[discoveryUrl=https://discovery.minecraftservices.com/minecraft/client, name=PROD]
+[11:48:05] [Worker-Main-3/INFO]: Loaded 1866 advancements
+[11:48:05] [Server thread/INFO]: Starting minecraft server version 26.3
+[11:48:05] [Server thread/INFO]: Loading properties
+[11:48:05] [Server thread/INFO]: Default game type: SURVIVAL
+[11:48:05] [Server thread/INFO]: Generating keypair
+[11:48:05] [Server thread/INFO]: Starting Minecraft server on *:25565
+[11:48:05] [Server thread/INFO]: Preparing level "world"
+[11:48:05] [Server thread/INFO]: Loading 0 persistent chunks...
+[11:48:05] [Server thread/INFO]: Preparing spawn area: 100%
+[11:48:05] [Server thread/INFO]: Time elapsed: 20 ms
+[11:48:05] [Server thread/INFO]: Done (0.350s)! For help, type "help"
+[11:48:05] [Server thread/INFO]: Starting remote control listener
+[11:48:05] [Server thread/INFO]: Thread RCON Listener started
+[11:48:05] [Server thread/INFO]: RCON running on 0.0.0.0:25575
+[11:48:05] [Server thread/INFO]: Saving chunks for level 'ServerLevel[world]'/minecraft:overworld
+[11:48:05] [Server thread/INFO]: Saving chunks for level 'ServerLevel[world]'/minecraft:the_nether
+[11:48:06] [Server thread/INFO]: Saving chunks for level 'ServerLevel[world]'/minecraft:the_end
+[11:49:06] [Server thread/INFO]: Server empty for 60 seconds, pausing
+[11:51:42] [User Authenticator #1/INFO]: UUID of player Steve is 00000000-0000-4000-8000-000000000001
+[11:51:44] [Server thread/INFO]: Steve[/192.0.2.10:34264] logged in with entity id 407 at (-70.05348936958033, 76.9375, -34.58027313272259)
+[11:51:44] [Server thread/INFO]: System chat: Steve joined the game
+[11:51:53] [Server thread/WARN]: Can't keep up! Is the server overloaded? Running 2056ms or 41 ticks behind
+[11:51:58] [Server thread/INFO]: Player Steve standing on air - force-sending blocks below
+[11:52:14] [Server thread/WARN]: Can't keep up! Is the server overloaded? Running 5377ms or 107 ticks behind
+[11:52:22] [Server thread/INFO]: <Steve> hello i am here
+[11:52:30] [Server thread/INFO]: <Steve> what is that
+[11:52:58] [Server thread/INFO]: Player Steve standing on air - force-sending blocks below
+[11:53:09] [Server thread/INFO]: Player Steve standing on air - force-sending blocks below
+[11:53:38] [Server thread/INFO]: Player Steve standing on air - force-sending blocks below
+[11:54:03] [Server thread/INFO]: Player Steve standing on air - force-sending blocks below
+[11:54:05] [Server thread/INFO]: System chat: Steve fell from a high place
+[11:54:40] [Server thread/INFO]: Steve lost connection: Disconnected
+[11:54:40] [Server thread/INFO]: System chat: Steve left the game
+[11:55:40] [Server thread/INFO]: Server empty for 60 seconds, pausing

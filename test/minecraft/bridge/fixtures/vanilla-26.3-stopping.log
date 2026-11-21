@@ -1,0 +1,24 @@
+[00:05:40] [Server thread/WARN]: Can't keep up! Is the server overloaded? Running 2065ms or 41 ticks behind
+[00:06:01] [Server thread/WARN]: Can't keep up! Is the server overloaded? Running 6436ms or 128 ticks behind
+[00:15:03] [Server thread/INFO]: Player Alex standing on air - force-sending blocks below
+[00:15:18] [Server thread/INFO]: Player Alex standing on air - force-sending blocks below
+[00:15:41] [Server thread/INFO]: Player Alex standing on air - force-sending blocks below
+[00:46:51] [Server thread/INFO]: Player Alex standing on air - force-sending blocks below
+[00:46:59] [Server thread/WARN]: Can't keep up! Is the server overloaded? Running 2032ms or 40 ticks behind
+[00:47:07] [Server thread/INFO]: Player Alex standing on air - force-sending blocks below
+[00:47:20] [Server thread/WARN]: Can't keep up! Is the server overloaded? Running 6054ms or 121 ticks behind
+[00:47:47] [Server thread/INFO]: Player Alex standing on air - force-sending blocks below
+[01:28:02] [Server thread/INFO]: Player Alex standing on air - force-sending blocks below
+[01:28:47] [Server thread/INFO]: Alex lost connection: Disconnected
+[01:28:47] [Server thread/INFO]: System chat: Alex left the game
+[01:29:47] [Server thread/INFO]: Server empty for 60 seconds, pausing
+[11:45:30] [RCON Listener #1/INFO]: Thread RCON Client /0:0:0:0:0:0:0:1 started
+[11:45:31] [Server thread/INFO]: System chat: [Rcon: Stopping the server]
+[11:45:31] [RCON Client /0:0:0:0:0:0:0:1 #2/INFO]: Thread RCON Client /0:0:0:0:0:0:0:1 shutting down
+[11:45:31] [Server thread/INFO]: Stopping server
+[11:45:31] [Server thread/INFO]: Saving players
+[11:45:31] [Server thread/INFO]: Saving worlds
+[11:45:31] [Server thread/INFO]: Saving chunks for level 'ServerLevel[world]'/minecraft:overworld
+[11:45:31] [Server thread/INFO]: Saving chunks for level 'ServerLevel[world]'/minecraft:the_nether
+[11:45:31] [Server thread/INFO]: Saving chunks for level 'ServerLevel[world]'/minecraft:the_end
+[11:45:31] [Server thread/INFO]: Thread RCON Listener stopped
