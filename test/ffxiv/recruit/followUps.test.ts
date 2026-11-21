@@ -5,6 +5,9 @@ import { recruitFollowUpCheck } from '../../../src/ffxiv/recruit/followUps.ts';
 import {
 	addRecruit,
 	getOpenRecruitByName,
+	getOpenRecruits,
+	MAX_OPEN_RECRUITS_PER_GUILD,
+	MAX_RECRUIT_NOTE_LENGTH,
 	getRecruitSettings,
 	setRecruitSettings,
 	updateRecruit,
@@ -181,22 +184,68 @@ describe('recruit follow-up check', () => {
 		expect(getOpenRecruitByName('g1', 'Alex Le')?.status).toBe('pending');
 	});
 
-	it('stops the batch once shutdown aborts it', async () => {
+	it('stops the batch between servers once shutdown aborts it', async () => {
 		setRecruitSettings('g1', { channelId: 'c1' });
+		setRecruitSettings('g2', { channelId: 'c2' });
 		addDue('First');
-		addDue('Second');
-		const channel = createMockChannel();
+		addDue('Second', { guildId: 'g2' });
+		const first = createMockChannel();
+		const second = createMockChannel();
 		let finishSend: () => void = () => {};
-		channel.send.mockImplementationOnce(() => new Promise<void>((resolve) => (finishSend = resolve)));
+		first.send.mockImplementationOnce(() => new Promise<void>((resolve) => (finishSend = resolve)));
 
-		startScheduler([recruitFollowUpCheck(createMockClient({ channels: { c1: channel } }))]);
+		startScheduler([recruitFollowUpCheck(createMockClient({ channels: { c1: first, c2: second } }))]);
 		await vi.advanceTimersByTimeAsync(POLL_MS);
 		const stopped = stopScheduler();
 		finishSend();
 		await stopped;
 
-		expect(channel.send).toHaveBeenCalledTimes(1);
 		expect(getOpenRecruitByName('g1', 'First')?.status).toBe('reminded');
-		expect(getOpenRecruitByName('g1', 'Second')?.status).toBe('pending');
+		expect(second.send).not.toHaveBeenCalled();
+		expect(getOpenRecruitByName('g2', 'Second')?.status).toBe('pending');
+	});
+
+	it("posts a server's due follow-ups together, pinging once", async () => {
+		setRecruitSettings('g1', { channelId: 'c1', pingRoleId: 'r1' });
+		addDue('First');
+		addDue('Second', { note: 'line one\n  line two' });
+		const channel = createMockChannel();
+
+		await poll(createMockClient({ channels: { c1: channel } }));
+
+		expect(channel.send).toHaveBeenCalledTimes(1);
+		const { content } = sent(channel.send);
+		expect(content?.match(/<@&r1>/g)).toHaveLength(1);
+		expect(content).toContain('**First** joined');
+		expect(content).toContain('**Second** joined');
+		// A line break in a note would end the quote.
+		expect(content).toContain('> line one line two');
+		expect(content).not.toContain('more in the next post');
+		expect(getOpenRecruitByName('g1', 'Second')?.status).toBe('reminded');
+	});
+
+	it('spreads a backlog over posts within 2000 characters, one per poll', async () => {
+		setRecruitSettings('g1', { channelId: 'c1', pingRoleId: 'r1' });
+		for (let i = 0; i < MAX_OPEN_RECRUITS_PER_GUILD; i++) {
+			addDue(`Member ${String(i).padStart(3, '0')} ${'x'.repeat(30)}`, { note: 'n'.repeat(MAX_RECRUIT_NOTE_LENGTH) });
+		}
+		const channel = createMockChannel();
+
+		startScheduler([recruitFollowUpCheck(createMockClient({ channels: { c1: channel } }))]);
+		await vi.advanceTimersByTimeAsync(POLL_MS);
+
+		expect(channel.send).toHaveBeenCalledTimes(1);
+		const first = sent(channel.send).content!;
+		expect(first.length).toBeLessThanOrEqual(2000);
+		const shown = first.match(/\*\*Member \d+/g)!.length;
+		expect(first).toContain(`…and ${MAX_OPEN_RECRUITS_PER_GUILD - shown} more in the next post.`);
+		expect(getOpenRecruits('g1').filter((r) => r.status === 'reminded')).toHaveLength(shown);
+
+		// Every entry posted exactly once, over as many polls as it takes.
+		await vi.advanceTimersByTimeAsync(POLL_MS * MAX_OPEN_RECRUITS_PER_GUILD);
+		const posts = channel.send.mock.calls.map(([options]) => (options as MessageCreateOptions).content!);
+		for (const post of posts) expect(post.length).toBeLessThanOrEqual(2000);
+		expect(posts.join('').match(/\*\*Member \d+/g)).toHaveLength(MAX_OPEN_RECRUITS_PER_GUILD);
+		expect(getOpenRecruits('g1').every((r) => r.status === 'reminded')).toBe(true);
 	});
 });
