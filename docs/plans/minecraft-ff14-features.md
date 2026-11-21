@@ -125,7 +125,7 @@ A git-ignored JSON file, path passed as `--config`. One helper process per Minec
 }
 ```
 
-Add `mcbridge*.json` to `.gitignore` in A5 (done, with `mcbridge.example.json` committed and kept valid by a test). A5 accepts only `serverName`, `logPath`, `format` (`vanilla`), `webhooks` and `ignorePatterns`, and refuses any other key, so a misspelt key or one for a feature not built yet (`crashReportsDir`, `avatars`) fails at startup rather than doing nothing. `serverName` is 1 to 80 characters without `clyde` or `discord`, as it is the fallback sender name. A log the helper can't read (other than a missing one) posts one alert.
+Add `mcbridge*.json` to `.gitignore` in A5 (done, with `mcbridge.example.json` committed and kept valid by a test). A5 accepts only `serverName`, `logPath`, `format` (`vanilla`), `webhooks` and `ignorePatterns`, and refuses any other key, so a misspelt key or one for a feature not built yet (`crashReportsDir`, `avatars`) fails at startup rather than doing nothing. `serverName` is 1 to 80 characters without `clyde` or `discord`, as it is the fallback sender name. A log the helper can't read (other than a missing one) posts an alert, at most one per 10 minutes; a log missing at startup is only a console warning, as a new server has none yet. A relative `logPath` is read from the config file's folder, and a relative `--config` from the folder the command was typed in (`npm run` itself runs in the repository). A config starting with a byte order mark (Windows PowerShell 5 writes one) is accepted. Shutdown handles `SIGINT`, `SIGTERM`, `SIGHUP` (closing the console window on Windows) and, on Windows, `SIGBREAK`; a second signal exits at once.
 
 ### Player avatars (confirmed by the owner 2026-11-21)
 

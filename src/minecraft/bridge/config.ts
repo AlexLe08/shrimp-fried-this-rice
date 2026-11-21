@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import { DEFAULT_IGNORE } from './classify.ts';
 
 export interface BridgeConfig {
@@ -102,11 +103,26 @@ export async function loadConfig(path: string): Promise<BridgeConfig> {
 	} catch (error) {
 		throw new ConfigError([`can't read ${path}: ${(error as Error).message}`]);
 	}
+	// Windows PowerShell 5 and some editors start a UTF-8 file with a byte order
+	// mark, which JSON.parse refuses.
+	if (text.startsWith('﻿')) text = text.slice(1);
 	let raw: unknown;
 	try {
 		raw = JSON.parse(text);
 	} catch (error) {
-		throw new ConfigError([`${path} isn't valid JSON: ${(error as Error).message}`]);
+		// Only where, not V8's message: it quotes the text around the mistake,
+		// which may be part of a webhook's token.
+		throw new ConfigError([`${path} isn't valid JSON${where(text, (error as Error).message)}`]);
 	}
-	return parseConfig(raw);
+	const config = parseConfig(raw);
+	// Relative to the config file, not to the working folder, which `npm run`
+	// sets to the repository whatever folder it was typed in.
+	return { ...config, logPath: resolve(dirname(path), config.logPath) };
+}
+
+function where(text: string, message: string): string {
+	const position = /position (\d+)/.exec(message);
+	if (!position) return '';
+	const before = text.slice(0, Number(position[1])).split('\n');
+	return ` (line ${before.length}, column ${before.at(-1)!.length + 1})`;
 }

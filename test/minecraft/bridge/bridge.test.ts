@@ -116,6 +116,53 @@ describe('createBridge', () => {
 		expect(posts).toEqual([]);
 	});
 
+	it('posts at most one read error alert per 10 minutes, logging every one', () => {
+		const { bridge, posts, log } = setup();
+		const eacces = Object.assign(new Error('EACCES'), { code: 'EACCES' });
+		bridge.onReadError(eacces);
+		vi.advanceTimersByTime(60_000);
+		bridge.onReadError(eacces);
+		expect(posts).toHaveLength(1);
+		expect(log).toHaveBeenCalledTimes(2);
+		vi.advanceTimersByTime(9 * 60_000);
+		bridge.onReadError(eacces);
+		expect(posts).toHaveLength(2);
+	});
+
+	it('reports repeats still inside their window in the final summary', () => {
+		const { bridge, posts } = setup();
+		bridge.onLines(['[12:00:00] [Server thread/ERROR]: Same thing broke']);
+		bridge.onLines(['[12:00:01] [Server thread/ERROR]: Same thing broke']);
+		bridge.flush();
+		bridge.postSummaries();
+		expect(posts).toHaveLength(1);
+		bridge.postSummaries({ final: true });
+		expect(posts).toHaveLength(2);
+		expect(posts[1]!.content).toContain('repeated 1 more time');
+	});
+
+	it('logs a failure while handling lines instead of throwing, and goes on', () => {
+		const log = vi.fn<(message: string) => void>();
+		const send = vi.fn().mockImplementationOnce(() => {
+			throw new Error('sender broke');
+		});
+		const bridge = createBridge({ config, sender: { send }, log });
+		expect(() =>
+			bridge.onLines(['[12:00:00] [Server thread/INFO]: <Steve> one', '[12:00:01] [Server thread/INFO]: <Steve> two']),
+		).not.toThrow();
+		bridge.flush();
+		expect(log).toHaveBeenCalledWith(expect.stringContaining('sender broke'));
+		expect(send).toHaveBeenCalledTimes(2);
+	});
+
+	it('escapes Markdown in the server name', () => {
+		const { bridge, posts } = setup({ config: { ...config, serverName: 'My_SMP_' } });
+		bridge.onLines(['[12:00:00] [Server thread/INFO]: Stopping server']);
+		bridge.flush();
+		expect(posts[0]!.content).toBe('🔴 **My\\_SMP\\_** is stopping');
+		expect(posts[0]!.username).toBe('My_SMP_');
+	});
+
 	it('posts a log read error as an alert', () => {
 		const { bridge, posts } = setup();
 		bridge.onReadError(Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' }));

@@ -1,6 +1,6 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_IGNORE } from '../../../src/minecraft/bridge/classify.ts';
 import { ConfigError, loadConfig, parseConfig } from '../../../src/minecraft/bridge/config.ts';
@@ -118,13 +118,41 @@ describe('loadConfig', () => {
 		expect(config.serverName).toBe('Survival');
 	});
 
-	it('says which file is missing or not JSON', async () => {
+	it('says which file is missing or not JSON, giving the place but none of the text', async () => {
 		const dir = await mkdtemp(join(tmpdir(), 'mcbridge-config-'));
 		try {
 			const path = join(dir, 'mcbridge.json');
 			await expect(loadConfig(path)).rejects.toThrow(`can't read ${path}`);
-			await writeFile(path, '{ "serverName": ');
-			await expect(loadConfig(path)).rejects.toThrow(`${path} isn't valid JSON`);
+			await writeFile(
+				path,
+				'{\n  "webhooks": { "chat": "https://discord.com/api/webhooks/1/secret-token" }\n  "x": 1\n}',
+			);
+			const error = (await loadConfig(path).catch((caught: unknown) => caught)) as ConfigError;
+			expect(error.problems).toEqual([`${path} isn't valid JSON (line 3, column 3)`]);
+			expect(error.message).not.toContain('secret');
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("accepts a file starting with a byte order mark, and reads logPath from the config file's folder", async () => {
+		const dir = await mkdtemp(join(tmpdir(), 'mcbridge-config-'));
+		try {
+			const path = join(dir, 'mcbridge.json');
+			await writeFile(path, `\uFEFF${JSON.stringify({ ...valid(), logPath: 'server/logs/latest.log' })}`);
+			const config = await loadConfig(path);
+			expect(config.logPath).toBe(join(dir, 'server/logs/latest.log'));
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	it('keeps an absolute logPath as it is', async () => {
+		const dir = await mkdtemp(join(tmpdir(), 'mcbridge-config-'));
+		try {
+			const path = join(dir, 'mcbridge.json');
+			await writeFile(path, JSON.stringify(valid()));
+			expect((await loadConfig(path)).logPath).toBe(resolve('/srv/logs/latest.log'));
 		} finally {
 			await rm(dir, { recursive: true, force: true });
 		}
