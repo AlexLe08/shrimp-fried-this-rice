@@ -1,4 +1,5 @@
 import { vi, type Mock } from 'vitest';
+import { Collection } from 'discord.js';
 
 // code only ever calls a handful of specific methods on the client; keep it simple
 interface MockClientOptions {
@@ -28,6 +29,21 @@ export function createMockChannel(options: { sendable?: boolean; textBased?: boo
 		messages: {
 			fetch: vi.fn(),
 		},
+	};
+}
+
+// A guild channel: permissionsFor answers `allows` for every permission
+// asked, whoever it is asked for.
+export function createMockGuildChannel(allows: (permission: bigint) => boolean = () => true) {
+	return Object.assign(createMockChannel(), { permissionsFor: vi.fn(() => ({ has: allows })) });
+}
+
+export function createMockGuild<C extends { id: string }>(options: { channels?: C[] } = {}) {
+	return {
+		id: 'g1',
+		name: 'Test Guild',
+		members: { me: {} },
+		channels: { cache: new Collection((options.channels ?? []).map((channel) => [channel.id, channel])) },
 	};
 }
 

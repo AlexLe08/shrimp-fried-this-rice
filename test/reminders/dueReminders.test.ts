@@ -13,7 +13,7 @@ import {
 	snoozeUser,
 } from '../../src/reminders/storage.ts';
 import { __resetForTests } from '../../src/core/database.ts';
-import { createMockClient, createMockChannel, createMockUser } from '../mocks.ts';
+import { createMockClient, createMockChannel, createMockGuildChannel, createMockUser } from '../mocks.ts';
 
 beforeEach(() => {
 	__resetForTests();
@@ -67,17 +67,14 @@ describe('due reminder checks — guild reminders', () => {
 			intervalMinutes: 5,
 			message: 'Drink water!',
 		});
-		const channel = createMockChannel();
-		const permissionsFor = vi.fn(() => ({
-			has: (permission: bigint) => permission !== PermissionFlagsBits.EmbedLinks,
-		}));
-		const client = createMockClient({ channels: { c1: Object.assign(channel, { permissionsFor }) } });
+		const channel = createMockGuildChannel((permission) => permission !== PermissionFlagsBits.EmbedLinks);
+		const client = createMockClient({ channels: { c1: channel } });
 
 		startScheduler(dueReminderChecks(client));
 		await vi.advanceTimersByTimeAsync(60_000);
 
 		// The bot's own permissions decide it, not anyone else's.
-		expect(permissionsFor).toHaveBeenCalledWith(client.user);
+		expect(channel.permissionsFor).toHaveBeenCalledWith(client.user);
 		expect(channel.send).toHaveBeenCalledWith('Drink water!');
 	});
 

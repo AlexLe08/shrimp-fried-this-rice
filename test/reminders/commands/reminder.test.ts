@@ -8,34 +8,22 @@ import {
 	MAX_REMINDERS_PER_GUILD,
 } from '../../../src/reminders/storage.ts';
 import { __resetForTests } from '../../../src/core/database.ts';
-import { createMockInteraction } from '../../mockInteraction.ts';
-import { createMockChannel } from '../../mocks.ts';
+import { createMockInteraction, replyContent } from '../../mockInteraction.ts';
+import { createMockChannel, createMockGuild, createMockGuildChannel } from '../../mocks.ts';
 
 beforeEach(() => {
 	__resetForTests();
 });
 
-function makePermissiveChannel() {
-	const channel = createMockChannel();
-	(channel as Record<string, unknown>)['permissionsFor'] = vi.fn(() => ({ has: () => true }));
-	return channel;
-}
-
-function makeRestrictedChannel() {
-	const channel = createMockChannel();
-	(channel as Record<string, unknown>)['permissionsFor'] = vi.fn(() => ({ has: () => false }));
-	return channel;
-}
-
-function makeGuild(membersMe: unknown = {}) {
-	return { id: 'g1', name: 'Test Guild', members: { me: membersMe } };
+function makeNoEmbedChannel() {
+	return createMockGuildChannel((permission) => permission !== PermissionFlagsBits.EmbedLinks);
 }
 
 async function createBaseline() {
-	const channel = makePermissiveChannel();
+	const channel = createMockGuildChannel();
 	const interaction = createMockInteraction({
 		inCachedGuild: true,
-		guild: makeGuild(),
+		guild: createMockGuild(),
 		options: {
 			subcommand: 'create',
 			strings: { label: 'water', message: 'original' },
@@ -48,10 +36,10 @@ async function createBaseline() {
 
 describe('/reminder create', () => {
 	it('creates a reminder and confirms, with no permission warning when permissions are fine', async () => {
-		const channel = makePermissiveChannel();
+		const channel = createMockGuildChannel();
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			options: {
 				subcommand: 'create',
 				strings: { label: 'water', message: 'Drink water!' },
@@ -69,12 +57,12 @@ describe('/reminder create', () => {
 	});
 
 	it('rejects creating a reminder once the guild has reached the maximum', async () => {
-		const channel = makePermissiveChannel();
+		const channel = createMockGuildChannel();
 
 		for (let i = 0; i < MAX_REMINDERS_PER_GUILD; i++) {
 			const interaction = createMockInteraction({
 				inCachedGuild: true,
-				guild: makeGuild(),
+				guild: createMockGuild(),
 				options: {
 					subcommand: 'create',
 					strings: { label: `reminder-${i}`, message: 'hi' },
@@ -87,7 +75,7 @@ describe('/reminder create', () => {
 
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			options: {
 				subcommand: 'create',
 				strings: { label: 'one-too-many', message: 'hi' },
@@ -104,10 +92,10 @@ describe('/reminder create', () => {
 	});
 
 	it('rejects a duplicate label', async () => {
-		const channel = makePermissiveChannel();
+		const channel = createMockGuildChannel();
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			options: {
 				subcommand: 'create',
 				strings: { label: 'water', message: 'hi' },
@@ -125,10 +113,10 @@ describe('/reminder create', () => {
 	});
 
 	it('warns but still saves when the bot lacks channel permissions', async () => {
-		const channel = makeRestrictedChannel();
+		const channel = createMockGuildChannel(() => false);
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			options: {
 				subcommand: 'create',
 				strings: { label: 'water', message: 'hi' },
@@ -146,13 +134,10 @@ describe('/reminder create', () => {
 	});
 
 	it('says a reminder goes out as plain text where the bot can send but not embed links', async () => {
-		const channel = createMockChannel();
-		(channel as Record<string, unknown>)['permissionsFor'] = vi.fn(() => ({
-			has: (permission: bigint) => permission !== PermissionFlagsBits.EmbedLinks,
-		}));
+		const channel = makeNoEmbedChannel();
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			options: {
 				subcommand: 'create',
 				strings: { label: 'water', message: 'hi' },
@@ -177,7 +162,7 @@ describe('/reminder list', () => {
 	it('shows the default master-enabled state for a guild that never set it', async () => {
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			options: { subcommand: 'list' },
 		});
 
@@ -192,7 +177,7 @@ describe('/reminder list', () => {
 	it('shows a helpful message when there are no reminders yet', async () => {
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			options: { subcommand: 'list' },
 		});
 
@@ -209,7 +194,7 @@ describe('/reminder edit', () => {
 		await createBaseline();
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			options: { subcommand: 'edit', strings: { label: 'water' } },
 		});
 
@@ -223,7 +208,7 @@ describe('/reminder edit', () => {
 	it('rejects editing a nonexistent label', async () => {
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			options: { subcommand: 'edit', strings: { label: 'nonexistent' }, integers: { interval: 30 } },
 		});
 
@@ -238,7 +223,7 @@ describe('/reminder edit', () => {
 		await createBaseline();
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			options: { subcommand: 'edit', strings: { label: 'water' }, integers: { interval: 15 } },
 		});
 
@@ -254,7 +239,7 @@ describe('/reminder toggle', () => {
 	it('rejects toggling a nonexistent label', async () => {
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			options: { subcommand: 'toggle', strings: { label: 'nonexistent' }, booleans: { enabled: false } },
 		});
 
@@ -269,7 +254,7 @@ describe('/reminder toggle', () => {
 		await createBaseline();
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			options: { subcommand: 'toggle', strings: { label: 'water' }, booleans: { enabled: false } },
 		});
 
@@ -286,7 +271,7 @@ describe('/reminder delete', () => {
 	it('rejects deleting a nonexistent label', async () => {
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			options: { subcommand: 'delete', strings: { label: 'nonexistent' } },
 		});
 
@@ -301,7 +286,7 @@ describe('/reminder delete', () => {
 		await createBaseline();
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			options: { subcommand: 'delete', strings: { label: 'water' } },
 		});
 
@@ -318,7 +303,7 @@ describe('/reminder master', () => {
 	it('updates the master toggle and confirms', async () => {
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			options: { subcommand: 'master', booleans: { enabled: false } },
 		});
 
@@ -335,7 +320,7 @@ describe('/reminder status', () => {
 	it('rejects when the current channel is not sendable', async () => {
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			channel: null,
 			options: { subcommand: 'status' },
 		});
@@ -351,7 +336,7 @@ describe('/reminder status', () => {
 		const postChannel = createMockChannel();
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			channel: postChannel,
 			options: { subcommand: 'status' },
 		});
@@ -374,7 +359,7 @@ describe('/reminder status', () => {
 		const newChannel = createMockChannel();
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			channel: newChannel,
 			client: {
 				commands: new Map() as never,
@@ -397,7 +382,7 @@ describe('/reminder status', () => {
 
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			channel: newChannel,
 			client: {
 				commands: new Map() as never,
@@ -419,11 +404,11 @@ describe('/reminder embed option', () => {
 	it('create saves plain text when embed is false, and says so', async () => {
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			options: {
 				subcommand: 'create',
 				strings: { label: 'water', message: 'hi' },
-				channels: { channel: makePermissiveChannel() },
+				channels: { channel: createMockGuildChannel() },
 				integers: { interval: 60 },
 				booleans: { embed: false },
 			},
@@ -447,7 +432,7 @@ describe('/reminder embed option', () => {
 		await createBaseline();
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			options: { subcommand: 'edit', strings: { label: 'water' }, booleans: { embed: false } },
 		});
 
@@ -463,12 +448,16 @@ describe('/reminder embed option', () => {
 		await createBaseline();
 		const edit = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			options: { subcommand: 'edit', strings: { label: 'water' }, booleans: { embed: false } },
 		});
 		await guildReminderCommand.execute(edit as never);
 
-		const list = createMockInteraction({ inCachedGuild: true, guild: makeGuild(), options: { subcommand: 'list' } });
+		const list = createMockInteraction({
+			inCachedGuild: true,
+			guild: createMockGuild(),
+			options: { subcommand: 'list' },
+		});
 		await guildReminderCommand.execute(list as never);
 
 		expect(list.reply).toHaveBeenCalledWith(
@@ -476,18 +465,10 @@ describe('/reminder embed option', () => {
 		);
 	});
 
-	function makeNoEmbedChannel() {
-		const channel = createMockChannel();
-		(channel as Record<string, unknown>)['permissionsFor'] = vi.fn(() => ({
-			has: (permission: bigint) => permission !== PermissionFlagsBits.EmbedLinks,
-		}));
-		return channel;
-	}
-
 	it("doesn't warn about Embed Links for a plain-text reminder", async () => {
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			options: {
 				subcommand: 'create',
 				strings: { label: 'water', message: 'hi' },
@@ -508,7 +489,7 @@ describe('/reminder embed option', () => {
 		const channel = makeNoEmbedChannel();
 		const create = createMockInteraction({
 			inCachedGuild: true,
-			guild: makeGuild(),
+			guild: createMockGuild(),
 			options: {
 				subcommand: 'create',
 				strings: { label: 'water', message: 'hi' },
@@ -518,11 +499,10 @@ describe('/reminder embed option', () => {
 			},
 		});
 		await guildReminderCommand.execute(create as never);
-		const savedChannelId = getGuildReminderByLabel('g1', 'water')!.channel_id;
 
 		const edit = createMockInteraction({
 			inCachedGuild: true,
-			guild: { ...makeGuild(), channels: { cache: new Map([[savedChannelId, channel]]) } },
+			guild: createMockGuild({ channels: [channel] }),
 			options: { subcommand: 'edit', strings: { label: 'water' }, booleans: { embed: true } },
 		});
 		await guildReminderCommand.execute(edit as never);
@@ -545,21 +525,13 @@ describe('/reminder custom emoji', () => {
 	}
 
 	function makeChannelWithoutExternalEmojis() {
-		const channel = createMockChannel();
-		(channel as Record<string, unknown>)['permissionsFor'] = vi.fn(() => ({
-			has: (permission: bigint) => permission !== PermissionFlagsBits.UseExternalEmojis,
-		}));
-		return channel;
-	}
-
-	function guildWithChannels(...channels: { id: string }[]) {
-		return { ...makeGuild(), channels: { cache: new Collection(channels.map((c) => [c.id, c])) } };
+		return createMockGuildChannel((permission) => permission !== PermissionFlagsBits.UseExternalEmojis);
 	}
 
 	async function createWith(message: string, channel: { id: string }) {
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: guildWithChannels(channel),
+			guild: createMockGuild({ channels: [channel] }),
 			client: emojiClient(),
 			options: {
 				subcommand: 'create',
@@ -573,7 +545,7 @@ describe('/reminder custom emoji', () => {
 	}
 
 	it("create warns, but saves, when an emoji is from a server the bot isn't in", async () => {
-		const interaction = await createWith('hi <:gone:999>', makePermissiveChannel());
+		const interaction = await createWith('hi <:gone:999>', createMockGuildChannel());
 
 		expect(getGuildReminderByLabel('g1', 'water')?.message).toBe('hi <:gone:999>');
 		expect(interaction.reply).toHaveBeenCalledWith(
@@ -585,7 +557,7 @@ describe('/reminder custom emoji', () => {
 		const channel = makeChannelWithoutExternalEmojis();
 		const interaction = await createWith('<:other:222> and <:shrimp:111>', channel);
 
-		const content = (interaction.reply.mock.calls[0]![0] as { content: string }).content;
+		const content = replyContent(interaction);
 		expect(content).toContain(
 			`from another server, **Other Guild**, and I don't have Use External Emojis in <#${channel.id}>`,
 		);
@@ -594,11 +566,11 @@ describe('/reminder custom emoji', () => {
 	});
 
 	it('edit warns about a new message’s emoji', async () => {
-		const channel = makePermissiveChannel();
+		const channel = createMockGuildChannel();
 		await createWith('original', channel);
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: guildWithChannels(channel),
+			guild: createMockGuild({ channels: [channel] }),
 			client: emojiClient(),
 			options: { subcommand: 'edit', strings: { label: 'water', message: 'now <:gone:999>' } },
 		});
@@ -611,11 +583,11 @@ describe('/reminder custom emoji', () => {
 	});
 
 	it('edit warns when a new channel lacks Use External Emojis for the saved message', async () => {
-		await createWith('<:other:222>', makePermissiveChannel());
+		await createWith('<:other:222>', createMockGuildChannel());
 		const moved = makeChannelWithoutExternalEmojis();
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: guildWithChannels(moved),
+			guild: createMockGuild({ channels: [moved] }),
 			client: emojiClient(),
 			options: { subcommand: 'edit', strings: { label: 'water' }, channels: { channel: moved } },
 		});
@@ -632,7 +604,7 @@ describe('/reminder custom emoji', () => {
 		await createWith('original', channel);
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: guildWithChannels(channel),
+			guild: createMockGuild({ channels: [channel] }),
 			client: emojiClient(),
 			options: { subcommand: 'edit', strings: { label: 'water', message: '<:other:222>' } },
 		});
@@ -648,24 +620,24 @@ describe('/reminder custom emoji', () => {
 		await createWith('original', makeChannelWithoutExternalEmojis());
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: guildWithChannels(),
+			guild: createMockGuild(),
 			client: emojiClient(),
 			options: { subcommand: 'edit', strings: { label: 'water', message: '<:other:222> <:gone:999>' } },
 		});
 
 		await guildReminderCommand.execute(interaction as never);
 
-		const content = (interaction.reply.mock.calls[0]![0] as { content: string }).content;
+		const content = replyContent(interaction);
 		expect(content).not.toContain('Use External Emojis');
 		expect(content).toContain('`:gone:`');
 	});
 
 	it("edit doesn't repeat the warning when neither the message nor the channel changes", async () => {
-		const channel = makePermissiveChannel();
+		const channel = createMockGuildChannel();
 		await createWith('<:gone:999>', channel);
 		const interaction = createMockInteraction({
 			inCachedGuild: true,
-			guild: guildWithChannels(channel),
+			guild: createMockGuild({ channels: [channel] }),
 			client: emojiClient(),
 			options: { subcommand: 'edit', strings: { label: 'water' }, integers: { interval: 15 } },
 		});
