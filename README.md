@@ -228,6 +228,7 @@ src/
       parseLine.ts        # log lines to entries, with stack trace lines attached to the entry they follow
       classify.ts         # an entry to a bridge event (start, stop, join, leave, chat, alert) or nothing
       alertGate.ts        # holds back routine alerts: lag that doesn't repeat, duplicates, more than a few a minute
+      tailer.ts           # polls the log file for new lines, following it when the server rotates or truncates it
 test/
   setup.ts                       # points core/database.ts at an in-memory DB before any test imports it
   tsconfig.json                  # type-checks the tests with src's options (npm run typecheck); leaves npm run build as it is
@@ -279,6 +280,7 @@ test/
       parseLine.test.ts             # line prefixes, stack traces, and the fixtures read as entries
       classify.test.ts              # the events found in the fixtures, and each rule (impersonation in chat, ignore list, levels)
       alertGate.test.ts             # lag repeats, de-duplication with counts, and the per-minute cap
+      tailer.test.ts                # against temp files: appends, partial lines, truncation, delete and recreate, rotation
 ```
 
 Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `scripts/` (worktrees, `check.sh` mirroring CI, cleanup after merges), `docs/decisions/`, and `docs/roadmap.md` (status and next steps).
