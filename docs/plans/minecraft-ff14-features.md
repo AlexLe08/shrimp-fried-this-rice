@@ -89,7 +89,8 @@ Code goes under `src/minecraft/bridge/`. The bot loads only the files in an area
 
 ```
 src/minecraft/bridge/
-  main.ts            # entrypoint: load config, wire tailer -> parser -> classifier -> sender
+  main.ts            # entrypoint: load config, wire tailer -> bridge -> sender, shutdown
+  bridge.ts          # wiring, tested: lines -> entries -> events, alerts through the gate, quiet flush, summaries
   config.ts          # load + validate config file / env
   tailer.ts          # polling file tailer
   parseLine.ts       # raw line -> { time, thread, level, logger?, message } | continuation
@@ -124,7 +125,7 @@ A git-ignored JSON file, path passed as `--config`. One helper process per Minec
 }
 ```
 
-Add `mcbridge*.json` to `.gitignore` in A5.
+Add `mcbridge*.json` to `.gitignore` in A5 (done, with `mcbridge.example.json` committed and kept valid by a test). A5 accepts only `serverName`, `logPath`, `format` (`vanilla`), `webhooks` and `ignorePatterns`, and refuses any other key, so a misspelt key or one for a feature not built yet (`crashReportsDir`, `avatars`) fails at startup rather than doing nothing. `serverName` is 1 to 80 characters without `clyde` or `discord`, as it is the fallback sender name. A log the helper can't read (other than a missing one) posts one alert.
 
 ### Player avatars (confirmed by the owner 2026-11-21)
 

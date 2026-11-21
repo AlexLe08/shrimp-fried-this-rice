@@ -111,14 +111,14 @@ npm run test:watch    # watch mode, re-runs on file changes
 npm run test:coverage # run once with a coverage report (terminal + HTML in coverage/)
 ```
 
-**Current coverage:** ~98% statements / ~99% lines across the codebase (excluding `index.ts`, `deploy-commands.ts`, and `src/core/types/**`, which are deliberately excluded — see below).
+**Current coverage:** ~98% statements / ~99% lines across the codebase (excluding `index.ts`, `deploy-commands.ts`, `src/minecraft/bridge/main.ts`, and `src/core/types/**`, which are deliberately excluded — see below).
 
 **Test isolation:** each test run uses an in-memory SQLite database (`DB_PATH=':memory:'`, set in `test/setup.ts`), completely separate from your real local `bot.db`. Tests never touch real dev or production data. Most test files also call a test-only `__resetForTests()` helper between tests, exported from `core/database.ts` specifically for this purpose (not used anywhere in application code).
 
 **Mocking approach:** rather than a mocking library, tests use Vitest's built-in `vi.fn()` to build small, purpose-built fake objects for discord.js interactions, channels, users, and clients (see `test/mocks.ts` and `test/mockInteraction.ts`). The scheduler (`core/scheduler.ts`) and the reminder checks it runs (`reminders/dueReminders.ts`) are tested through their real public interface, `startScheduler`, using Vitest's fake timers (`vi.advanceTimersByTimeAsync`) rather than exporting their private functions just to make them directly callable.
 
 **What's excluded from the coverage target, and why:**
-- `index.ts` and `deploy-commands.ts` — bootstrap/entrypoint scripts that scan the filesystem and immediately connect to Discord on load, with no exported functions to test in isolation. Restructuring them purely to hit a coverage number wasn't judged worthwhile; they're exercised in practice every time the bot runs. `test/deployCommands.test.ts` does run `deploy-commands.ts`, with a mocked `REST`, to check the exit code the deploy job relies on, but it stays out of the coverage figures. It also matches the command definitions it registers against a snapshot (`test/__snapshots__/`), so a change to a command's name, options, descriptions, choices or permissions fails the tests unless the snapshot is updated (`npx vitest run -u`) in the same PR.
+- `index.ts` and `deploy-commands.ts` — bootstrap/entrypoint scripts that scan the filesystem and immediately connect to Discord on load, with no exported functions to test in isolation. Restructuring them purely to hit a coverage number wasn't judged worthwhile; they're exercised in practice every time the bot runs. `src/minecraft/bridge/main.ts` is excluded for the same reason: it reads `--config` and wires the tested parts (`config.ts`, `bridge.ts`, the tailer and the sender) together. `test/deployCommands.test.ts` does run `deploy-commands.ts`, with a mocked `REST`, to check the exit code the deploy job relies on, but it stays out of the coverage figures. It also matches the command definitions it registers against a snapshot (`test/__snapshots__/`), so a change to a command's name, options, descriptions, choices or permissions fails the tests unless the snapshot is updated (`npx vitest run -u`) in the same PR.
 - `src/core/types/**` — interfaces and module augmentation only, no runtime logic to execute.
 
 **Known, accepted gaps within the covered files:** a handful of narrow branches remain untested — e.g. a couple of individual reply-wording branches. These were judged not worth chasing further once the suite comfortably exceeded its coverage goal; none represent untested core logic.
@@ -231,6 +231,9 @@ src/
       tailer.ts           # polls the log file for new lines, following it when the server rotates or truncates it
       messages.ts         # an event, alert or summary as Discord message text, within 2000 characters
       sender.ts           # posts through the webhooks: batching, rate limits, retries, no mentions, never crashes the helper
+      config.ts           # reads and checks mcbridge.json, reporting every problem at once
+      bridge.ts           # wiring: lines to entries to events, alerts through the gate, posts to the right webhook
+      main.ts             # the entrypoint (npm run mcbridge): --config, the tailer and sender, shutdown on SIGINT/SIGTERM
 test/
   setup.ts                       # points core/database.ts at an in-memory DB before any test imports it
   tsconfig.json                  # type-checks the tests with src's options (npm run typecheck); leaves npm run build as it is
@@ -285,6 +288,8 @@ test/
       tailer.test.ts                # against temp files: appends, partial lines, truncation, delete and recreate, rotation
       messages.test.ts              # each event's text, alerts' code blocks cut to fit, summaries
       sender.test.ts                # with a stubbed fetch and fake timers: batching, 429s, the username fallback, retries, overflow
+      config.test.ts                # every config problem reported, unknown keys refused, the committed example accepted
+      bridge.test.ts                # a real log's posts, stack traces flushed when quiet, summaries, the backlog scan, read errors
 ```
 
 Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `scripts/` (worktrees, `check.sh` mirroring CI, cleanup after merges), `docs/decisions/`, and `docs/roadmap.md` (status and next steps).
@@ -303,6 +308,7 @@ Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `sc
 | `npm run test:watch` | Runs the test suite in watch mode |
 | `npm run test:coverage` | Runs the test suite once with a coverage report |
 | `npm run deploycommands` | Registers slash commands globally with Discord's API |
+| `npm run mcbridge -- --config <file>` | Runs the Minecraft bridge helper on the Minecraft host (not the bot; see `mcbridge.example.json`) |
 | `npm run zip` | Bundles the project (excluding `node_modules`, `dist`, `.env`, `bot.db`, etc.) into a shareable zip |
 
 ## License

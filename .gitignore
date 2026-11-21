@@ -4,6 +4,10 @@ dist/
 coverage/
 *.db*
 *.zip
+
+# mcbridge configs hold webhook URLs, which let anyone post in the channel
+mcbridge*.json
+!mcbridge.example.json
 .DS_Store
 
 # Claude Code personal files
