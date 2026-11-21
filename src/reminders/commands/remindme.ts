@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, ChatInputCommandInteraction, MessageFlags } from 'discord.js';
+import { SlashCommandBuilder, ChatInputCommandInteraction } from 'discord.js';
 import {
 	getUserSettings,
 	upsertUserSettings,
@@ -14,11 +14,11 @@ import {
 	AFTER_SNOOZE_WAIT,
 	snoozeUntil,
 	isSnoozed,
-	discordTime,
 	describeSnooze,
 } from '../snooze.ts';
 import { EMBED_OPTION_DESCRIPTION } from '../reminderMessage.ts';
 import { unusableEmojiWarning } from '../../core/customEmoji.ts';
+import { discordTime, replyEphemeral } from '../../core/discord.ts';
 
 const DEFAULT_MESSAGE = 'Time for a quick break!';
 const DEFAULT_INTERVAL = 60;
@@ -58,10 +58,7 @@ export default {
 		const resetOption = interaction.options.getBoolean('reset');
 		if (resetOption) {
 			deleteUserSettings(interaction.user.id);
-			await interaction.reply({
-				content: 'Your DM reminder settings have been deleted.',
-				flags: MessageFlags.Ephemeral,
-			});
+			await replyEphemeral(interaction, 'Your DM reminder settings have been deleted.');
 			return;
 		}
 
@@ -76,10 +73,7 @@ export default {
 		const now = Date.now();
 
 		if (afterSnoozeOption !== null && (snoozeOption === null || snoozeOption === CANCEL_SNOOZE)) {
-			await interaction.reply({
-				content: '`after_snooze` only applies together with a `snooze` duration.',
-				flags: MessageFlags.Ephemeral,
-			});
+			await replyEphemeral(interaction, '`after_snooze` only applies together with a `snooze` duration.');
 			return;
 		}
 
@@ -88,31 +82,29 @@ export default {
 
 		if (!changesSettings && snoozeOption === null) {
 			if (!existing) {
-				await interaction.reply({
-					content:
-						"You haven't set up DM reminders yet. Provide at least one option (`enabled`, `interval`, `message`, or `embed`) to get started.",
-					flags: MessageFlags.Ephemeral,
-				});
+				await replyEphemeral(
+					interaction,
+					"You haven't set up DM reminders yet. Provide at least one option (`enabled`, `interval`, `message`, or `embed`) to get started.",
+				);
 				return;
 			}
 
 			const snoozedLine = isSnoozed(existing.snoozed_until, now)
 				? `\n- Snoozed until ${discordTime(existing.snoozed_until, 'f')}`
 				: '';
-			await interaction.reply({
-				content: `Your current DM reminder settings:\n- Enabled: ${existing.dm_enabled ? 'yes' : 'no'}\n- Interval: every ${existing.interval_minutes} minutes\n- Format: ${existing.embed ? 'embed' : 'plain text'}\n- Message: ${existing.message}${snoozedLine}`,
-				flags: MessageFlags.Ephemeral,
-			});
+			await replyEphemeral(
+				interaction,
+				`Your current DM reminder settings:\n- Enabled: ${existing.dm_enabled ? 'yes' : 'no'}\n- Interval: every ${existing.interval_minutes} minutes\n- Format: ${existing.embed ? 'embed' : 'plain text'}\n- Message: ${existing.message}${snoozedLine}`,
+			);
 			return;
 		}
 
 		// Snoozing needs a row to hold it; there's nothing to snooze before setup.
 		if (!changesSettings && !existing) {
-			await interaction.reply({
-				content:
-					"You haven't set up DM reminders yet, so there's nothing to snooze. Use `enabled`, `interval`, `message`, or `embed` to set them up first.",
-				flags: MessageFlags.Ephemeral,
-			});
+			await replyEphemeral(
+				interaction,
+				"You haven't set up DM reminders yet, so there's nothing to snooze. Use `enabled`, `interval`, `message`, or `embed` to set them up first.",
+			);
 			return;
 		}
 
@@ -157,9 +149,6 @@ export default {
 			}
 		}
 
-		await interaction.reply({
-			content: replyLines.join('\n\n'),
-			flags: MessageFlags.Ephemeral,
-		});
+		await replyEphemeral(interaction, replyLines.join('\n\n'));
 	},
 };

@@ -1,6 +1,7 @@
 import {
 	DiscordAPIError,
 	PermissionFlagsBits,
+	RESTJSONErrorCodes,
 	type MessageCreateOptions,
 	type PermissionResolvable,
 	type UserResolvable,
@@ -16,21 +17,10 @@ import {
 } from './storage.ts';
 import { refreshGuildStatusMessage, type StatusMessageChannel, type StatusMessageClient } from './statusEmbed.ts';
 import { buildReminderMessage } from './reminderMessage.ts';
+import { isRefusedByDiscord } from '../core/discord.ts';
 
 /** How often the scheduler checks for due reminders. Should be <= the smallest allowed interval (5 min). */
 const POLL_INTERVAL_MS = 60_000;
-
-// Discord error code for a channel that no longer exists.
-const UNKNOWN_CHANNEL = 10003;
-
-// Discord answered and refused (missing access or permissions, DMs closed):
-// the same send would fail again on the next poll. discord.js raises
-// DiscordAPIError only for 4xx answers and queues rate limits itself; 5xx
-// and timeouts arrive as other errors, after its own retries, and are
-// worth trying again on the next poll.
-function isRefusedByDiscord(error: unknown): error is DiscordAPIError {
-	return error instanceof DiscordAPIError && error.status >= 400 && error.status < 500 && error.status !== 429;
-}
 
 // The part of the client the scheduler uses, so tests can pass a plain fake
 // (see StatusMessageClient).
@@ -135,7 +125,7 @@ async function checkGuildReminders(client: SchedulerClient): Promise<void> {
 		} catch (error) {
 			console.error(`Failed to send guild reminder "${reminder.reminder_label}":`, error);
 
-			if (error instanceof DiscordAPIError && error.code === UNKNOWN_CHANNEL) {
+			if (error instanceof DiscordAPIError && error.code === RESTJSONErrorCodes.UnknownChannel) {
 				await disableGuildReminder(client, reminder, `channel ${reminder.channel_id} was deleted`);
 			} else if (isRefusedByDiscord(error)) {
 				// Missing permissions can be granted later (/reminder create warns

@@ -32,13 +32,13 @@ import {
 	AFTER_SNOOZE_WAIT,
 	snoozeUntil,
 	isSnoozed,
-	discordTime,
 	describeSnooze,
 } from '../snooze.ts';
 import { buildReminderStatusEmbed } from '../statusEmbed.ts';
 import { refreshGuildStatusMessage } from '../statusEmbed.ts';
 import { EMBED_OPTION_DESCRIPTION } from '../reminderMessage.ts';
 import { unusableEmojiWarning } from '../../core/customEmoji.ts';
+import { DISCORD_MESSAGE_LIMIT, discordTime, fitLines, fitTo, replyEphemeral } from '../../core/discord.ts';
 import type { TextChannel } from 'discord.js';
 
 function checkChannelPermissions(
@@ -95,17 +95,16 @@ function joinWarnings(...warnings: (string | null)[]): string {
 	return present.length > 0 ? `\n\n${present.join('\n')}` : '';
 }
 
-const MESSAGE_LIMIT = 2000;
-
 // Discord refuses a reply over 2000 characters, and 20 reminders with long
 // labels (and snoozes) can pass it; the ones that don't fit are counted
 // instead, and /reminder status (an embed, 4096) shows them all.
 function fitList(header: string, lines: string[]): string {
-	let content = header + lines.join('\n');
-	for (let shown = lines.length - 1; content.length > MESSAGE_LIMIT && shown >= 0; shown--) {
-		content = `${header}${lines.slice(0, shown).join('\n')}\n…and ${lines.length - shown} more; \`/reminder status\` lists them all.`;
-	}
-	return content;
+	return (
+		header +
+		fitLines(lines, DISCORD_MESSAGE_LIMIT - header.length, {
+			more: (leftOut) => `\n…and ${leftOut} more; \`/reminder status\` lists them all.`,
+		})
+	);
 }
 
 // Discord shows at most 25 choices, each name at most 100 characters.
@@ -140,19 +139,6 @@ function labelChoices(
 			if (channel) name += ` · #${fitTo(channel, MAX_CHOICE_NAME - name.length - ' · #'.length)}`;
 			return { name: fitTo(name, MAX_CHOICE_NAME), value: r.reminder_label };
 		});
-}
-
-// Cuts whole characters, never half of a surrogate pair (an emoji in a
-// channel name): a lone surrogate is invalid text, and Discord could refuse
-// the whole answer. Length is in UTF-16 units, as discord.js checks it.
-function fitTo(text: string, max: number): string {
-	if (text.length <= max) return text;
-	let cut = '';
-	for (const char of text) {
-		if (cut.length + char.length > max - 1) break;
-		cut += char;
-	}
-	return `${cut}…`;
 }
 
 // Manage Server only: reminders post publicly in the server's channels.
@@ -300,10 +286,7 @@ export default {
 	},
 	async execute(interaction: ChatInputCommandInteraction) {
 		if (!interaction.inCachedGuild()) {
-			await interaction.reply({
-				content: 'This command can only be used in a server.',
-				flags: MessageFlags.Ephemeral,
-			});
+			await replyEphemeral(interaction, 'This command can only be used in a server.');
 			return;
 		}
 
@@ -313,10 +296,10 @@ export default {
 		if (subcommand === 'create') {
 			const label = interaction.options.getString('label', true).toLowerCase();
 			if (getGuildReminderCount(guildId) >= MAX_REMINDERS_PER_GUILD) {
-				await interaction.reply({
-					content: `This server has reached the maximum of ${MAX_REMINDERS_PER_GUILD} reminders. Delete one with \`/reminder delete\` before creating another.`,
-					flags: MessageFlags.Ephemeral,
-				});
+				await replyEphemeral(
+					interaction,
+					`This server has reached the maximum of ${MAX_REMINDERS_PER_GUILD} reminders. Delete one with \`/reminder delete\` before creating another.`,
+				);
 				return;
 			}
 
@@ -326,10 +309,7 @@ export default {
 			const embed = interaction.options.getBoolean('embed') ?? true;
 
 			if (getGuildReminderByLabel(guildId, label)) {
-				await interaction.reply({
-					content: `A reminder with the label \`${label}\` already exists in this server.`,
-					flags: MessageFlags.Ephemeral,
-				});
+				await replyEphemeral(interaction, `A reminder with the label \`${label}\` already exists in this server.`);
 				return;
 			}
 
@@ -347,10 +327,10 @@ export default {
 				emojiWarning(interaction, channel.id, channel as TextChannel, message),
 			);
 
-			await interaction.reply({
-				content: `Created reminder \`${label}\`: every ${interval} minutes in ${channel}, as ${embed ? 'an embed' : 'plain text'}.${warnings}`,
-				flags: MessageFlags.Ephemeral,
-			});
+			await replyEphemeral(
+				interaction,
+				`Created reminder \`${label}\`: every ${interval} minutes in ${channel}, as ${embed ? 'an embed' : 'plain text'}.${warnings}`,
+			);
 			await refreshGuildStatusMessage(interaction.client, guildId);
 			return;
 		}
@@ -363,18 +343,15 @@ export default {
 			const embed = interaction.options.getBoolean('embed');
 
 			if (!getGuildReminderByLabel(guildId, label)) {
-				await interaction.reply({
-					content: `No reminder found with the label \`${label}\`.`,
-					flags: MessageFlags.Ephemeral,
-				});
+				await replyEphemeral(interaction, `No reminder found with the label \`${label}\`.`);
 				return;
 			}
 
 			if (!channel && interval === null && message === null && embed === null) {
-				await interaction.reply({
-					content: 'Provide at least one field to change: `channel`, `interval`, `message`, or `embed`.',
-					flags: MessageFlags.Ephemeral,
-				});
+				await replyEphemeral(
+					interaction,
+					'Provide at least one field to change: `channel`, `interval`, `message`, or `embed`.',
+				);
 				return;
 			}
 
@@ -403,10 +380,7 @@ export default {
 						)
 					: null;
 
-			await interaction.reply({
-				content: `Reminder \`${label}\` updated.${joinWarnings(permissionWarning, emojiCheck)}`,
-				flags: MessageFlags.Ephemeral,
-			});
+			await replyEphemeral(interaction, `Reminder \`${label}\` updated.${joinWarnings(permissionWarning, emojiCheck)}`);
 			await refreshGuildStatusMessage(interaction.client, guildId);
 			return;
 		}
@@ -416,19 +390,13 @@ export default {
 			const enabled = interaction.options.getBoolean('enabled', true);
 
 			if (!getGuildReminderByLabel(guildId, label)) {
-				await interaction.reply({
-					content: `No reminder found with the label \`${label}\`.`,
-					flags: MessageFlags.Ephemeral,
-				});
+				await replyEphemeral(interaction, `No reminder found with the label \`${label}\`.`);
 				return;
 			}
 
 			setGuildReminderEnabled(guildId, label, enabled);
 
-			await interaction.reply({
-				content: `Reminder \`${label}\` is now ${enabled ? 'enabled' : 'disabled'}.`,
-				flags: MessageFlags.Ephemeral,
-			});
+			await replyEphemeral(interaction, `Reminder \`${label}\` is now ${enabled ? 'enabled' : 'disabled'}.`);
 			await refreshGuildStatusMessage(interaction.client, guildId);
 			return;
 		}
@@ -440,10 +408,7 @@ export default {
 
 			const reminder = getGuildReminderByLabel(guildId, label);
 			if (!reminder) {
-				await interaction.reply({
-					content: `No reminder found with the label \`${label}\`.`,
-					flags: MessageFlags.Ephemeral,
-				});
+				await replyEphemeral(interaction, `No reminder found with the label \`${label}\`.`);
 				return;
 			}
 
@@ -456,10 +421,7 @@ export default {
 			const disabledNote = reminder.enabled
 				? ''
 				: '\n\nIt is also disabled, so it stays off after the snooze until `/reminder toggle` turns it on.';
-			await interaction.reply({
-				content: `Reminder \`${label}\`: ${describeSnooze(until, skipMissed)}${disabledNote}`,
-				flags: MessageFlags.Ephemeral,
-			});
+			await replyEphemeral(interaction, `Reminder \`${label}\`: ${describeSnooze(until, skipMissed)}${disabledNote}`);
 			await refreshGuildStatusMessage(interaction.client, guildId);
 			return;
 		}
@@ -469,28 +431,19 @@ export default {
 
 			const reminder = getGuildReminderByLabel(guildId, label);
 			if (!reminder) {
-				await interaction.reply({
-					content: `No reminder found with the label \`${label}\`.`,
-					flags: MessageFlags.Ephemeral,
-				});
+				await replyEphemeral(interaction, `No reminder found with the label \`${label}\`.`);
 				return;
 			}
 
 			const now = Date.now();
 			if (!isSnoozed(reminder.snoozed_until, now)) {
-				await interaction.reply({
-					content: `Reminder \`${label}\` isn't snoozed.`,
-					flags: MessageFlags.Ephemeral,
-				});
+				await replyEphemeral(interaction, `Reminder \`${label}\` isn't snoozed.`);
 				return;
 			}
 
 			unsnoozeGuildReminder(guildId, label, now);
 
-			await interaction.reply({
-				content: `Reminder \`${label}\` is no longer snoozed.`,
-				flags: MessageFlags.Ephemeral,
-			});
+			await replyEphemeral(interaction, `Reminder \`${label}\` is no longer snoozed.`);
 			await refreshGuildStatusMessage(interaction.client, guildId);
 			return;
 		}
@@ -499,19 +452,13 @@ export default {
 			const label = interaction.options.getString('label', true).toLowerCase();
 
 			if (!getGuildReminderByLabel(guildId, label)) {
-				await interaction.reply({
-					content: `No reminder found with the label \`${label}\`.`,
-					flags: MessageFlags.Ephemeral,
-				});
+				await replyEphemeral(interaction, `No reminder found with the label \`${label}\`.`);
 				return;
 			}
 
 			deleteGuildReminder(guildId, label);
 
-			await interaction.reply({
-				content: `Deleted reminder \`${label}\`.`,
-				flags: MessageFlags.Ephemeral,
-			});
+			await replyEphemeral(interaction, `Deleted reminder \`${label}\`.`);
 			await refreshGuildStatusMessage(interaction.client, guildId);
 
 			return;
@@ -521,10 +468,7 @@ export default {
 			const enabled = interaction.options.getBoolean('enabled', true);
 			setGuildMasterEnabled(guildId, enabled);
 
-			await interaction.reply({
-				content: `All reminders for this server are now ${enabled ? 'enabled' : 'disabled'}.`,
-				flags: MessageFlags.Ephemeral,
-			});
+			await replyEphemeral(interaction, `All reminders for this server are now ${enabled ? 'enabled' : 'disabled'}.`);
 			await refreshGuildStatusMessage(interaction.client, guildId);
 
 			return;
@@ -536,10 +480,10 @@ export default {
 			const reminders = getGuildReminders(guildId);
 
 			if (reminders.length === 0) {
-				await interaction.reply({
-					content: `**Master toggle:** ${masterEnabled ? 'enabled' : 'disabled'}\n\nThis server has no reminders configured yet. Use \`/reminder create\` to add one.`,
-					flags: MessageFlags.Ephemeral,
-				});
+				await replyEphemeral(
+					interaction,
+					`**Master toggle:** ${masterEnabled ? 'enabled' : 'disabled'}\n\nThis server has no reminders configured yet. Use \`/reminder create\` to add one.`,
+				);
 				return;
 			}
 
@@ -550,22 +494,19 @@ export default {
 				return `• \`${r.reminder_label}\` — every ${r.interval_minutes}m in <#${r.channel_id}> — ${r.enabled ? 'enabled' : 'disabled'}${plain}${snoozed}`;
 			});
 
-			await interaction.reply({
-				content: fitList(
+			await replyEphemeral(
+				interaction,
+				fitList(
 					`**Master toggle:** ${masterEnabled ? 'enabled' : 'disabled'}\n\n**Reminders for this server:**\n`,
 					lines,
 				),
-				flags: MessageFlags.Ephemeral,
-			});
+			);
 			return;
 		}
 
 		if (subcommand === 'status') {
 			if (!interaction.channel || !interaction.channel.isSendable()) {
-				await interaction.reply({
-					content: 'This command needs to be used in a text channel.',
-					flags: MessageFlags.Ephemeral,
-				});
+				await replyEphemeral(interaction, 'This command needs to be used in a text channel.');
 				return;
 			}
 

@@ -182,6 +182,7 @@ src/
     shutdown.ts           # graceful SIGTERM/SIGINT handling — stops the scheduler, destroys the client, closes the database
     eventListener.ts      # wraps each event handler so a rejection is logged, not an unhandled crash
     customEmoji.ts        # finds custom emoji in a reminder's text that the bot can't use where it sends
+    discord.ts            # shared Discord helpers: ephemeral replies, timestamps, fitting text under Discord's limits, refused requests
     types/
       command.ts          # shared Command interface
       types.d.ts          # module augmentation (adds `commands`/`cooldowns` to discord.js's Client)
@@ -212,6 +213,7 @@ test/
     shutdown.test.ts                # gracefulShutdown orchestration tests (mocked scheduler + database)
     eventListener.test.ts           # rejected and throwing handlers are logged
     customEmoji.test.ts             # which custom emoji are warned about, per server, channel permission and DM
+    discord.test.ts                 # the shared Discord helpers in core/discord.ts
     events/
       ready.test.ts
       interactionCreate.test.ts     # includes a direct regression test for the production crash incident

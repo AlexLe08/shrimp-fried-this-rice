@@ -1,5 +1,6 @@
 import { Collection, Events, MessageFlags, type Interaction } from 'discord.js';
 import type { Command } from '../types/command.ts';
+import { discordTime, replyEphemeral } from '../discord.ts';
 
 export default {
 	name: Events.InteractionCreate,
@@ -33,11 +34,10 @@ export default {
 		if (userTimestamp !== undefined) {
 			const expirationTime = userTimestamp + cooldownAmount;
 			if (now < expirationTime) {
-				const expiredTimestamp = Math.round(expirationTime / 1_000);
-				await interaction.reply({
-					content: `Please wait, you are on a cooldown for \`${command.data.name}\`. You can use it again <t:${expiredTimestamp}:R>.`,
-					flags: MessageFlags.Ephemeral,
-				});
+				await replyEphemeral(
+					interaction,
+					`Please wait, you are on a cooldown for \`${command.data.name}\`. You can use it again ${discordTime(expirationTime, 'R')}.`,
+				);
 				return;
 			}
 		}
@@ -59,10 +59,7 @@ export default {
 						flags: MessageFlags.Ephemeral,
 					});
 				} else {
-					await interaction.reply({
-						content: 'There was an error while executing this command!',
-						flags: MessageFlags.Ephemeral,
-					});
+					await replyEphemeral(interaction, 'There was an error while executing this command!');
 				}
 			} catch (followUpError) {
 				console.error('Failed to notify the user of the earlier error:', followUpError);

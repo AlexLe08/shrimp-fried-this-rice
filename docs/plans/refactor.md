@@ -83,7 +83,7 @@ Empty folders aren't tracked by git, so `ffxiv/` and `minecraft/` are created by
 - As built: the file stays in the project root but is renamed `bot.db`, at the owner's request (2026-11-20), since it now holds every area's tables. The rename resets production, as above (no folder, so no code to create one). The path is resolved by `databasePath()` in `core/database.ts`, pinned by `test/core/database/databasePath.test.ts` (checked to fail with the path copied unchanged). The tests moved to `test/core/database/` (closing, migrations, the path) and `test/reminders/storage/`; their only edits are imports, `__resetForTests` and `closeDatabase` now coming from `core/database.ts`. Decision 0004 lets an area with several features (`ffxiv/`) have a storage module per feature (`src/ffxiv/recruit/storage.ts`), which the feature plan now names. The `reviewer` agent's checklist and `CASESTUDY.md` follow the new rule.
 - Deploys: no runtime change in behaviour; migrations and tables are untouched. If the path stays, ask the owner to check after the deploy that the bot still has its reminders (`/reminder list` on a server that had some), i.e. that it opened the existing database. If it moves, say that production's reminders and settings start empty, and ask the owner to delete the old `reminders.db` files from the VM when convenient.
 
-### 4. Shared Discord helpers in `core/discord.ts`
+### ~~4. Shared Discord helpers in `core/discord.ts`~~ (done, #34)
 
 - Branch `refactor/shared-discord-helpers`; PR `refactor: share reply, time and message-length helpers`.
 - `replyEphemeral(interaction, content)` for every ephemeral `reply` (about 28: 20 in `/reminder`, 6 in `/remindme`, 2 in `interactionCreate.ts`).
@@ -92,6 +92,7 @@ Empty folders aren't tracked by git, so `ffxiv/` and `minecraft/` are created by
 - Discord error codes from discord.js's `RESTJSONErrorCodes` (exported by the installed 14.27.0, checked 2026-11-20) instead of `10003`/`10008` literals, and `isRefusedByDiscord` from `scheduler.ts`.
 - The `CODE` regex moves out of `reminderMessage.ts`, which `customEmoji.ts` imports it from today.
 - New tests for each helper; existing callers' tests unchanged.
+- As built: the one fitting function is `fitLines(lines, limit, { separator, more })`, returning as many lines as fit with the `more(left out)` text counted towards the limit (`fitList` passes the limit minus its header). Two edge cases now behave alike where the copies differed. First, the emoji warning's "…and N more warnings" line used to sit outside its 1000-character budget and now counts towards it; the longest possible first line is 930 characters (a 100-character server name of `|`, `~` or `\`, each escaped), 964 with that suffix, so the first line still always fits. Second, the cooldown reply's timestamp is rounded down to the second, as every other `discordTime` is, instead of to the nearest one: a relative "in N seconds" can't show the difference. Error codes use `RESTJSONErrorCodes` from discord.js directly; no wrapper was needed. `deferReply` and the error fallback's `followUp` keep their own flags (task 7 tidies the latter).
 - Deploys: no runtime change.
 
 ### 5. `/reminder`: one handler per subcommand

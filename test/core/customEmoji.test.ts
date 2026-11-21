@@ -113,4 +113,16 @@ describe('unusableEmojiWarning', () => {
 		expect(warning.length).toBeLessThanOrEqual(1000 + 50);
 		expect(warning).toMatch(/…and \d+ more warnings like these\.$/);
 	});
+
+	it('counts the "…and N more" line within the 1000 characters', () => {
+		// Server names that escape to twice their length: the longest first line there is.
+		const many = clientWith(
+			Array.from({ length: 30 }, (_, i) => ({ id: `5${i}`, guildId: `x${i}`, server: '|'.repeat(100) })),
+		);
+		const text = Array.from({ length: 30 }, (_, i) => `<:e${i}:5${i}>`).join(' ');
+		const warning = unusableEmojiWarning(many, text, NO_EXTERNAL)!;
+		expect(warning.length).toBeLessThanOrEqual(1000);
+		expect(warning.startsWith('⚠️ These emoji are from another server')).toBe(true);
+		expect(warning).toMatch(/…and \d+ more warnings like these\.$/);
+	});
 });
