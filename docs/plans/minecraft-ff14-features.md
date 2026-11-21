@@ -209,8 +209,10 @@ This is the owner's explicit requirement: no alerts for routine warnings such as
 ### Sender behaviour
 
 - Every payload sets `allowed_mentions: { parse: [] }`, so `@everyone` typed in Minecraft chat pings nobody. Execute Webhook supports `allowed_mentions` (verified 2026-11-20, [Discord: Execute Webhook](https://docs.discord.com/developers/resources/webhook)).
-- The per-message `username` is a player's name. Discord refuses a webhook **name** containing `clyde` or `discord` (case-insensitive) and caps it at 80 characters (verified 2026-11-20, same page, Create Webhook). Whether the same rule applies to the per-message `username` is **unverified**; test it in A4 or A5 against the dev server. Until then, fall back to the configured server name when a send with the player's name is refused, rather than dropping the line.
-- Batch lines that arrive within about a second into one message.
+- The per-message `username` is a player's name. Discord refuses a webhook **name** containing `clyde` or `discord` (case-insensitive) and caps it at 80 characters (verified 2026-11-20, same page, Create Webhook). Whether the same rule applies to the per-message `username` is **unverified** (Discord's docs, checked 2026-11-21, give the rule only for the webhook's name); test it in A5 against the dev server. Until then, fall back to the configured server name when a send with the player's name is refused, rather than dropping the line.
+- Batch lines that arrive within about a second into one message (lines from the same sender, up to 2000 characters).
+- Post with `?wait=true`: without it, Discord answers `204` even for a message it didn't save, so a refused post would look sent (verified 2026-11-21, Execute Webhook).
+- A `404` means the webhook was deleted: Discord says not to use it again, so the helper stops posting to it until restarted (verified 2026-11-21, [Rate Limits](https://docs.discord.com/developers/topics/rate-limits)). `retry_after` is in seconds, with decimals; no per-webhook limit is documented, so the helper follows `X-RateLimit-Remaining` and `X-RateLimit-Reset-After` instead of a fixed rate.
 - Honour HTTP 429 by waiting `retry_after` and retrying. Drop the oldest queued chat lines if the queue grows past a bound; never drop alerts.
 - A failed POST logs to the console and does not crash the helper.
 
