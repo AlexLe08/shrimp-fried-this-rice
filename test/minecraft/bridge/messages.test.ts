@@ -29,6 +29,10 @@ describe('eventMessage', () => {
 		expect(eventMessage({ type: 'left', player: 'Steve' }, 'Survival').content).toBe('➖ **Steve** left');
 	});
 
+	it('escapes Markdown in a player name', () => {
+		expect(eventMessage({ type: 'joined', player: '__bob__' }, 'S').content).toBe('➕ **\\_\\_bob\\_\\_** joined');
+	});
+
 	it("posts chat under the player's name, as typed", () => {
 		expect(eventMessage({ type: 'chat', player: 'Steve', text: 'hi @everyone' }, 'Survival')).toEqual({
 			content: 'hi @everyone',
@@ -66,9 +70,11 @@ describe('alertMessage', () => {
 		).toBe(true);
 	});
 
-	it('keeps a ``` in the log from closing the code block', () => {
-		const content = alertMessage(gated('a ``` b'), 'S').content;
-		expect(content.match(/```/g)).toHaveLength(2);
+	it('keeps any run of backticks in the log from closing the code block', () => {
+		for (const text of ['a ``` b', '````', '``````', '`` ``']) {
+			const content = alertMessage(gated(text), 'S').content;
+			expect(content.match(/```/g)).toHaveLength(2);
+		}
 	});
 
 	it('drops trailing stack trace lines to fit, saying how many', () => {

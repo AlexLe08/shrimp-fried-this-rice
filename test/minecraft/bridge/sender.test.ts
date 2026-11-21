@@ -116,12 +116,25 @@ describe('createSender', () => {
 		expect(fetch).toHaveBeenCalledTimes(2);
 	});
 
-	it("resends under the server's name when Discord refuses the player's", async () => {
+	it("resends under the server's name when Discord refuses the player's, naming them on each line", async () => {
 		const { sender, bodies, log } = setup([json(400, { code: 50035 })]);
+		sender.send(chat('discord_fan', 'hi'));
+		sender.send(chat('discord_fan', 'again'));
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(bodies().map(({ username, content }) => [username, content])).toEqual([
+			['discord_fan', 'hi\nagain'],
+			['Survival', '**discord\\_fan:** hi\n**discord\\_fan:** again'],
+		]);
+		expect(log).toHaveBeenCalledWith(expect.stringContaining('"discord_fan"'));
+	});
+
+	it('sends a refused name straight to the fallback next time', async () => {
+		const { sender, bodies } = setup([json(400, { code: 50035 })]);
 		sender.send(chat('discordfan', 'hi'));
 		await vi.advanceTimersByTimeAsync(1000);
-		expect(bodies().map(({ username }) => username)).toEqual(['discordfan', 'Survival']);
-		expect(log).toHaveBeenCalledWith(expect.stringContaining('"discordfan"'));
+		sender.send(chat('discordfan', 'later'));
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(bodies().map(({ username }) => username)).toEqual(['discordfan', 'Survival', 'Survival']);
 	});
 
 	it('gives up on a post refused under the fallback name too, without looping', async () => {
@@ -181,7 +194,7 @@ describe('createSender', () => {
 		// With the chat between them dropped, the two alerts share a sender and batch.
 		expect(bodies().map(({ content }) => content)).toEqual(['alert one\nalert two', 'new']);
 		expect(log).toHaveBeenCalledTimes(2);
-		expect(log).toHaveBeenCalledWith('queue full: dropped 1 chat line');
+		expect(log).toHaveBeenCalledWith('queue full: dropped 1 chat or join line');
 	});
 
 	it('posts what arrives while a delivery is under way, in order', async () => {
@@ -210,11 +223,86 @@ describe('createSender', () => {
 		expect(contents).toEqual(['one', 'two', 'three']);
 	});
 
-	it('logs and survives a malformed webhook URL', async () => {
+	it('drops a post after repeated 429s, waiting at least 100 ms even when told 0', async () => {
+		const limited = Array.from({ length: 20 }, () => json(429, { retry_after: 0 }));
+		const { sender, fetch, log } = setup(limited, { maxRateLimited: 3 });
+		sender.send(alertPost('boom'));
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(fetch).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(99);
+		expect(fetch).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(fetch).toHaveBeenCalledTimes(2);
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(fetch).toHaveBeenCalledTimes(3);
+		expect(log).toHaveBeenCalledWith('rate limited 3 times; dropped a post');
+	});
+
+	it('answers 401 like 404: that webhook is done', async () => {
+		const { sender, fetch } = setup([json(401, { code: 50027 })]);
+		sender.send(alertPost('first'));
+		await vi.advanceTimersByTimeAsync(1000);
+		sender.send(alertPost('second'));
+		await vi.advanceTimersByTimeAsync(5000);
+		expect(fetch).toHaveBeenCalledOnce();
+	});
+
+	it('times out a request that hangs and retries it', async () => {
+		const fetch = vi.fn<typeof globalThis.fetch>(
+			(_url, init) =>
+				new Promise((_resolve, reject) => {
+					init!.signal!.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+				}),
+		);
+		const log = vi.fn();
+		const sender = createSender({ fallbackUsername: 'Survival', fetch, log, requestTimeoutMs: 15_000, maxAttempts: 2 });
+		sender.send(alertPost('boom'));
+		await vi.advanceTimersByTimeAsync(1000 + 15_000);
+		expect(fetch).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(fetch).toHaveBeenCalledTimes(2);
+		await vi.advanceTimersByTimeAsync(15_000);
+		expect(log).toHaveBeenCalledWith('request timed out; dropped a post after 2 tries');
+	});
+
+	it('gives up a 429 at once while closing, instead of waiting it out', async () => {
+		const { sender, fetch, log } = setup([json(429, { retry_after: 30 })]);
+		sender.send(alertPost('bye'));
+		const closing = sender.close(60_000);
+		await vi.advanceTimersByTimeAsync(0);
+		await closing;
+		expect(fetch).toHaveBeenCalledOnce();
+		expect(log).toHaveBeenCalledWith('rate limited 1 time; dropped a post');
+	});
+
+	it('aborts a request under way at the close deadline and ignores later sends', async () => {
+		const fetch = vi.fn<typeof globalThis.fetch>(
+			(_url, init) =>
+				new Promise((_resolve, reject) => {
+					init!.signal!.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+				}),
+		);
+		const log = vi.fn();
+		const sender = createSender({ fallbackUsername: 'Survival', fetch, log });
+		sender.send(alertPost('stuck'));
+		await vi.advanceTimersByTimeAsync(1000);
+		const closing = sender.close(2000);
+		await vi.advanceTimersByTimeAsync(2000);
+		await closing;
+		expect(log).toHaveBeenCalledWith('stopped with 1 post unsent');
+		sender.send(alertPost('too late'));
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(fetch).toHaveBeenCalledOnce();
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it('stops posting to a malformed webhook URL, saying so once', async () => {
 		const { sender, log, fetch } = setup();
 		sender.send({ ...alertPost('boom'), webhook: 'not a url' });
 		await vi.advanceTimersByTimeAsync(1000);
-		expect(log).toHaveBeenCalledWith(expect.stringContaining('unexpected error'));
+		sender.send({ ...alertPost('again'), webhook: 'not a url' });
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(log).toHaveBeenCalledExactlyOnceWith("webhook not a url isn't a valid URL; no posts go to it");
 		sender.send(alertPost('still works'));
 		await vi.advanceTimersByTimeAsync(1000);
 		expect(fetch).toHaveBeenCalledOnce();
@@ -237,6 +325,7 @@ describe('createSender', () => {
 		const closing = sender.close(2000);
 		await vi.advanceTimersByTimeAsync(2000);
 		await closing;
-		expect(log).toHaveBeenCalledWith('stopped with 1 post unsent');
+		// The 429'd post in flight is unsent too.
+		expect(log).toHaveBeenCalledWith('stopped with 2 posts unsent');
 	});
 });

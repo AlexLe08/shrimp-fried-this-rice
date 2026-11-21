@@ -20,9 +20,9 @@ export function eventMessage(event: NonAlert, serverName: string): Message {
 		case 'stopping':
 			return server(`🔴 **${serverName}** is stopping`);
 		case 'joined':
-			return server(`➕ **${event.player}** joined`);
+			return server(`➕ **${escapeMarkdown(event.player)}** joined`);
 		case 'left':
-			return server(`➖ **${event.player}** left`);
+			return server(`➖ **${escapeMarkdown(event.player)}** left`);
 		case 'chat':
 			return { content: event.text, username: event.player };
 	}
@@ -34,10 +34,19 @@ const KIND_TITLE: Record<AlertKind, string> = {
 	lag: "Lagging: “Can't keep up!” repeated",
 };
 
-// Log text goes inside a code block; a ``` in it would end the block early
-// and let the rest render as Markdown.
+// Log text goes inside a code block; three backticks in a row anywhere in
+// it would end the block early and let the rest render as Markdown. A
+// zero-width space between every pair leaves no run of two, however long.
 function defuse(text: string): string {
-	return text.replace(/```/g, '`​``');
+	return text.replace(/`(?=`)/g, '`​');
+}
+
+/**
+ * A name shown as text, not formatting: vanilla names may contain `_`, so
+ * `__bob__` would otherwise underline.
+ */
+export function escapeMarkdown(text: string): string {
+	return text.replace(/[\\*_~`|>#[\]()-]/g, '\\$&');
 }
 
 export function alertMessage({ alert, repeats, capped }: GatedAlert, serverName: string): Message {

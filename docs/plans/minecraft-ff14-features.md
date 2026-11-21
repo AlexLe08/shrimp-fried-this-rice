@@ -215,6 +215,9 @@ This is the owner's explicit requirement: no alerts for routine warnings such as
 - A `404` means the webhook was deleted: Discord says not to use it again, so the helper stops posting to it until restarted (verified 2026-11-21, [Rate Limits](https://docs.discord.com/developers/topics/rate-limits)). `retry_after` is in seconds, with decimals; no per-webhook limit is documented, so the helper follows `X-RateLimit-Remaining` and `X-RateLimit-Reset-After` instead of a fixed rate.
 - Honour HTTP 429 by waiting `retry_after` and retrying. Drop the oldest queued chat lines if the queue grows past a bound; never drop alerts.
 - A failed POST logs to the console and does not crash the helper.
+- Each request times out after 15 s. A 429 waits `retry_after` (at least 100 ms, so a zero can't make a tight loop), and a post is dropped after 10 in a row. A post retried after a network error can occasionally appear twice, if Discord saved it before the connection broke; that's accepted.
+- When Discord refuses a player's name, the post goes out under the server's name with each line starting `**Steve:**`, and later posts from that name go straight to the fallback.
+- Player names are escaped where they're shown as text (`__bob__` is a legal name). **Owner's call, open:** chat text is posted as typed, so `# heading`, `||spoilers||` and masked links render (mentions never ping). Escaping it would show it exactly as typed in game instead.
 
 ### Running it on each OS
 
