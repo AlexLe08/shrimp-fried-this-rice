@@ -18,9 +18,9 @@ both connect to Discord.
    uncommitted files are a finding).
 2. Check:
    - Every rule in CLAUDE.md the diff touches: `.ts` import extensions,
-     erasable-only TypeScript, `storage.ts` as the only module that
-     touches SQLite, the limits in `storage.ts`, command file shape, the
-     comment rule.
+     erasable-only TypeScript, `core/database.ts` as the only module that
+     opens SQLite and owns the schema, each area's queries and limits in
+     its own `storage.ts`, command file shape, the comment rule.
    - Production: merging deploys, so read the diff as a deploy. A schema
      change without a migration path, a changed command definition (users
      see it after `deploycommands`), or anything that would make the bot

@@ -8,7 +8,7 @@ import {
 	InteractionContextType,
 } from 'discord.js';
 import {
-	getGuildSettings,
+	isGuildMasterEnabled,
 	createGuildReminder,
 	getGuildReminderByLabel,
 	getGuildReminders,
@@ -25,7 +25,7 @@ import {
 	MIN_INTERVAL_MINUTES,
 	MAX_INTERVAL_MINUTES,
 	type GuildReminder,
-} from '../../storage.ts';
+} from '../storage.ts';
 import {
 	SNOOZE_DURATION_CHOICES,
 	AFTER_SNOOZE_CHOICES,
@@ -384,10 +384,9 @@ export default {
 			if (message !== null) updates.message = message;
 			if (embed !== null) updates.embed = embed;
 
-			updateGuildReminder(guildId, label, updates);
+			const saved = updateGuildReminder(guildId, label, updates)!;
 
 			// A new channel, or a switch to embeds in the saved one, is worth checking.
-			const saved = getGuildReminderByLabel(guildId, label)!;
 			const checked = channel ?? (embed ? interaction.guild.channels.cache.get(saved.channel_id) : undefined);
 			const permissionWarning = checked
 				? checkChannelPermissions(interaction, checked as TextChannel, saved.embed === 1)
@@ -532,9 +531,7 @@ export default {
 		}
 
 		if (subcommand === 'list') {
-			const settings = getGuildSettings(guildId);
-			// No row means /reminder master was never used: on, the column's default.
-			const masterEnabled = settings ? settings.master_enabled === 1 : true;
+			const masterEnabled = isGuildMasterEnabled(guildId);
 
 			const reminders = getGuildReminders(guildId);
 

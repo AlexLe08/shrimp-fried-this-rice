@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { getGuildSettings, setGuildMasterEnabled, __resetForTests } from '../../src/storage.ts';
+import { getGuildSettings, isGuildMasterEnabled, setGuildMasterEnabled } from '../../../src/reminders/storage.ts';
+import { __resetForTests } from '../../../src/core/database.ts';
 
 beforeEach(() => {
 	__resetForTests();
@@ -22,5 +23,18 @@ describe('setGuildMasterEnabled', () => {
 		setGuildMasterEnabled('guild-1', true);
 		setGuildMasterEnabled('guild-1', false);
 		expect(getGuildSettings('guild-1')?.master_enabled).toBe(0);
+	});
+});
+
+describe('isGuildMasterEnabled', () => {
+	it('is true for a guild that has never set the master toggle', () => {
+		expect(isGuildMasterEnabled('guild-1')).toBe(true);
+	});
+
+	it('follows the master toggle once it is set', () => {
+		setGuildMasterEnabled('guild-1', false);
+		expect(isGuildMasterEnabled('guild-1')).toBe(false);
+		setGuildMasterEnabled('guild-1', true);
+		expect(isGuildMasterEnabled('guild-1')).toBe(true);
 	});
 });

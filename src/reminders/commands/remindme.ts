@@ -7,7 +7,7 @@ import {
 	unsnoozeUser,
 	MIN_INTERVAL_MINUTES,
 	MAX_INTERVAL_MINUTES,
-} from '../../storage.ts';
+} from '../storage.ts';
 import {
 	SNOOZE_DURATION_CHOICES,
 	AFTER_SNOOZE_CHOICES,

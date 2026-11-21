@@ -59,30 +59,37 @@ the workflow, indexed in its `README.md`.
   the `.ts` file (`./storage.ts`), and only erasable syntax is allowed
   (`erasableSyntaxOnly`: no `enum`, `namespace`, or constructor parameter
   properties). ESM only.
-- `src/storage.ts` is the only module that touches SQLite. It opens the
-  database on import (`DB_PATH`, else `reminders.db` in the project root),
-  creates the tables with `CREATE TABLE IF NOT EXISTS`, applies pending
-  `MIGRATIONS` (versioned by `PRAGMA user_version`, one transaction, on
-  startup; [decision 0002](docs/decisions/0002-schema-migrations-with-user-version.md)),
-  and owns the limits (`MIN_INTERVAL_MINUTES`, `MAX_INTERVAL_MINUTES`,
+- `src/core/database.ts` is the only module that opens SQLite and owns
+  the schema ([decision 0004](docs/decisions/0004-feature-storage-modules.md)).
+  It opens the database on import (`DB_PATH`, else `bot.db` in the
+  project root, from `databasePath()`, pinned by a test), creates the
+  tables with `CREATE TABLE IF NOT EXISTS`, applies pending `MIGRATIONS`
+  (one list for every area, versioned by `PRAGMA user_version`, one
+  transaction, on startup;
+  [decision 0002](docs/decisions/0002-schema-migrations-with-user-version.md)),
+  and exports the handle, `closeDatabase` and `__resetForTests` (which
+  clears every table, so a new table is added there too). Each area's
+  `storage.ts` (`src/reminders/storage.ts`; one per feature in an area
+  with several, such as `src/ffxiv/recruit/storage.ts`) is the only code
+  that queries its tables, and owns their row interfaces and limits
+  (`MIN_INTERVAL_MINUTES`, `MAX_INTERVAL_MINUTES`,
   `MAX_REMINDERS_PER_GUILD`). A schema change is a new migration appended
   to the list, never an edit to a `CREATE TABLE` or to a merged migration,
-  since production's `reminders.db` has run them. One that isn't additive
+  since production's `bot.db` has run them. One that isn't additive
   (renames, drops, retypes a column) needs a plan agreed with the owner
   first. While the bot is pre-release (README's Status says so), that
-  plan may be a reset instead: rewrite the `CREATE TABLE`s, empty
-  `MIGRATIONS`, and the PR's Deploys line asks the owner to delete
-  production's `reminders.db` before approving
+  plan may be a reset instead: rewrite the `CREATE TABLE`s in
+  `core/database.ts`, empty `MIGRATIONS`, and the PR's Deploys line asks
+  the owner to delete production's `bot.db` before approving
   ([decision 0003](docs/decisions/0003-pre-release-schema-resets.md)).
   Row interfaces mirror the columns by hand; change both in the same
   commit.
 - `src/` is grouped by area: `core/` (bot plumbing and Discord helpers
   any area may use) and `reminders/` (later `ffxiv/` and `minecraft/`),
-  each holding its own commands, events and embeds (storage still in
-  `src/storage.ts`, until the refactor plan's task 3). `src/index.ts`
-  and `src/deploy-commands.ts` stay at the top of `src/`: the VM's systemd
-  unit starts `./src/index.ts`, so moving it would leave the bot down
-  after the deploy.
+  each holding its own commands, events, embeds and `storage.ts`.
+  `src/index.ts` and `src/deploy-commands.ts` stay at the top of `src/`:
+  the VM's systemd unit starts `./src/index.ts`, so moving it would leave
+  the bot down after the deploy.
 - `src/reminders/snooze.ts` holds what `/reminder snooze` and `/remindme`
   share: the duration and after-snooze choices, and how a snooze is
   described.

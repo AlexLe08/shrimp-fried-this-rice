@@ -8,8 +8,8 @@ import {
 	deleteGuildReminder,
 	disableGuildReminderForChannel,
 	updateGuildReminderLastSentForChannel,
-	__resetForTests,
-} from '../../src/storage.ts';
+} from '../../../src/reminders/storage.ts';
+import { __resetForTests } from '../../../src/core/database.ts';
 
 beforeEach(() => {
 	__resetForTests();
@@ -58,6 +58,19 @@ describe('updateGuildReminder', () => {
 		const updated = getGuildReminderByLabel('guild-1', 'water');
 		expect(updated?.interval_minutes).toBe(30);
 		expect(updated?.message).toBe('Drink water!'); // unchanged
+	});
+
+	it('returns the row as saved, the same as reading it back', () => {
+		makeReminder();
+
+		const returned = updateGuildReminder('guild-1', 'water', { channelId: 'channel-2', embed: false });
+
+		expect(returned).toEqual(getGuildReminderByLabel('guild-1', 'water'));
+		expect(returned).toMatchObject({ channel_id: 'channel-2', embed: 0, interval_minutes: 60 });
+	});
+
+	it('returns undefined if the reminder does not exist', () => {
+		expect(updateGuildReminder('guild-1', 'nonexistent', { intervalMinutes: 10 })).toBeUndefined();
 	});
 
 	it('does nothing if the reminder does not exist', () => {

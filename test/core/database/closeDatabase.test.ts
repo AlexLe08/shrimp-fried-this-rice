@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { closeDatabase, getGuildSettings } from '../../src/storage.ts';
+import { closeDatabase } from '../../../src/core/database.ts';
+import { getGuildSettings } from '../../../src/reminders/storage.ts';
 
 // Its own file: Vitest isolates each file, and once closed, the connection
 // can't be reopened for the other storage tests.

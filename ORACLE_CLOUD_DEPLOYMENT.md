@@ -8,7 +8,7 @@ This document captures every step taken to deploy this bot to a free, permanent 
 
 **This is not optional — we learned this the hard way.** The VM's `.env` should use a bot token from a Discord Application **dedicated to production**, entirely separate from whatever token gets used on a developer's local machine for `npm run dev`.
 
-**Why this matters:** Discord dispatches every interaction to *every* live process connected with the same bot token. If a local dev instance and the VM's production instance ever share one token, both process every command simultaneously against their own separate, silently-drifting `reminders.db` files. In practice this caused: reminders firing twice, `"Interaction has already been acknowledged"` errors, and a status embed that only updated on whichever process happened to have it tracked in its own database.
+**Why this matters:** Discord dispatches every interaction to *every* live process connected with the same bot token. If a local dev instance and the VM's production instance ever share one token, both process every command simultaneously against their own separate, silently-drifting `bot.db` files. In practice this caused: reminders firing twice, `"Interaction has already been acknowledged"` errors, and a status embed that only updated on whichever process happened to have it tracked in its own database.
 
 **The rule going forward:** the VM only ever uses the production Discord Application's token. Any local machine doing development work uses a second, separate Discord Application created just for that purpose (see the project README's Local Setup section for the exact intents/scopes/permissions it needs). Never copy the production `.env` to a local machine for active development use.
 
@@ -122,7 +122,7 @@ DISCORD_CLIENT_ID=your-production-application-client-id
 
 Save with **Ctrl+O**, **Enter**, then exit with **Ctrl+X**.
 
-**Note:** unlike a PaaS platform with an ephemeral filesystem (Railway, Fly.io, etc.), a raw VM's disk is persistent by default — `reminders.db` needs no special volume configuration or environment-variable override; it's simply created at its normal default path and stays there indefinitely across deploys and reboots.
+**Note:** unlike a PaaS platform with an ephemeral filesystem (Railway, Fly.io, etc.), a raw VM's disk is persistent by default — `bot.db` needs no special volume configuration or environment-variable override; it's simply created at its normal default path and stays there indefinitely across deploys and reboots.
 
 ---
 
@@ -256,7 +256,7 @@ What it needs, set up once:
 
 **If `npm ci` fails** (a registry or network error), `set -e` stops before the restart, so the running bot is unaffected. But `node_modules` may be left empty or partial, and the bot can't start again (after a crash, a reboot, OCI maintenance) until an install succeeds: re-run the deploy, or SSH in and run `npm ci` in `~/shrimp-fried-this-rice`.
 
-**Why `reminders.db` is never at risk:** it's git-ignored, and `git reset --hard` only resets tracked files, so the database (and `.env`) survive every deploy. Anything edited by hand in tracked files on the VM is discarded, though: change code only through a PR.
+**Why `bot.db` is never at risk:** it's git-ignored, and `git reset --hard` only resets tracked files, so the database (and `.env`) survive every deploy. Anything edited by hand in tracked files on the VM is discarded, though: change code only through a PR.
 
 **Deploying by hand** (if Actions is down): SSH in and run the same commands as above.
 

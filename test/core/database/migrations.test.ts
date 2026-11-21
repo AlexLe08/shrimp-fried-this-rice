@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-// Its own file: each case opens storage.ts on a database file of its own,
+// Its own file: each case opens database.ts on a database file of its own,
 // built the way production's was before migrations existed.
 let dir: string;
 let dbPath: string;
@@ -43,7 +43,9 @@ function createPreMigrationDatabase(): void {
 async function openStorage() {
 	vi.resetModules();
 	vi.stubEnv('DB_PATH', dbPath);
-	return import('../../src/storage.ts');
+	// Imported together after the reset, so the queries run on the database
+	// that this database.ts opened.
+	return { ...(await import('../../../src/core/database.ts')), ...(await import('../../../src/reminders/storage.ts')) };
 }
 
 function inspect(): { version: number; reminderColumns: string[]; userColumns: string[] } {

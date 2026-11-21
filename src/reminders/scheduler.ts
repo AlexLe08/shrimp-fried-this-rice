@@ -13,7 +13,7 @@ import {
 	getDueUserSettings,
 	updateUserLastSent,
 	type GuildReminder,
-} from '../storage.ts';
+} from './storage.ts';
 import { refreshGuildStatusMessage, type StatusMessageChannel, type StatusMessageClient } from './statusEmbed.ts';
 import { buildReminderMessage } from './reminderMessage.ts';
 

@@ -12,8 +12,8 @@ import {
 	getDueUserSettings,
 	snoozeUser,
 	unsnoozeUser,
-	__resetForTests,
-} from '../../src/storage.ts';
+} from '../../../src/reminders/storage.ts';
+import { __resetForTests } from '../../../src/core/database.ts';
 
 const ONE_MINUTE = 60_000;
 const SENT_AT = 1_000_000_000;
