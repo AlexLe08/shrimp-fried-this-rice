@@ -34,6 +34,9 @@ Deliberate choices from before the [decision records](docs/decisions/):
 - `/remindme` (personal DM settings) is keyed only by user ID, not per server. Someone in several servers with this bot has one set of personal DM settings across all of them: a personal reminder, independent of any server.
 - Only one status embed is tracked per server. Re-running `/reminder status` deletes the previous embed (if it still exists) and posts a new one, even in a different channel.
 - `/reminder create` warns, but still saves, when the bot lacks permissions in the channel (View Channel, Send Messages): an admin may grant them afterwards, and the reminder starts sending once they do. Without Embed Links it says the reminder will go out as plain text instead. Custom emoji the bot can't use are warned about the same way, not refused: the fix (inviting the bot, granting Use External Emojis) is the admin's, and the text is theirs.
+- A follow-up is posted once, so there's no interval to retry it after. When its channel is gone or Discord refuses the post (missing permissions), that server's follow-ups are paused rather than retried each minute or dropped: they stay pending, `/recruit list` and `/recruit config` say why, and `/recruit config channel:` resumes them once the bot can post there.
+- A server's due follow-ups go out together, one post per minute's poll with a single ping, holding as many as fit in a message; the rest follow in the next minute's post. A backlog (follow-ups that came due while paused, or before `/recruit config`) would otherwise ping the role once per entry.
+- A follow-up's only ping is the configured role: the note is free text, and the moderator who added the entry is named, not pinged. `/recruit config` takes only a role the moderator could ping themselves (one that allows anyone to mention it, or with their own Mention Everyone), and never `@everyone`, so `/recruit` can't be used to ping a role its user can't. Like `/reminder create`, it warns but saves when the bot lacks permissions in the channel, or can't ping the role itself (the post then goes out without the ping).
 
 ## ⚠️ Important: never run local dev against the production bot token
 
@@ -100,7 +103,7 @@ Slash commands are registered **globally** (via `deploycommands`), so they're av
 
 ## Testing
 
-Tests are written with [Vitest](https://vitest.dev) and cover the entire codebase — persistence (`core/database.ts` and `reminders/storage.ts`), the scheduler and its due-reminder checks, the status embed builder, both event handlers, and every command file.
+Tests are written with [Vitest](https://vitest.dev) and cover the entire codebase — persistence (`core/database.ts`, `reminders/storage.ts` and `ffxiv/recruit/storage.ts`), the scheduler with its due-reminder checks and the recruit follow-up check, the status embed builder, both event handlers, and every command file.
 
 ```bash
 npm test              # run once and exit
@@ -153,9 +156,6 @@ Key production-specific details, for future reference:
   journalctl -u discordbotshrimp -f          # view live logs
   ```
 - **Deploying updates:** automatic on merge to `main`. The `deploy` job in `.github/workflows/ci.yml` runs after `test` passes, waits for the owner's approval (the `production` environment), then SSHes into the VM and runs `git fetch`, `git reset --hard origin/main`, `npm ci`, restarts the service, and re-runs `deploycommands`, in that order (service restart before command redeployment, so a command-registration hiccup never blocks a code fix from taking effect; a failed registration still turns the job red). It then waits, until 60 s after the restart, for the bot's `Ready! Logged in as` line in the service's journal, and fails the job if the bot hasn't logged in by then; a failed registration doesn't skip this wait. Approving one run deploys whatever `main` is at that moment. Setup and secrets: [`ORACLE_CLOUD_DEPLOYMENT.md`](ORACLE_CLOUD_DEPLOYMENT.md), section 9.
-
-- A follow-up is posted once, so there's no interval to retry it after. When its channel is gone or Discord refuses the post (missing permissions), that server's follow-ups are paused rather than retried each minute or dropped: they stay pending, `/recruit list` and `/recruit config` say why, and `/recruit config channel:` resumes them once the bot can post there. Like `/reminder create`, `/recruit config` warns but saves when the bot lacks permissions, or when the role to ping doesn't allow mentions and the bot lacks Mention Everyone (the post then goes out without the ping).
-- A follow-up's only ping is the configured role: the note is free text, and the moderator who added the entry is named, not pinged.
 
 ## Commands
 

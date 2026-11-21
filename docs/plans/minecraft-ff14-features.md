@@ -664,7 +664,7 @@ CREATE UNIQUE INDEX recruits_open_name
 - `name` on every command except `add` is an autocomplete over open entries, built like `/reminder`'s label autocomplete (#22). Like it, a typed name that matches nothing still gets a "not found" reply.
 - Limits: name up to 50 characters, note up to 300. Cap open entries per server (100, as built), in the recruits' own storage module (`src/ffxiv/recruit/storage.ts`).
 - The reminder is sent once and moves the entry to `reminded`. It stays in `/recruit list`, shown as overdue, until someone resolves or snoozes it.
-- The reminder's only mention is the configured role, in the message content; set `allowedMentions` to exactly that.
+- The reminder's only mention is the configured role, in the message content; set `allowedMentions` to exactly that. As built, a server's due reminders go out as one post per poll, pinging once, so a backlog doesn't ping once per entry; and `/recruit config` takes only a role the moderator could ping themselves, never `@everyone`.
 - Replies to `/recruit` commands are ephemeral, since notes about people should not land in a public channel by accident.
 
 ### E-role: check-in after choosing a role

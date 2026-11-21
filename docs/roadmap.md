@@ -146,7 +146,10 @@ Later item), not a follow-up.
   migration 2. One change from the plan: a refused post or a missing
   channel pauses that server's follow-ups (kept pending, shown in
   `/recruit list` and `config`, resumed by `/recruit config channel:`)
-  instead of marking each entry failed. Not yet tried on a live server,
+  instead of marking each entry failed. From review: a server's due
+  follow-ups go out as one post per poll with a single ping (a backlog of
+  up to 100 would have pinged once each), and `/recruit config` takes only
+  a role the moderator could ping themselves, never `@everyone`. Not yet tried on a live server,
   including whether Mention Everyone lets the bot ping a role that doesn't
   allow mentions.
 
