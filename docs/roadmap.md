@@ -135,8 +135,8 @@ Later item), not a follow-up.
   `test/tsconfig.json` (#38). A dropped import in #38 had passed lint
   and `typecheck` and failed only when the tests ran, as Vitest strips
   types unchecked.
-- **Trial FC member follow-ups (`/recruit`)** (2026-11-21, three stacked
-  PRs, Track E1 of
+- **Trial FC member follow-ups (`/recruit`)** (2026-11-21, #39 to #41,
+  three stacked PRs, Track E1 of
   [`plans/minecraft-ff14-features.md`](plans/minecraft-ff14-features.md)).
   Moderators record trial members by in-game name with a note; when the
   follow-up is due (30 days by default) the bot posts once in the
