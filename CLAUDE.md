@@ -87,10 +87,9 @@ the workflow, indexed in its `README.md`.
 - `src/` is grouped by area: `core/` (bot plumbing and Discord helpers
   any area may use) and `reminders/` (later `ffxiv/` and `minecraft/`),
   each holding its own commands, events, embeds and `storage.ts`.
-  `src/index.ts`
-  and `src/deploy-commands.ts` stay at the top of `src/`: the VM's systemd
-  unit starts `./src/index.ts`, so moving it would leave the bot down
-  after the deploy.
+  `src/index.ts` and `src/deploy-commands.ts` stay at the top of `src/`:
+  the VM's systemd unit starts `./src/index.ts`, so moving it would leave
+  the bot down after the deploy.
 - `src/reminders/snooze.ts` holds what `/reminder snooze` and `/remindme`
   share: the duration and after-snooze choices, and how a snooze is
   described.
