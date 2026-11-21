@@ -243,7 +243,7 @@ The owner's server runs in a Docker container (an image whose console prints `[i
 - **A4b. Player avatars** ([above](#player-avatars-confirmed-by-the-owner-2026-11-21)), once the unverified facts are checked.
 - **A5. `main.ts`, config, `npm run mcbridge`, the `.gitignore` entry.** Manual end-to-end test against the owner's server and a test channel. Done (#46), except the end-to-end test, which is the owner's (the helper needs a real webhook and server): `docs/MINECRAFT_BRIDGE.md` step 5.
 - **A6. `docs/MINECRAFT_BRIDGE.md`**, with the README's Features, Project Structure and Available Scripts updated in the same PR. Done (#47; Available Scripts went in with A5, which added the script).
-- **A7. Crash reports.** A new file in `crashReportsDir` posted as an alert (the Events table). Not built in A5, whose config refuses the key until it is.
+- **A7. Crash reports.** A new file in `crashReportsDir` posted as an alert (the Events table). Done: polled every 5 s, posted once its size holds still, through the alert gate (a crash loop posts once, then a count), with the report's `Description:` and exception and its file name. Reports there at startup aren't posted.
 
 ### A-later (not planned in detail)
 
