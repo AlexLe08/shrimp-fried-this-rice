@@ -5,7 +5,10 @@ type Alert = Extract<BridgeEvent, { type: 'alert' }>;
 /** An alert cleared to post. */
 export interface GatedAlert {
 	alert: Alert;
-	/** Copies of this alert held back since it last posted. */
+	/**
+	 * Copies of this alert held back since it last posted. For lag, a copy is
+	 * one crossing of the threshold (`lagThreshold` warnings), not one warning.
+	 */
 	repeats: number;
 	/** Alerts of any kind dropped by the per-minute cap since the last post. */
 	capped: number;
@@ -35,15 +38,23 @@ export interface AlertGate {
 	check(alert: Alert, now: number): GatedAlert | null;
 	/**
 	 * Alerts whose de-duplication window has ended with copies held back, so a
-	 * burst that stops still gets its count posted. The caller runs this every
-	 * so often; each is returned once.
+	 * burst that stops still gets its count posted, and the count of alerts the
+	 * cap dropped with nothing posted after them. The caller runs this every so
+	 * often and posts the result as one message; each count is returned once.
 	 */
-	summaries(now: number): GatedAlert[];
+	summaries(now: number): { repeated: GatedAlert[]; capped: number };
 }
 
 /** Numbers (ticks behind, entity ids, coordinates) vary between otherwise identical messages. */
-function normalise(message: string): string {
-	return message.replace(/\d+/g, '#');
+function normalise(text: string): string {
+	return text.replace(/\d+/g, '#');
+}
+
+// Vanilla's catch-all `Encountered an unexpected exception` covers any error,
+// so the first stack trace line (the exception and its message) tells two apart.
+function dedupeKey(alert: Alert): string {
+	const firstDetail = alert.details.find((line) => line.trim() !== '') ?? '';
+	return `${alert.kind}:${normalise(alert.message)}:${normalise(firstDetail)}`;
 }
 
 export function createAlertGate(options: AlertGateOptions = DEFAULT_ALERT_GATE): AlertGate {
@@ -62,7 +73,7 @@ export function createAlertGate(options: AlertGateOptions = DEFAULT_ALERT_GATE):
 				lagTimes = [];
 			}
 
-			const key = `${alert.kind}:${normalise(alert.message)}`;
+			const key = dedupeKey(alert);
 			const previous = seen.get(key);
 			if (previous && now - previous.postedAt < options.dedupeWindowMs) {
 				previous.suppressed++;
@@ -82,15 +93,17 @@ export function createAlertGate(options: AlertGateOptions = DEFAULT_ALERT_GATE):
 			return gated;
 		},
 		summaries(now) {
-			const due: GatedAlert[] = [];
+			const repeated: GatedAlert[] = [];
 			// Deleting expired entries also keeps the map from growing with every
 			// distinct error for as long as the helper runs.
 			for (const [key, entry] of seen) {
 				if (now - entry.postedAt < options.dedupeWindowMs) continue;
 				seen.delete(key);
-				if (entry.suppressed > 0) due.push({ alert: entry.alert, repeats: entry.suppressed, capped: 0 });
+				if (entry.suppressed > 0) repeated.push({ alert: entry.alert, repeats: entry.suppressed, capped: 0 });
 			}
-			return due;
+			const capped = cappedSincePost;
+			cappedSincePost = 0;
+			return { repeated, capped };
 		},
 	};
 }

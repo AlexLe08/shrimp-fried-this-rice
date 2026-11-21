@@ -18,7 +18,7 @@
 [11:48:06] [Server thread/INFO]: Saving chunks for level 'ServerLevel[world]'/minecraft:the_end
 [11:49:06] [Server thread/INFO]: Server empty for 60 seconds, pausing
 [11:51:42] [User Authenticator #1/INFO]: UUID of player Steve is 00000000-0000-4000-8000-000000000001
-[11:51:44] [Server thread/INFO]: Steve[/192.0.2.10:34264] logged in with entity id 407 at (-70.05348936958033, 76.9375, -34.58027313272259)
+[11:51:44] [Server thread/INFO]: Steve[/192.0.2.10:34264] logged in with entity id 407 at (0.5, 64.0, 0.5)
 [11:51:44] [Server thread/INFO]: System chat: Steve joined the game
 [11:51:53] [Server thread/WARN]: Can't keep up! Is the server overloaded? Running 2056ms or 41 ticks behind
 [11:51:58] [Server thread/INFO]: Player Steve standing on air - force-sending blocks below

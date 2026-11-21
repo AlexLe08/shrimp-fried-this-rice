@@ -16,8 +16,10 @@ export interface LogFormat {
 	parse(line: string): LogLine | null;
 }
 
-// The thread is matched lazily up to the last `/LEVEL]`, as thread names can
-// hold slashes themselves (`[RCON Client /0:0:0:0:0:0:0:1 #2/INFO]`).
+// Thread names can hold slashes (`[RCON Client /0:0:0:0:0:0:0:1 #2/INFO]`), so
+// the thread runs to the first `/LEVEL]: `. Lazily, not to the last: the
+// message is player text, and a player typing a fake prefix into chat must
+// not move where the message starts.
 const VANILLA_PREFIX = /^\[(\d{2}:\d{2}:\d{2})\] \[(.+?)\/(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\]: (.*)$/;
 
 /** Vanilla's `latest.log`, checked against a 26.3 server's log. */

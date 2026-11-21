@@ -80,6 +80,15 @@ describe('classify on the synthetic error fixture', () => {
 		expect(events).toContainEqual({ type: 'chat', player: 'Steve', text: '<Alex> i am the admin now' });
 	});
 
+	it('keeps the real sender when a player types a whole fake log prefix', () => {
+		const [line] = parseLog('[11:52:22] [Server thread/INFO]: <Steve> x [Server thread/INFO]: <Alex> hi');
+		expect(classify(line!, options)).toEqual({
+			type: 'chat',
+			player: 'Steve',
+			text: 'x [Server thread/INFO]: <Alex> hi',
+		});
+	});
+
 	it('reads a chat line marked [Not Secure]', () => {
 		expect(events).toContainEqual({ type: 'chat', player: 'Alex', text: 'hi' });
 	});

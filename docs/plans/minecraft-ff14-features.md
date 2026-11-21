@@ -161,7 +161,7 @@ Normalise every flavor to `{ time, thread, level, logger?, message }`. Lines tha
 
 | Flavor | Prefix shape | Status |
 |---|---|---|
-| Vanilla | `[12:34:56] [Server thread/INFO]: message` | Verified 2026-11-21 against the owner's 26.3 log. Thread names can contain `/` (`[RCON Client /0:0:0:0:0:0:0:1 #2/INFO]`), so the level is the last `/LEVEL]` |
+| Vanilla | `[12:34:56] [Server thread/INFO]: message` | Verified 2026-11-21 against the owner's 26.3 log. Thread names can contain `/` (`[RCON Client /0:0:0:0:0:0:0:1 #2/INFO]`), so the thread runs to the *first* `/LEVEL]: ` (not the last: the message is player text, and a fake prefix typed in chat must not move the sender) |
 | Fabric | Same as vanilla | Unverified; confirm with a fixture before claiming support |
 | Paper / Spigot | Same as vanilla in `latest.log`; console shows `[12:34:56 INFO]: message` | Unverified; confirm with a fixture |
 | Forge / NeoForge | `[12Nov2026 12:34:56.789] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: message` | Unverified; confirm with a fixture |
@@ -197,7 +197,7 @@ This is the owner's explicit requirement: no alerts for routine warnings such as
 5. **Stack traces**: collect continuation lines into the entry they belong to. Flush when the next prefixed line arrives or after about one second of silence. Post as one code block, truncated to fit 2000 characters.
 6. **De-duplication**: the same normalised message within 10 minutes is posted once, then summarised as a count. Cap alerts at a few per minute overall.
 
-`classify.ts` is a pure function over parsed entries, tested from fixtures. The rules that depend on what came before (lag repeats, de-duplication, the cap) are in `alertGate.ts`, with the time passed in. Its `summaries(now)` returns the count of a burst that stopped, which the helper calls every so often, so the count is posted even if the message never comes back.
+`classify.ts` is a pure function over parsed entries, tested from fixtures. The rules that depend on what came before (lag repeats, de-duplication, the cap) are in `alertGate.ts`, with the time passed in. Copies are told apart by the message and the first stack trace line, since vanilla's `Encountered an unexpected exception` covers any error. Its `summaries(now)` returns the count of a burst that stopped and of alerts the cap dropped with nothing posted after them; the helper calls it every so often and the sender (A4) posts the result as **one** message, so summaries don't get round the cap. When A5 builds `ignorePatterns` into regexes, it builds them without the `g` or `y` flag (`test` on those is stateful and would skip every other match).
 
 ### Tailer behaviour
 

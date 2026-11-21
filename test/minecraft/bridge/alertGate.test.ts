@@ -51,9 +51,12 @@ describe('createAlertGate', () => {
 		gate.check(alert('error', 'boom'), 0);
 		gate.check(alert('error', 'boom'), MINUTE);
 		gate.check(alert('error', 'quiet'), 0);
-		expect(gate.summaries(9 * MINUTE)).toEqual([]);
-		expect(gate.summaries(10 * MINUTE)).toEqual([{ alert: alert('error', 'boom'), repeats: 1, capped: 0 }]);
-		expect(gate.summaries(20 * MINUTE)).toEqual([]);
+		expect(gate.summaries(9 * MINUTE)).toEqual({ repeated: [], capped: 0 });
+		expect(gate.summaries(10 * MINUTE)).toEqual({
+			repeated: [{ alert: alert('error', 'boom'), repeats: 1, capped: 0 }],
+			capped: 0,
+		});
+		expect(gate.summaries(20 * MINUTE)).toEqual({ repeated: [], capped: 0 });
 		// The window is over, so the next copy posts with nothing left to report.
 		expect(gate.check(alert('error', 'boom'), 21 * MINUTE)).toMatchObject({ repeats: 0 });
 	});
@@ -64,5 +67,23 @@ describe('createAlertGate', () => {
 		expect(gate.check(alert('error', 'sixth'), 10)).toBeNull();
 		expect(gate.check(alert('error', 'seventh'), 20)).toBeNull();
 		expect(gate.check(alert('error', 'eighth'), MINUTE + 10)).toMatchObject({ repeats: 0, capped: 2 });
+	});
+
+	it('reports what the cap dropped when nothing posts after it, once', () => {
+		const gate = createAlertGate();
+		for (let i = 0; i < 7; i++) gate.check(alert('error', `distinct ${'x'.repeat(i)}`), i);
+		expect(gate.summaries(10 * MINUTE).capped).toBe(2);
+		expect(gate.summaries(11 * MINUTE).capped).toBe(0);
+	});
+
+	it('posts two errors with the same message but different exceptions', () => {
+		const gate = createAlertGate();
+		const withCause = (cause: string) => ({
+			...alert('error', 'Encountered an unexpected exception'),
+			details: [cause],
+		});
+		expect(gate.check(withCause('java.lang.IllegalStateException: one'), 0)).not.toBeNull();
+		expect(gate.check(withCause('java.lang.NullPointerException'), MINUTE)).not.toBeNull();
+		expect(gate.check(withCause('java.lang.NullPointerException'), 2 * MINUTE)).toBeNull();
 	});
 });
