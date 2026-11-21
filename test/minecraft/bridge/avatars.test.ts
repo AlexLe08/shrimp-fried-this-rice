@@ -60,7 +60,9 @@ describe('avatarFor', () => {
 
 	it('looks a skin up by UUID, without dashes, when the log gave one', () => {
 		const avatars = config({ default: 'skin' });
-		expect(avatarFor('Notch', avatars, ONLINE_UUID)).toBe('https://mc-heads.net/avatar/069a79f444e94726a5befca90e38aaf5/128');
+		expect(avatarFor('Notch', avatars, ONLINE_UUID)).toBe(
+			'https://mc-heads.net/avatar/069a79f444e94726a5befca90e38aaf5/128',
+		);
 		expect(avatarFor('Notch', avatars, ONLINE_UUID.toUpperCase())).toBe(
 			'https://mc-heads.net/avatar/069a79f444e94726a5befca90e38aaf5/128',
 		);
@@ -84,7 +86,9 @@ describe('avatarFor', () => {
 				Notch: 'https://example.com/notch.png',
 			},
 		});
-		expect(avatarFor('Steve', avatars, ONLINE_UUID)).toBe('https://mc-heads.net/avatar/069a79f444e94726a5befca90e38aaf5/128');
+		expect(avatarFor('Steve', avatars, ONLINE_UUID)).toBe(
+			'https://mc-heads.net/avatar/069a79f444e94726a5befca90e38aaf5/128',
+		);
 		expect(avatarFor('Alex', avatars)).toBe(`${GENERATED}${hashName('Alex')}.png`);
 		expect(avatarFor('HEROBRINE', avatars)).toBe(`${GENERATED}7.png`);
 		expect(avatarFor('Notch', avatars)).toBe('https://example.com/notch.png');

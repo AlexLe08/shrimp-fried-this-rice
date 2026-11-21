@@ -1,9 +1,6 @@
 /** What a player's chat lines show as their picture in Discord. */
 export type AvatarChoice =
-	| { kind: 'skin' }
-	| { kind: 'generated'; index?: number }
-	| { kind: 'none' }
-	| { kind: 'url'; url: string };
+	{ kind: 'skin' } | { kind: 'generated'; index?: number } | { kind: 'none' } | { kind: 'url'; url: string };
 
 export interface AvatarConfig {
 	default: AvatarChoice;
@@ -89,7 +86,10 @@ export function parseAvatars(raw: unknown, problems: string[]): AvatarConfig {
 	if (input.default !== undefined) {
 		const choice = typeof input.default === 'string' ? parseChoice(input.default) : null;
 		// A picked picture or URL for everyone would make every player look the same.
-		if (choice && (choice.kind === 'skin' || choice.kind === 'none' || (choice.kind === 'generated' && choice.index === undefined))) {
+		if (
+			choice &&
+			(choice.kind === 'skin' || choice.kind === 'none' || (choice.kind === 'generated' && choice.index === undefined))
+		) {
 			fallback = choice;
 		} else {
 			problems.push('"avatars.default" must be "skin", "generated" or "none"');

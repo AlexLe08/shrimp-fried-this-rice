@@ -8,11 +8,13 @@ export interface Message {
 	content: string;
 	/** The sender's name shown in Discord: the player for chat, otherwise the server. */
 	username: string;
+	/** The sender's picture, for chat; unset, the webhook's own. */
+	avatarUrl?: string;
 }
 
-type NonAlert = Exclude<BridgeEvent, { type: 'alert' }>;
+type Posted = Exclude<BridgeEvent, { type: 'alert' } | { type: 'uuid' }>;
 
-export function eventMessage(event: NonAlert, serverName: string): Message {
+export function eventMessage(event: Posted, serverName: string): Message {
 	const server = (content: string) => ({ content, username: serverName });
 	switch (event.type) {
 		case 'started':

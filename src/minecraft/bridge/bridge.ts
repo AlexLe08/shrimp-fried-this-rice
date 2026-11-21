@@ -1,3 +1,4 @@
+import { avatarFor } from './avatars.ts';
 import { createAlertGate, type AlertGate } from './alertGate.ts';
 import { classify, type BridgeEvent } from './classify.ts';
 import type { BridgeConfig } from './config.ts';
@@ -47,6 +48,15 @@ export function createBridge(options: BridgeOptions): Bridge {
 	let quietTimer: NodeJS.Timeout | null = null;
 	// Per thing that can't be read (the log, the crash-reports folder).
 	const lastReadErrorPost = new Map<string, number>();
+	// By lowercased name, from login to leaving, for the skin lookup.
+	const uuids = new Map<string, string>();
+
+	function track(event: BridgeEvent): void {
+		if (event.type === 'uuid') uuids.set(event.player.toLowerCase(), event.uuid);
+		else if (event.type === 'left') uuids.delete(event.player.toLowerCase());
+		// A crash logs no leave lines; whoever was online is gone either way.
+		else if (event.type === 'stopping' || event.type === 'started') uuids.clear();
+	}
 
 	// The callbacks run from the tailer and from timers: a bug in one must log,
 	// not stop the helper (an exception thrown from a timer would end it).
@@ -86,6 +96,8 @@ export function createBridge(options: BridgeOptions): Bridge {
 	function handle(entry: LogEntry): void {
 		const event = classify(entry, { ignore: config.ignore });
 		if (!event) return;
+		track(event);
+		if (event.type === 'uuid') return;
 		if (event.type === 'alert') {
 			postAlert(event);
 			return;
@@ -93,7 +105,12 @@ export function createBridge(options: BridgeOptions): Bridge {
 		// Start and stop say whether the server is up, so they're kept when the
 		// queue overflows; a lost chat or join line matters less.
 		const droppable = event.type !== 'started' && event.type !== 'stopping';
-		sender.send({ webhook: config.webhooks.chat, droppable, ...eventMessage(event, config.serverName) });
+		const message = eventMessage(event, config.serverName);
+		if (event.type === 'chat') {
+			const avatarUrl = avatarFor(event.player, config.avatars, uuids.get(event.player.toLowerCase()));
+			if (avatarUrl) message.avatarUrl = avatarUrl;
+		}
+		sender.send({ webhook: config.webhooks.chat, droppable, ...message });
 	}
 
 	const flush = guarded('flushing the last entry', () => {
@@ -108,6 +125,8 @@ export function createBridge(options: BridgeOptions): Bridge {
 			let up: boolean | null = null;
 			for (const entry of parseLog(text)) {
 				const event = classify(entry, { ignore: config.ignore });
+				// Players already online when the helper starts keep their UUID.
+				if (event) track(event);
 				if (event?.type === 'started') up = true;
 				else if (event?.type === 'stopping') up = false;
 			}

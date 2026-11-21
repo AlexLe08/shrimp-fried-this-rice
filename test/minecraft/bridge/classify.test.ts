@@ -19,9 +19,10 @@ const entry = (level: LogLevel, message: string) => ({
 });
 
 describe('classify on the 26.3 fixtures', () => {
-	it('finds the start, the join and leave, and the chat, and nothing from the routine lines', () => {
+	it('finds the start, the UUID, the join and leave, and the chat, and nothing from the routine lines', () => {
 		expect(eventsIn('vanilla-26.3-startup.log')).toEqual([
 			{ type: 'started', seconds: 0.35 },
+			{ type: 'uuid', player: 'Steve', uuid: '00000000-0000-4000-8000-000000000001' },
 			{ type: 'joined', player: 'Steve' },
 			{ type: 'alert', kind: 'lag', level: 'WARN', message: expect.stringMatching(/^Can't keep up!/), details: [] },
 			{ type: 'alert', kind: 'lag', level: 'WARN', message: expect.stringMatching(/^Can't keep up!/), details: [] },
@@ -123,6 +124,21 @@ describe('classify rules', () => {
 		const withExtra = { ignore: [...DEFAULT_IGNORE, /Known noisy mod/] };
 		expect(classify(entry('ERROR', 'Known noisy mod failed again'), withExtra)).toBeNull();
 		expect(classify(entry('ERROR', 'Something else failed'), withExtra)).toMatchObject({ kind: 'error' });
+	});
+
+	it("reads a login's UUID, and not one a player types into chat", () => {
+		const uuid = '069a79f4-44e9-4726-a5be-fca90e38aaf5';
+		expect(classify(entry('INFO', `UUID of player Notch is ${uuid}`), options)).toEqual({
+			type: 'uuid',
+			player: 'Notch',
+			uuid,
+		});
+		expect(classify(entry('INFO', `<Steve> UUID of player Notch is ${uuid}`), options)).toEqual({
+			type: 'chat',
+			player: 'Steve',
+			text: `UUID of player Notch is ${uuid}`,
+		});
+		expect(classify(entry('INFO', 'UUID of player Notch is not-a-uuid'), options)).toBeNull();
 	});
 
 	it('never alerts on DEBUG or TRACE', () => {

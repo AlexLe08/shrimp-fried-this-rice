@@ -115,7 +115,7 @@ export function createSender(options: SenderOptions): Sender {
 		let count = 1;
 		while (queue.items.length) {
 			const next = queue.items[0]!;
-			if (next.username !== head.username) break;
+			if (next.username !== head.username || next.avatarUrl !== head.avatarUrl) break;
 			const joined = `${content}\n${next.content}`;
 			if (joined.length > MAX_CONTENT) break;
 			content = joined;
@@ -159,7 +159,10 @@ export function createSender(options: SenderOptions): Sender {
 			.split('\n')
 			.map((line) => `**${name}:** ${line}`)
 			.join('\n');
-		return { ...post, username: options.fallbackUsername, content };
+		// The picture was the player's; under the server's name it would mislead.
+		const fallback: Post = { ...post, username: options.fallbackUsername, content };
+		delete fallback.avatarUrl;
+		return fallback;
 	}
 
 	async function deliver(webhook: string, queue: Queue, original: Post): Promise<void> {
@@ -195,6 +198,7 @@ export function createSender(options: SenderOptions): Sender {
 					body: JSON.stringify({
 						content: truncate(post.content),
 						username: post.username,
+						...(post.avatarUrl === undefined ? {} : { avatar_url: post.avatarUrl }),
 						allowed_mentions: { parse: [] },
 					}),
 					signal: request.signal,
