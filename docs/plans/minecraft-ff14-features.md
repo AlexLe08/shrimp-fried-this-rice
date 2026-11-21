@@ -202,8 +202,8 @@ This is the owner's explicit requirement: no alerts for routine warnings such as
 ### Tailer behaviour
 
 - **Poll, do not use `fs.watch`**: `fs.watch` behaves differently on each OS. Every 500 ms, `stat` the file and read any bytes past the last offset.
-- **Rotation**: vanilla renames `latest.log` on startup and creates a new one. If the file is missing, keep polling. If its size is smaller than the last offset, or its inode changed (a new file can outgrow the old offset between two polls), restart from offset 0. The file is opened per poll and closed again, as a handle held open on Windows can stop the server renaming it.
-- **Startup**: begin at the end of the file so old history is not replayed. Scan the existing content once, without posting, to learn whether the server is currently up.
+- **Rotation**: vanilla renames `latest.log` on startup and creates a new one. If the file is missing, keep polling. If its size is smaller than the last offset, or its inode changed (a new file can outgrow the old offset between two polls), restart from offset 0. The file is opened by path on every poll, so after a rotation the new file is read, not the renamed old one a held handle would point at. Some filesystems (some Docker Desktop and network mounts) report inode 0, leaving only the size check.
+- **Startup**: begin at the end of the file so old history is not replayed. Scan the end of the existing content (the last 1 MiB, from a line start) once, without posting, to learn whether the server is currently up. `latest.log` rotates only on a restart, so it can be hundreds of megabytes.
 - **Partial lines**: buffer until a newline arrives.
 
 ### Sender behaviour

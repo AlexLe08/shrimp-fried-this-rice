@@ -2,7 +2,7 @@ import { appendFile, mkdir, mkdtemp, rename, rm, truncate, writeFile } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createTailer } from '../../../src/minecraft/bridge/tailer.ts';
+import { createTailer, MAX_READ_BYTES } from '../../../src/minecraft/bridge/tailer.ts';
 
 let dir: string;
 let path: string;
@@ -160,7 +160,13 @@ describe('createTailer', () => {
 		await writeFile(path, '');
 		const lines: string[] = [];
 		const backlog = vi.fn();
-		const tailer = createTailer({ path, intervalMs: 10, onLines: (batch) => lines.push(...batch), onBacklog: backlog });
+		const tailer = createTailer({
+			path,
+			intervalMs: 10,
+			onLines: (batch) => lines.push(...batch),
+			onBacklog: backlog,
+			onError: vi.fn(),
+		});
 		tailer.start();
 		// Appended before the first poll, the line would be backlog, never replayed.
 		await vi.waitFor(() => expect(backlog).toHaveBeenCalled());
@@ -172,14 +178,97 @@ describe('createTailer', () => {
 		expect(lines).toEqual(['tick']);
 	});
 
-	it('reports a read error through onError and keeps polling', async () => {
+	it('reports a repeating read error once, and again after it clears and comes back', async () => {
 		// A directory where the log should be fails with EISDIR, on open or on
 		// read depending on the OS, but never with ENOENT.
 		await mkdir(path);
-		const onError = vi.fn();
-		const tailer = createTailer({ path, intervalMs: 10, onLines: () => {}, onError });
+		const { tailer, onError } = setup();
+		await tailer.poll();
+		await tailer.poll();
+		await tailer.poll();
+		expect(onError).toHaveBeenCalledOnce();
+		await rm(path, { recursive: true });
+		await writeFile(path, '');
+		await tailer.poll();
+		await rm(path);
+		await mkdir(path);
+		await tailer.poll();
+		expect(onError).toHaveBeenCalledTimes(2);
+	});
+
+	it('keeps polling when onError throws', async () => {
+		await mkdir(path);
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const lines: string[] = [];
+		const onError = vi.fn(() => {
+			throw new Error('callback broke');
+		});
+		const tailer = createTailer({ path, intervalMs: 10, onLines: (batch) => lines.push(...batch), onError });
 		tailer.start();
-		await vi.waitFor(() => expect(onError.mock.calls.length).toBeGreaterThanOrEqual(2));
+		await vi.waitFor(() => expect(onError).toHaveBeenCalled());
+		await rm(path, { recursive: true });
+		await writeFile(path, 'recovered\n');
+		await vi.waitFor(() => expect(lines).toEqual(['recovered']));
 		await tailer.stop();
+		expect(consoleError).toHaveBeenCalled();
+		consoleError.mockRestore();
+	});
+
+	it('joins a poll under way instead of reading the same bytes twice', async () => {
+		await writeFile(path, '');
+		const { tailer, lines } = setup();
+		await tailer.poll();
+		await appendFile(path, 'once\n');
+		await Promise.all([tailer.poll(), tailer.poll(), tailer.poll()]);
+		expect(lines).toEqual(['once']);
+	});
+
+	it('runs one timer however often start is called, including during stop', async () => {
+		// Only the timers are fake; the file reads are real.
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+		try {
+			await writeFile(path, '');
+			const { tailer } = setup();
+			tailer.start();
+			tailer.start();
+			await tailer.poll();
+			expect(vi.getTimerCount()).toBe(1);
+
+			// A poll still under way when stop and start are called: its chain must
+			// not re-arm beside the new one.
+			vi.advanceTimersByTime(500);
+			const stopping = tailer.stop();
+			tailer.start();
+			await stopping;
+			await tailer.poll();
+			expect(vi.getTimerCount()).toBe(1);
+			await tailer.stop();
+			expect(vi.getTimerCount()).toBe(0);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('scans only the last MAX_READ_BYTES of a large file, from a line start', async () => {
+		const line = 'y'.repeat(99);
+		const count = Math.ceil((MAX_READ_BYTES * 1.5) / 100);
+		await writeFile(path, `first\n${`${line}\n`.repeat(count)}last\n`);
+		const { tailer, backlog } = setup();
+		await tailer.poll();
+		const text = backlog.mock.calls[0]![0];
+		expect(text.length).toBeLessThanOrEqual(MAX_READ_BYTES);
+		expect(text.startsWith(line)).toBe(true);
+		expect(text.endsWith('\nlast')).toBe(true);
+		expect(text).not.toContain('first');
+	});
+
+	it('passes on a line too long to hold rather than buffering it without bound', async () => {
+		await writeFile(path, '');
+		const { tailer, lines } = setup();
+		await tailer.poll();
+		await appendFile(path, 'z'.repeat(70 * 1024));
+		await tailer.poll();
+		expect(lines).toHaveLength(1);
+		expect(lines[0]).toHaveLength(70 * 1024);
 	});
 });
