@@ -6,6 +6,7 @@ export interface MockOptionsConfig {
 	integers?: Record<string, number | null>;
 	booleans?: Record<string, boolean | null>;
 	channels?: Record<string, unknown>;
+	roles?: Record<string, unknown>;
 	subcommand?: string;
 }
 
@@ -14,6 +15,8 @@ interface MockInteractionConfig {
 	inCachedGuild?: boolean;
 	guild?: Record<string, unknown> | null;
 	user?: { id: string; username: string };
+	// Server-wide permissions of whoever runs it; allows everything unless given.
+	memberPermissions?: { has(permission: bigint): boolean };
 	channel?: unknown;
 	client?: { commands?: Collection<string, unknown>; cooldowns?: Collection<string, unknown>; emojis?: unknown };
 	replied?: boolean;
@@ -31,6 +34,8 @@ export function createMockInteraction(config: MockInteractionConfig = {}) {
 		guildId: (config.guild?.['id'] as string | undefined) ?? null,
 		guild: config.guild ?? null,
 		user: config.user ?? { id: 'mock-user-id', username: 'mockuser' },
+		member: { id: config.user?.id ?? 'mock-user-id' },
+		memberPermissions: config.memberPermissions ?? { has: () => true },
 		channel: config.channel ?? null,
 		client: config.client ?? {
 			commands: new Collection<string, unknown>(),
@@ -49,6 +54,7 @@ export function createMockInteraction(config: MockInteractionConfig = {}) {
 			getInteger: vi.fn((name: string) => options.integers?.[name] ?? null),
 			getBoolean: vi.fn((name: string) => options.booleans?.[name] ?? null),
 			getChannel: vi.fn((name: string) => options.channels?.[name] ?? null),
+			getRole: vi.fn((name: string) => options.roles?.[name] ?? null),
 			getSubcommand: vi.fn(() => options.subcommand ?? ''),
 			getFocused: vi.fn(() => config.focused ?? ''),
 		},

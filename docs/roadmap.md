@@ -135,41 +135,53 @@ Later item), not a follow-up.
   `test/tsconfig.json` (#38). A dropped import in #38 had passed lint
   and `typecheck` and failed only when the tests ran, as Vitest strips
   types unchecked.
+- **Trial FC member follow-ups (`/recruit`)** (2026-11-21, #39 to #41,
+  three stacked PRs, Track E1 of
+  [`plans/minecraft-ff14-features.md`](plans/minecraft-ff14-features.md)).
+  Moderators record trial members by in-game name with a note; when the
+  follow-up is due (30 days by default) the bot posts once in the
+  configured channel, pinging only the configured role, and the entry stays
+  on `/recruit list` until resolved, snoozed or removed. The first feature
+  storage module (`src/ffxiv/recruit/storage.ts`, decision 0004) and
+  migration 2. One change from the plan: a refused post or a missing
+  channel pauses that server's follow-ups (kept pending, shown in
+  `/recruit list` and `config`, resumed by `/recruit config channel:`)
+  instead of marking each entry failed. From review: a server's due
+  follow-ups go out as one post per poll with a single ping (a backlog of
+  up to 100 would have pinged once each), and `/recruit config` takes only
+  a role the moderator could ping themselves, never `@everyone`. Not yet tried on a live server,
+  including whether Mention Everyone lets the bot ping a role that doesn't
+  allow mentions.
 
 ## Next up
 
 Feature work, in this order unless the owner says otherwise. Schema
 changes are cheapest now, while the bot is pre-release (decision 0003).
 
-Items 1 to 4 are designed in
+Items 1 to 3 are designed in
 [`plans/minecraft-ff14-features.md`](plans/minecraft-ff14-features.md),
 which has their PR order (its "Suggested pull request order"), the inputs
 to ask the owner for, and which facts are still unverified. The owner put
-them ahead of items 5 and 6.
+them ahead of items 4 and 5.
 
-1. **Trial FC member follow-ups (`/recruit`)**
-   ([Track E, E1](plans/minecraft-ff14-features.md#e-recruit-trial-fc-members-for-moderators)).
-   Moderators record trial members by in-game name; 30 days later the bot
-   pings them to check in. First of the features, because it's the
-   smallest; it follows decision record 0004 (feature storage modules).
-2. **Collection tracker (`/collection`, `/collectionadmin`)**
+1. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the
    group's spreadsheet.
-3. **Minecraft bridge** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
+2. **Minecraft bridge** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
    A zero-dependency helper beside the Minecraft server that posts
    start/stop, chat and real errors through a webhook.
-4. **Lodestone news and scheduled events**
+3. **Lodestone news and scheduled events**
    ([Track C](plans/minecraft-ff14-features.md#track-c-lodestone-news-and-scheduled-events)),
    then the **role check-in** after onboarding
    ([Track E, E2](plans/minecraft-ff14-features.md#e-role-check-in-after-choosing-a-role)),
    which needs the Server Members Intent switched on first.
-5. **File or audio attachments on reminders** (bundled sounds or user
+4. **File or audio attachments on reminders** (bundled sounds or user
    uploads). Open questions first: where uploads live (the VM's disk, or
    Discord's own CDN by re-posting the attachment URL, which expires),
    size limits, and the free tier. Likely a design note or decision record
    before code.
-6. **Rework `/remindme`** (brainstorm in its own session first). One
+5. **Rework `/remindme`** (brainstorm in its own session first). One
    command does everything through optional options: view (no options),
    update (`enabled`, `interval`, `message`, `embed`), snooze, and `reset`,
    with rules about which combine. Options to weigh include subcommands

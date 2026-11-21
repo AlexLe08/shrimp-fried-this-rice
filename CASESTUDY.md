@@ -4,7 +4,7 @@
 
 ## Overview
 
-I designed and built a TypeScript service that sends scheduled, persistent reminders to Discord server channels and, for users who opt in, by DM, with a slash-command interface for configuring them. It covers the whole lifecycle of a real piece of software: schema design and migrations, a scheduling engine that has to survive failed sends and restarts, an automated test suite, CI/CD with an approval gate, and a self-managed Linux server. The design was shaped by real incidents along the way.
+I designed and built a TypeScript service that sends scheduled, persistent reminders to Discord server channels and, for users who opt in, by DM, with a slash-command interface for configuring them. It has since grown into features for an FF14 Free Company's server, starting with follow-ups on trial members for its moderators. It covers the whole lifecycle of a real piece of software: schema design and migrations, a scheduling engine that has to survive failed sends and restarts, an automated test suite, CI/CD with an approval gate, and a self-managed Linux server. The design was shaped by real incidents along the way.
 
 **Stack:** TypeScript run directly by Node 24 (type stripping, no build step), discord.js v14, SQLite (`better-sqlite3`), Vitest, ESLint and Prettier, GitHub Actions, Ubuntu on an Oracle Cloud "Always Free" VM under systemd.
 

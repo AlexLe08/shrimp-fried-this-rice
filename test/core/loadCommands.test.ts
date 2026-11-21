@@ -20,6 +20,7 @@ describe('findAreaModules', () => {
 
 	it('finds every command module in an area commands folder', () => {
 		expect(relativeToSrc(findAreaModules('commands'))).toEqual([
+			'ffxiv/commands/recruit.ts',
 			'reminders/commands/reminder.ts',
 			'reminders/commands/remindme.ts',
 		]);
@@ -30,6 +31,6 @@ describe('loadCommands', () => {
 	it('loads each command module', async () => {
 		const commands = await loadCommands();
 
-		expect(commands.map((command) => command.data.name)).toEqual(['reminder', 'remindme']);
+		expect(commands.map((command) => command.data.name)).toEqual(['recruit', 'reminder', 'remindme']);
 	});
 });

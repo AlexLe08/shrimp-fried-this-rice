@@ -66,7 +66,7 @@ describe('deploy-commands', () => {
 		const sent = JSON.parse(JSON.stringify(body)) as { name: string }[];
 		// Sorted so the order the loader reads files in can't change the snapshot.
 		const definitions = sent.sort((a, b) => a.name.localeCompare(b.name));
-		expect(definitions.map((command) => command.name)).toEqual(['reminder', 'remindme']);
+		expect(definitions.map((command) => command.name)).toEqual(['recruit', 'reminder', 'remindme']);
 		expect(definitions).toMatchSnapshot();
 	});
 

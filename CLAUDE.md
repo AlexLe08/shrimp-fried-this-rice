@@ -87,7 +87,7 @@ the workflow, indexed in its `README.md`.
   Row interfaces mirror the columns by hand; change both in the same
   commit.
 - `src/` is grouped by area: `core/` (bot plumbing and Discord helpers
-  any area may use) and `reminders/` (later `ffxiv/` and `minecraft/`),
+  any area may use), `reminders/` and `ffxiv/` (later `minecraft/`),
   each holding its own commands, events, embeds and `storage.ts`.
   `src/index.ts` and `src/deploy-commands.ts` stay at the top of `src/`:
   the VM's systemd unit starts `./src/index.ts`, so moving it would leave
