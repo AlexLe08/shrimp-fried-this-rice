@@ -126,7 +126,7 @@ A git-ignored JSON file, path passed as `--config`. One helper process per Minec
 
 Add `mcbridge*.json` to `.gitignore` in A5.
 
-### Player avatars (proposed 2026-11-21; confirm with the owner before building)
+### Player avatars (confirmed by the owner 2026-11-21)
 
 The owner wants chat lines to show players' skins, but only for players who agree to their name going to a skin service, and players who don't should still look like different speakers. Discord shows each chat line's `username` (the player's name) either way. Opting out is about the third-party service, not about Discord.
 
@@ -138,7 +138,7 @@ In the first version the helper's config decides, since it belongs to whoever ru
   "players": {
     "Steve": "skin",               // opted in: their skin's head
     "Alex": "generated",           // opted out: a picture picked from their name
-    "Herobrine": "generated:7",    // a generated picture, chosen by hand (two players hashed to the same one)
+    "Herobrine": "generated:7",    // a generated picture (0 to 9), chosen by hand (two players hashed to the same one)
     "Notch": "https://example.com/notch.png"   // their own picture
   }
 }
@@ -147,13 +147,13 @@ In the first version the helper's config decides, since it belongs to whoever ru
 - **`skin`**: a head render from a public skin service, by name or by UUID (the log gives it on login: `UUID of player Steve is …`). The URL goes in the webhook's `avatar_url`, so Discord fetches it and the service sees the player's name or UUID. That's what a player opts into. **Unverified**: which service (mc-heads.net, minotar.net, crafatar.com are candidates; check each is up, serves PNG, and its terms and rate limits), and whether Discord fetches `avatar_url` itself or through its media proxy.
 - **`generated`**: one of a fixed set of pictures, picked by a stable hash of the lowercased name, so a player keeps the same one across restarts and nothing goes to a third party. Two sources:
   - Discord's own default avatars (`cdn.discordapp.com/embed/avatars/N.png`). These are first-party, but there are only a handful (**unverified**: 6, `N` = 0 to 5), so with several players two will often look alike.
-  - **Recommended**: a set of about 16 to 24 distinct PNGs drawn for this repo, which is public, so Discord can load them from `raw.githubusercontent.com` (**unverified** that Discord loads `avatar_url` from there). There are fewer collisions, and `generated:N` fixes any that happen.
+  - **Chosen**: 10 distinct PNGs drawn for this repo (the owner capped it at 10 for now), which is public, so Discord can load them from `raw.githubusercontent.com` (**unverified** that Discord loads `avatar_url` from there). There are fewer collisions than with Discord's handful, and `generated:N` fixes any that happen. More images can be added later; adding them changes which picture a hashed player gets, so say so in that PR.
 - **A URL**: any `https` image the player picked.
 - **`none`**: the webhook's own avatar.
 
 If a picture's URL is broken, Discord shows its default avatar. The helper can't tell, because Discord fetches the image, not the helper. Avatar choice is a pure function (`avatarFor(player, config)`), tested without I/O, in its own PR after the sender (A4).
 
-Later, possibly its own session: players choose in game, for example by typing `!avatar skin` in chat. The helper reads it like any chat line (the sender's name is trustworthy because chat matching is anchored) and stores choices in a JSON file beside the config. Open questions: whether the line should also be relayed to Discord, and whether a player can opt out of their name appearing in Discord at all (an alias).
+Later, in its own session (the owner's call, 2026-11-21): players choose in game, for example by typing `!avatar skin` in chat. The helper reads it like any chat line (the sender's name is trustworthy because chat matching is anchored) and stores choices in a JSON file beside the config. Open questions: whether the line should also be relayed to Discord, and whether a player can opt out of their name appearing in Discord at all (an alias).
 
 ### Log line formats
 
@@ -234,7 +234,7 @@ The owner's server runs in a Docker container (an image whose console prints `[i
 - **A2. Fixtures from the owner's real log.** Adjust patterns and the ignore list to match. A1 and A2 went in one PR, with decision record 0005.
 - **A3. Tailer.** Tested against temp files: append, truncate, delete and recreate, partial lines.
 - **A4. Sender.** Tested with a stubbed `fetch`: batching, 429 handling, mention suppression, truncation, the username fallback.
-- **A4b. Player avatars** ([above](#player-avatars-proposed-2026-11-21-confirm-with-the-owner-before-building)), once the owner confirms the design and the unverified facts are checked.
+- **A4b. Player avatars** ([above](#player-avatars-confirmed-by-the-owner-2026-11-21)), once the unverified facts are checked.
 - **A5. `main.ts`, config, `npm run mcbridge`, the `.gitignore` entry.** Manual end-to-end test against the owner's server and a test channel.
 - **A6. `docs/MINECRAFT_BRIDGE.md`**, with the README's Features, Project Structure and Available Scripts updated in the same PR.
 
@@ -801,7 +801,7 @@ Small PRs, each green on its own. These go ahead of the roadmap's earlier Next u
 5. B5 (import and export)
 6. A1 + A2 (parser and classifier, with the Track A record). The owner moved Track A ahead of B on 2026-11-21.
 7. A3 + A4 + A5 + A6 (tailer, sender, entrypoint, docs), split if too big to review
-8. A4b (player avatars), once its design is confirmed
+8. A4b (player avatars, 10 bundled images); in-game opt-in is a later, separate session
 9. C0 + C1 + C2 (Lodestone news posting, with the Track C record)
 10. C3 (automatic maintenance events)
 11. C4 (manual events for other announcements)

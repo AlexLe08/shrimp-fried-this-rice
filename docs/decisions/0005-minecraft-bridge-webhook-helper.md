@@ -35,7 +35,9 @@ a vanilla server).
 `logs/latest.log` by polling and posts to Discord through webhook URLs kept
 in a git-ignored config file on the Minecraft host. The bot never loads it.
 
-**Why:** TODO(Alex)
+**Why:**
+
+Keeping the solution universal for Minecraft hosts on Windows, Mac, and Linux was one of the top priorities. This feature also needs to minimize obtaining user data by defaulting to opt in behavior for features that would need it while providing a fallback. Using a webhook also helps prevent tying Minecraft players directly to their Discord account (if they have one or are in the server.)
 
 ## Consequences
 
