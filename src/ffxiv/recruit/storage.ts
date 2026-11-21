@@ -133,9 +133,9 @@ function getRecruitById(id: number): Recruit | undefined {
 }
 
 /**
- * Changes an open recruit's name, note or due date, keeping the others. A new
- * due date makes the follow-up pending again, so it's posted (again) when it
- * comes. Returns the updated row, or undefined if the recruit isn't open.
+ * Changes an open recruit's name, note or due date, keeping the others. A
+ * different due date makes the follow-up pending again, so it's posted
+ * (again) when it comes; the same one leaves a posted follow-up as it is. Returns the updated row, or undefined if the recruit isn't open.
  * Throws if the new name is already open in the server.
  */
 export function updateRecruit(
@@ -147,7 +147,7 @@ export function updateRecruit(
 	const name = updates.name?.trim() ?? existing.name;
 	const note = updates.note ?? existing.note;
 	const dueAt = updates.dueAt ?? existing.due_at;
-	const status = updates.dueAt === undefined ? existing.status : 'pending';
+	const status = dueAt === existing.due_at ? existing.status : 'pending';
 	db.prepare('UPDATE recruits SET name = ?, name_key = ?, note = ?, due_at = ?, status = ? WHERE id = ?').run(
 		name,
 		recruitNameKey(name),

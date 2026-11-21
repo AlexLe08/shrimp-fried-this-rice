@@ -134,6 +134,7 @@ describe('recruits', () => {
 		markRecruitReminded(recruit.id, recruit.due_at);
 
 		expect(updateRecruit(recruit.id, { note: 'still here' })?.status).toBe('reminded');
+		expect(updateRecruit(recruit.id, { dueAt: recruit.due_at })?.status).toBe('reminded');
 		expect(updateRecruit(recruit.id, { dueAt: 20_000 })).toMatchObject({ status: 'pending', due_at: 20_000 });
 	});
 
