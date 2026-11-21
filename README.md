@@ -25,6 +25,7 @@ Deployed and running in production. What's done, what's next, and candidates for
 - Snoozing: a server reminder (`/reminder snooze`) or your own DM reminders (`/remindme snooze:`) can be held back for 30 minutes to a week, then resume by themselves. Each snooze chooses what happens when it ends: send one right away if one was missed (the default), or wait a full interval. Active snoozes show in `/reminder list`, `/reminder status` and `/remindme`.
 - Failures are handled per reminder: one whose channel was deleted (or can't take messages) is disabled, and shows as disabled in `/reminder status`; re-enable it with `/reminder edit` to a new channel, then `/reminder toggle`. A send Discord refuses (missing permissions, DMs closed) is retried after the reminder's own interval; network and Discord server errors on the next minute's poll.
 - Trial FC member follow-ups (`/recruit`): moderators record trial members of the Free Company by in-game name (they needn't be on Discord) with a short note, up to 100 open at a time. When an entry's follow-up comes due (30 days by default, per server or per entry), the bot posts once in the moderators' channel, pinging the configured role: who they are, when and by whom they were added, the note, and to promote them in game. The entry stays on `/recruit list` until it's resolved (promoted or left), snoozed or removed. Names are autocompleted from the open entries. Managing it needs **Manage Server**, or a role the server grants `/recruit` to in Server Settings → Integrations; every reply is ephemeral, as the notes are about people.
+- Minecraft bridge (`mcbridge`): a separate helper that runs beside a vanilla Minecraft server and posts its start and stop, joins and leaves, chat (under each player's name, with no pings) and real errors (with the stack trace; routine warnings and repeats held back) to Discord through webhooks. It needs only Node 24 on the Minecraft host and never uses the bot's token. Setup on Windows, macOS and Linux: [`docs/MINECRAFT_BRIDGE.md`](docs/MINECRAFT_BRIDGE.md).
 - Restarts are clean: on `SIGTERM`/`SIGINT` (every deploy), a send already under way finishes and is recorded, so it isn't repeated after the restart.
 
 ## Design notes
@@ -223,7 +224,7 @@ src/
       storage.ts          # the trial members' queries, row types and limits (settings, entries, due follow-ups)
       followUps.ts        # the scheduler's follow-up check — posts each due follow-up once, pausing a server whose posts fail
   minecraft/
-    bridge/               # mcbridge, a helper that runs beside a Minecraft server (in progress; the bot never loads it)
+    bridge/               # mcbridge, a helper that runs beside a Minecraft server (setup: docs/MINECRAFT_BRIDGE.md; the bot never loads it)
       formats.ts          # the log line prefix of each server flavor (vanilla so far)
       parseLine.ts        # log lines to entries, with stack trace lines attached to the entry they follow
       classify.ts         # an entry to a bridge event (start, stop, join, leave, chat, alert) or nothing
@@ -233,7 +234,7 @@ src/
       sender.ts           # posts through the webhooks: batching, rate limits, retries, no mentions, never crashes the helper
       config.ts           # reads and checks mcbridge.json, reporting every problem at once
       bridge.ts           # wiring: lines to entries to events, alerts through the gate, posts to the right webhook
-      main.ts             # the entrypoint (npm run mcbridge): --config, the tailer and sender, shutdown on SIGINT/SIGTERM
+      main.ts             # the entrypoint (npm run mcbridge): --config, the tailer and sender, shutdown on SIGINT, SIGTERM, SIGHUP (and SIGBREAK on Windows)
 test/
   setup.ts                       # points core/database.ts at an in-memory DB before any test imports it
   tsconfig.json                  # type-checks the tests with src's options (npm run typecheck); leaves npm run build as it is
@@ -292,7 +293,7 @@ test/
       bridge.test.ts                # a real log's posts, stack traces flushed when quiet, summaries, the backlog scan, read errors
 ```
 
-Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `scripts/` (worktrees, `check.sh` mirroring CI, cleanup after merges), `docs/decisions/`, and `docs/roadmap.md` (status and next steps).
+Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `scripts/` (worktrees, `check.sh` mirroring CI, cleanup after merges), `docs/decisions/`, and `docs/roadmap.md` (status and next steps). Setting up the Minecraft bridge: `docs/MINECRAFT_BRIDGE.md`.
 
 ## Available Scripts
 

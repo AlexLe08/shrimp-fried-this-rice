@@ -238,11 +238,12 @@ The owner's server runs in a Docker container (an image whose console prints `[i
 
 - **A1. Parser and classifier.** `formats.ts`, `parseLine.ts`, `classify.ts`, `alertGate.ts` with fixture-driven tests. No I/O.
 - **A2. Fixtures from the owner's real log.** Adjust patterns and the ignore list to match. A1 and A2 went in one PR, with decision record 0005.
-- **A3. Tailer.** Tested against temp files: append, truncate, delete and recreate, partial lines.
-- **A4. Sender.** Tested with a stubbed `fetch`: batching, 429 handling, mention suppression, truncation, the username fallback.
+- **A3. Tailer.** Tested against temp files: append, truncate, delete and recreate, partial lines. Done (#44).
+- **A4. Sender.** Tested with a stubbed `fetch`: batching, 429 handling, mention suppression, truncation, the username fallback. Done (#45).
 - **A4b. Player avatars** ([above](#player-avatars-confirmed-by-the-owner-2026-11-21)), once the unverified facts are checked.
-- **A5. `main.ts`, config, `npm run mcbridge`, the `.gitignore` entry.** Manual end-to-end test against the owner's server and a test channel.
-- **A6. `docs/MINECRAFT_BRIDGE.md`**, with the README's Features, Project Structure and Available Scripts updated in the same PR.
+- **A5. `main.ts`, config, `npm run mcbridge`, the `.gitignore` entry.** Manual end-to-end test against the owner's server and a test channel. Done (#46), except the end-to-end test, which is the owner's (the helper needs a real webhook and server): `docs/MINECRAFT_BRIDGE.md` step 5.
+- **A6. `docs/MINECRAFT_BRIDGE.md`**, with the README's Features, Project Structure and Available Scripts updated in the same PR. Done (#47; Available Scripts went in with A5, which added the script).
+- **A7. Crash reports.** A new file in `crashReportsDir` posted as an alert (the Events table). Not built in A5, whose config refuses the key until it is.
 
 ### A-later (not planned in detail)
 
