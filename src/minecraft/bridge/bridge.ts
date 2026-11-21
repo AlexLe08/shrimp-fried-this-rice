@@ -1,4 +1,4 @@
-import { avatarFor } from './avatars.ts';
+import { avatarFor, isMojangUuid } from './avatars.ts';
 import { createAlertGate, type AlertGate } from './alertGate.ts';
 import { classify, type BridgeEvent } from './classify.ts';
 import type { BridgeConfig } from './config.ts';
@@ -48,14 +48,22 @@ export function createBridge(options: BridgeOptions): Bridge {
 	let quietTimer: NodeJS.Timeout | null = null;
 	// Per thing that can't be read (the log, the crash-reports folder).
 	const lastReadErrorPost = new Map<string, number>();
-	// By lowercased name, from login to leaving, for the skin lookup.
+	// By lowercased name, for the server's run: not dropped on leaving, as a
+	// player logging in again while online logs the new UUID before the old
+	// session's leave line.
 	const uuids = new Map<string, string>();
+	let offlineMode = false;
 
 	function track(event: BridgeEvent): void {
-		if (event.type === 'uuid') uuids.set(event.player.toLowerCase(), event.uuid);
-		else if (event.type === 'left') uuids.delete(event.player.toLowerCase());
-		// A crash logs no leave lines; whoever was online is gone either way.
-		else if (event.type === 'stopping' || event.type === 'started') uuids.clear();
+		if (event.type === 'uuid') {
+			uuids.set(event.player.toLowerCase(), event.uuid);
+			if (!isMojangUuid(event.uuid)) offlineMode = true;
+		} else if (event.type === 'stopping' || event.type === 'started') {
+			// A crash logs no stop; a start begins a new run either way, and the
+			// server's online-mode setting may have changed with it.
+			uuids.clear();
+			offlineMode = false;
+		}
 	}
 
 	// The callbacks run from the tailer and from timers: a bug in one must log,
@@ -107,7 +115,10 @@ export function createBridge(options: BridgeOptions): Bridge {
 		const droppable = event.type !== 'started' && event.type !== 'stopping';
 		const message = eventMessage(event, config.serverName);
 		if (event.type === 'chat') {
-			const avatarUrl = avatarFor(event.player, config.avatars, uuids.get(event.player.toLowerCase()));
+			const avatarUrl = avatarFor(event.player, config.avatars, {
+				uuid: uuids.get(event.player.toLowerCase()),
+				offlineMode,
+			});
 			if (avatarUrl) message.avatarUrl = avatarUrl;
 		}
 		sender.send({ webhook: config.webhooks.chat, droppable, ...message });

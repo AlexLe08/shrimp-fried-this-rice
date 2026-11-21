@@ -71,10 +71,10 @@ describe('avatarFor', () => {
 
 	it('looks a skin up by UUID, without dashes, when the log gave one', () => {
 		const avatars = config({ default: 'skin' });
-		expect(avatarFor('Notch', avatars, ONLINE_UUID)).toBe(
+		expect(avatarFor('Notch', avatars, { uuid: ONLINE_UUID })).toBe(
 			'https://mc-heads.net/avatar/069a79f444e94726a5befca90e38aaf5/128',
 		);
-		expect(avatarFor('Notch', avatars, ONLINE_UUID.toUpperCase())).toBe(
+		expect(avatarFor('Notch', avatars, { uuid: ONLINE_UUID.toUpperCase() })).toBe(
 			'https://mc-heads.net/avatar/069a79f444e94726a5befca90e38aaf5/128',
 		);
 	});
@@ -84,7 +84,19 @@ describe('avatarFor', () => {
 	});
 
 	it("gives an offline-mode player a generated picture, not a stranger's skin", () => {
-		expect(avatarFor('Steve', config({ default: 'skin' }), OFFLINE_UUID)).toBe(`${GENERATED}${hashName('Steve')}.png`);
+		expect(avatarFor('Steve', config({ default: 'skin' }), { uuid: OFFLINE_UUID })).toBe(
+			`${GENERATED}${hashName('Steve')}.png`,
+		);
+	});
+
+	it('never looks a name up on a server seen to be in offline mode', () => {
+		expect(avatarFor('Notch', config({ default: 'skin' }), { offlineMode: true })).toBe(
+			`${GENERATED}${hashName('Notch')}.png`,
+		);
+		// A Bedrock bridge's UUIDs are version 0: no Mojang skin either.
+		expect(avatarFor('Notch', config({ default: 'skin' }), { uuid: '00000000-0000-0000-0009-01f2a3b4c5d6' })).toBe(
+			`${GENERATED}${hashName('Notch')}.png`,
+		);
 	});
 
 	it("uses a player's own entry over the default, whatever the case", () => {
@@ -97,7 +109,7 @@ describe('avatarFor', () => {
 				Notch: 'https://example.com/notch.png',
 			},
 		});
-		expect(avatarFor('Steve', avatars, ONLINE_UUID)).toBe(
+		expect(avatarFor('Steve', avatars, { uuid: ONLINE_UUID })).toBe(
 			'https://mc-heads.net/avatar/069a79f444e94726a5befca90e38aaf5/128',
 		);
 		expect(avatarFor('Alex', avatars)).toBe(`${GENERATED}${hashName('Alex')}.png`);

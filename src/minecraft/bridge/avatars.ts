@@ -27,11 +27,21 @@ export const DEFAULT_AVATARS: AvatarConfig = { default: { kind: 'generated' }, p
 const PLAYER_NAME = /^[A-Za-z0-9_]{1,16}$/;
 const UUID = /^[0-9a-f]{8}-?[0-9a-f]{4}-?([0-9a-f])[0-9a-f]{3}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
 
-/**
- * The picture's URL for a player's chat line, or undefined for the webhook's
- * own. `uuid` is the one the log gave on login, if the helper saw it.
- */
-export function avatarFor(player: string, avatars: AvatarConfig, uuid?: string): string | undefined {
+/** Whether a UUID is a Mojang account's (version 4), not one an offline-mode server made up. */
+export function isMojangUuid(uuid: string): boolean {
+	return UUID.exec(uuid)?.[1] === '4';
+}
+
+export interface PlayerSeen {
+	/** The UUID the log gave at login, if the helper saw that line. */
+	uuid?: string | undefined;
+	/** A non-Mojang UUID has been seen this run, so names aren't Mojang accounts. */
+	offlineMode?: boolean;
+}
+
+/** The picture's URL for a player's chat line, or undefined for the webhook's own. */
+export function avatarFor(player: string, avatars: AvatarConfig, seen: PlayerSeen = {}): string | undefined {
+	const { uuid, offlineMode = false } = seen;
 	const choice = avatars.players.get(player.toLowerCase()) ?? avatars.default;
 	switch (choice.kind) {
 		case 'none':
@@ -41,16 +51,16 @@ export function avatarFor(player: string, avatars: AvatarConfig, uuid?: string):
 		case 'generated':
 			return generatedUrl(choice.index ?? hashName(player));
 		case 'skin': {
+			// Only a version 4 UUID is a Mojang account. Offline-mode servers make
+			// version 3 ones from the name (Bedrock bridges, version 0), which have
+			// no skin behind them; looking the name up would show whoever owns it
+			// on Mojang's side.
+			if (offlineMode || (uuid !== undefined && !isMojangUuid(uuid))) return generatedUrl(hashName(player));
 			if (uuid === undefined) {
-				// Logged in before the helper started, so no UUID line was seen. The
-				// name finds the same skin unless the server is in offline mode.
+				// The login line wasn't in what the helper read: more than the 1 MiB
+				// it scans at startup ago, or in a log since rotated.
 				return `${SKIN_BASE}/${player}/${SKIN_SIZE}`;
 			}
-			const match = UUID.exec(uuid);
-			// Only a version 4 UUID is a Mojang account. Offline-mode servers make
-			// version 3 ones from the name, which have no skin behind them; looking
-			// the name up would show whoever owns it on Mojang's side.
-			if (match?.[1] !== '4') return generatedUrl(hashName(player));
 			return `${SKIN_BASE}/${uuid.replace(/-/g, '').toLowerCase()}/${SKIN_SIZE}`;
 		}
 	}

@@ -84,18 +84,49 @@ describe('createBridge', () => {
 			]);
 		});
 
-		it('looks a skin up by the UUID logged at login, until the player leaves', () => {
+		it('looks a skin up by the UUID logged at login, or by name when the login was not seen', () => {
 			const { bridge, posts } = setup({ config: skins });
 			bridge.onLines([
 				`[12:00:00] [User Authenticator #1/INFO]: UUID of player Notch is ${ONLINE}`,
 				'[12:00:01] [Server thread/INFO]: Notch joined the game',
 				'[12:00:02] [Server thread/INFO]: <Notch> hi',
-				'[12:00:03] [Server thread/INFO]: Notch left the game',
-				'[12:00:04] [Server thread/INFO]: <Notch> back without a login line',
+				'[12:00:03] [Server thread/INFO]: <jeb_> logged in before the log rotated',
+			]);
+			vi.advanceTimersByTime(1000);
+			expect(avatars(posts.filter(({ username }) => username !== 'Survival'))).toEqual([
+				['Notch', 'https://mc-heads.net/avatar/069a79f444e94726a5befca90e38aaf5/128'],
+				['jeb_', 'https://mc-heads.net/avatar/jeb_/128'],
+			]);
+		});
+
+		it('keeps the UUID of a player who logs in again while online, whose old session leaves after', () => {
+			const { bridge, posts } = setup({ config: skins });
+			bridge.onLines([
+				`[12:00:00] [User Authenticator #1/INFO]: UUID of player Notch is ${ONLINE}`,
+				'[12:00:01] [Server thread/INFO]: Notch joined the game',
+				`[12:01:00] [User Authenticator #2/INFO]: UUID of player Notch is ${ONLINE}`,
+				'[12:01:00] [Server thread/INFO]: Notch left the game',
+				'[12:01:00] [Server thread/INFO]: Notch joined the game',
+				'[12:01:01] [Server thread/INFO]: <Notch> back',
+			]);
+			vi.advanceTimersByTime(1000);
+			expect(posts.find(({ username }) => username === 'Notch')?.avatarUrl).toBe(
+				'https://mc-heads.net/avatar/069a79f444e94726a5befca90e38aaf5/128',
+			);
+		});
+
+		it('looks no name up once an offline-mode UUID was seen, until the server restarts', () => {
+			const { bridge, posts } = setup({ config: skins });
+			bridge.onLines([
+				'[12:00:00] [User Authenticator #1/INFO]: UUID of player Steve is 5627dd98-e6be-3c21-b8a8-e92344183641',
+				'[12:00:01] [Server thread/INFO]: <Notch> no login line seen for me',
+				'[12:00:02] [Server thread/INFO]: Stopping server',
+				'[12:01:00] [Server thread/INFO]: Done (1.0s)! For help, type "help"',
+				'[12:01:01] [Server thread/INFO]: <Notch> and after a restart',
 			]);
 			vi.advanceTimersByTime(1000);
 			expect(posts.filter(({ username }) => username === 'Notch').map(({ avatarUrl }) => avatarUrl)).toEqual([
-				'https://mc-heads.net/avatar/069a79f444e94726a5befca90e38aaf5/128',
+				`https://raw.githubusercontent.com/AlexLe08/shrimp-fried-this-rice/main/assets/mcbridge-avatars/${hashName('Notch')}.png`,
 				'https://mc-heads.net/avatar/Notch/128',
 			]);
 		});
