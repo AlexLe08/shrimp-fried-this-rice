@@ -92,8 +92,9 @@ the workflow, indexed in its `README.md`.
   the bot down after the deploy.
 - `src/reminders/snooze.ts` holds what `/reminder snooze` and `/remindme`
   share: the duration and after-snooze choices, and how a snooze is
-  described. `src/reminders/options.ts` holds the option builders they
-  share (`interval`, `message`, `embed`) and `/reminder`'s `label`.
+  described. `src/reminders/options.ts` holds the option builders
+  `/reminder` and `/remindme` share (`interval`, `message`, `embed`) and
+  `/reminder`'s `label`.
 - `/reminder`'s subcommands are one file each in
   `src/reminders/subcommands/`, default-exporting
   `{ name, build, execute }` (`ReminderSubcommand` in its `helpers.ts`).
