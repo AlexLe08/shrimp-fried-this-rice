@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAlertGate, DEFAULT_ALERT_GATE } from '../../../src/minecraft/bridge/alertGate.ts';
+import { DEFAULT_AVATARS } from '../../../src/minecraft/bridge/avatars.ts';
 import { createBridge } from '../../../src/minecraft/bridge/bridge.ts';
 import { DEFAULT_IGNORE } from '../../../src/minecraft/bridge/classify.ts';
 import type { BridgeConfig } from '../../../src/minecraft/bridge/config.ts';
@@ -14,6 +15,7 @@ const config: BridgeConfig = {
 	logPath: '/srv/logs/latest.log',
 	webhooks: { chat: CHAT, alerts: ALERTS },
 	ignore: [...DEFAULT_IGNORE],
+	avatars: DEFAULT_AVATARS,
 };
 const fixture = (name: string) => readFileSync(join(import.meta.dirname, 'fixtures', name), 'utf8');
 
