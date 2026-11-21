@@ -229,6 +229,8 @@ src/
       classify.ts         # an entry to a bridge event (start, stop, join, leave, chat, alert) or nothing
       alertGate.ts        # holds back routine alerts: lag that doesn't repeat, duplicates, more than a few a minute
       tailer.ts           # polls the log file for new lines, following it when the server rotates or truncates it
+      messages.ts         # an event, alert or summary as Discord message text, within 2000 characters
+      sender.ts           # posts through the webhooks: batching, rate limits, retries, no mentions, never crashes the helper
 test/
   setup.ts                       # points core/database.ts at an in-memory DB before any test imports it
   tsconfig.json                  # type-checks the tests with src's options (npm run typecheck); leaves npm run build as it is
@@ -281,6 +283,8 @@ test/
       classify.test.ts              # the events found in the fixtures, and each rule (impersonation in chat, ignore list, levels)
       alertGate.test.ts             # lag repeats, de-duplication with counts, and the per-minute cap
       tailer.test.ts                # against temp files: appends, partial lines, truncation, delete and recreate, rotation
+      messages.test.ts              # each event's text, alerts' code blocks cut to fit, summaries
+      sender.test.ts                # with a stubbed fetch and fake timers: batching, 429s, the username fallback, retries, overflow
 ```
 
 Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `scripts/` (worktrees, `check.sh` mirroring CI, cleanup after merges), `docs/decisions/`, and `docs/roadmap.md` (status and next steps).

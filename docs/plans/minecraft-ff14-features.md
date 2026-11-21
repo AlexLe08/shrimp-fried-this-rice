@@ -209,10 +209,15 @@ This is the owner's explicit requirement: no alerts for routine warnings such as
 ### Sender behaviour
 
 - Every payload sets `allowed_mentions: { parse: [] }`, so `@everyone` typed in Minecraft chat pings nobody. Execute Webhook supports `allowed_mentions` (verified 2026-11-20, [Discord: Execute Webhook](https://docs.discord.com/developers/resources/webhook)).
-- The per-message `username` is a player's name. Discord refuses a webhook **name** containing `clyde` or `discord` (case-insensitive) and caps it at 80 characters (verified 2026-11-20, same page, Create Webhook). Whether the same rule applies to the per-message `username` is **unverified**; test it in A4 or A5 against the dev server. Until then, fall back to the configured server name when a send with the player's name is refused, rather than dropping the line.
-- Batch lines that arrive within about a second into one message.
+- The per-message `username` is a player's name. Discord refuses a webhook **name** containing `clyde` or `discord` (case-insensitive) and caps it at 80 characters (verified 2026-11-20, same page, Create Webhook). Whether the same rule applies to the per-message `username` is **unverified** (Discord's docs, checked 2026-11-21, give the rule only for the webhook's name); test it in A5 against the dev server. Until then, fall back to the configured server name when a send with the player's name is refused, rather than dropping the line.
+- Batch lines that arrive within about a second into one message (lines from the same sender, up to 2000 characters).
+- Post with `?wait=true`: without it, Discord answers `204` even for a message it didn't save, so a refused post would look sent (verified 2026-11-21, Execute Webhook).
+- A `404` means the webhook was deleted: Discord says not to use it again, so the helper stops posting to it until restarted (verified 2026-11-21, [Rate Limits](https://docs.discord.com/developers/topics/rate-limits)). `retry_after` is in seconds, with decimals; no per-webhook limit is documented, so the helper follows `X-RateLimit-Remaining` and `X-RateLimit-Reset-After` instead of a fixed rate.
 - Honour HTTP 429 by waiting `retry_after` and retrying. Drop the oldest queued chat lines if the queue grows past a bound; never drop alerts.
 - A failed POST logs to the console and does not crash the helper.
+- Each request times out after 15 s. A 429 waits `retry_after` (at least 100 ms, so a zero can't make a tight loop), and a post is dropped after 10 in a row. A post retried after a network error can occasionally appear twice, if Discord saved it before the connection broke; that's accepted.
+- When Discord refuses a player's name, the post goes out under the server's name with each line starting `**Steve:**`, and later posts from that name go straight to the fallback.
+- Player names are escaped where they're shown as text (`__bob__` is a legal name). Chat text is escaped too (the owner's call, 2026-11-21), so it reads in Discord exactly as typed in game: no headings, spoilers, masked links or code blocks, and `<@id>`, `<#id>`, `<t:…>`, custom emoji and `@everyone` show as their text (mentions never pinged anyway). Links are left alone so they stay clickable. **Unverified** on the live client: that Discord hides each escaping backslash, as its Markdown treats a backslash before punctuation as an escape; check on the dev server in the A5 test.
 
 ### Running it on each OS
 
