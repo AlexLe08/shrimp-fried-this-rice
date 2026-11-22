@@ -199,6 +199,17 @@ Later item), not a follow-up.
   an offline-mode server, and a refused config all behaved as expected. A
   picture can show Discord's default avatar for a moment before it loads,
   never longer.
+- **RCON client for two-way chat** (2026-11-22, Track A8a).
+  `src/minecraft/bridge/rcon.ts`, on `node:net` only, for the helper to
+  run `tellraw` once two-way chat is wired up (A8e); nothing uses it yet.
+  It logs in, runs a command with a 5 s timeout, reconnects after a drop
+  (1 s, doubling to 60 s), and stays off after a wrong password, with one
+  callback for the alert. A command cut off by a dropped connection is
+  retried once; one that timed out isn't, as a lagging server still runs
+  it and a retry would show it twice. Commands must be printable ASCII
+  within the wiki's 1446 bytes. Tested against a fake RCON server; not
+  yet tried against a real Minecraft server (A8h measures the real
+  command limit).
 
 ## Next up
 
@@ -220,7 +231,7 @@ them ahead of items 5 and 6.
    there (or with `/minecraft link` and `/minecraft avatar`) after linking their account by a
    code typed in game. That replaces choosing in game (`!avatar`), the
    owner's call (2026-11-21). Its helper-side parts A8a to A8c (the RCON
-   client, the `tellraw` builder and `server.properties` reader, the
+   client, done, the `tellraw` builder and `server.properties` reader, the
    `!link` line) go ahead now; the rest follows item 2.
 2. **Dashboard foundation, then two-way Minecraft chat**
    ([Track D](plans/minecraft-ff14-features.md#track-d-web-dashboard)
