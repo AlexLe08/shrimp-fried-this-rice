@@ -215,6 +215,17 @@ Later item), not a follow-up.
   two (hence one command at a time), and uses UTF-8. Tested against a
   fake RCON server; not yet tried against a real Minecraft server (A8h
   checks both, and measures the real command limit).
+- **`tellraw` builder and `server.properties` reader** (2026-11-22, Track
+  A8b). `src/minecraft/bridge/toMinecraft.ts` turns a Discord sender,
+  text and the bridge's prefix and colour into `tellraw @a` with a
+  JSON-style component: one line, no `§` or control characters,
+  non-ASCII as `\uXXXX`, cut with `…` (never inside an emoji) to fit
+  RCON's limit, everything typed kept inside its string by
+  `JSON.stringify`. `src/minecraft/bridge/serverProperties.ts` reads the
+  file as the server does (UTF-8, else ISO-8859-1; Java properties
+  syntax) and gives RCON's port and password, or why it's off, and
+  `online-mode`. Nothing uses either yet (A8e). Whether 26.3 accepts the
+  component and its escapes is for the end-to-end test (A8h).
 
 ## Next up
 
@@ -236,8 +247,8 @@ them ahead of items 5 and 6.
    there (or with `/minecraft link` and `/minecraft avatar`) after linking their account by a
    code typed in game. That replaces choosing in game (`!avatar`), the
    owner's call (2026-11-21). Its helper-side parts A8a to A8c (the RCON
-   client, done, the `tellraw` builder and `server.properties` reader, the
-   `!link` line) go ahead now; the rest follows item 2.
+   client and the `tellraw` builder and `server.properties` reader, done,
+   and the `!link` line) go ahead now; the rest follows item 2.
 2. **Dashboard foundation, then two-way Minecraft chat**
    ([Track D](plans/minecraft-ff14-features.md#track-d-web-dashboard)
    D0 and D1, moved up by the owner on 2026-11-22, with the rest of the
