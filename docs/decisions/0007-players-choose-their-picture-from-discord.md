@@ -27,7 +27,8 @@ because chat matching is anchored.
 
 A Discord member links their account to a Minecraft name by running
 `/mcbridge link`, which gives them a one-time code privately, and typing
-`!link <code>` in game as that player. Once linked, they choose their
+`!link <code>` in game as that player. The link is to the player's
+account (its UUID), not just the name. Once linked, they choose their
 picture with `/mcbridge avatar` (their Discord picture, their skin, a
 bundled picture, or the config's default). The choice applies while
 they're in the Discord server; otherwise, and for players who never
@@ -44,8 +45,10 @@ file on the Minecraft host.
 - In-game `!avatar` is dropped. The config's `avatars` stays as the
   default for everyone, and the server's own per-player choices still
   apply to players who don't link.
-- Linking is refused on an offline-mode server, where anyone can join
-  under any name.
+- Linking needs a Mojang (version 4) UUID logged that run, so an
+  offline-mode server, where anyone can join under any name, can't link.
+  A choice applies only while the player logs in with the linked UUID, so
+  a name that changes hands doesn't carry the picture with it.
 - There's no URL option: a member who wants a custom picture sets it as
   their Discord picture, which Discord has already accepted for them.
 - A `discord` picture is a CDN URL with a hash that changes when they

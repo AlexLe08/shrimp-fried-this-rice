@@ -61,7 +61,8 @@ server. The gateway client is written by hand, with Node 24's built-in
   channel.
 - The helper now carries a hand-written gateway client: heartbeats,
   resume, and close codes. A restart loop must back off, as going over
-  1,000 identifies a day resets the app's token. If this code becomes a
+  1,000 identifies a day resets the app's token, so the state file keeps
+  the identify times and a lock file keeps one process per token. If this code becomes a
   burden, a library (a runtime dependency, the owner's call) is the way
   out.
 - The config now holds secrets (an app token and the RCON password), so
