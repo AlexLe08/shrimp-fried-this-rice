@@ -14,7 +14,8 @@ export interface SenderOptions {
 	/**
 	 * The name a post is resent under when Discord refuses a player's name.
 	 * Discord's docs give the `clyde`/`discord` rule only for a webhook's own
-	 * name; whether it also applies to a message's username is unverified.
+	 * name, but it refuses `clyde` in a message's username too (the owner's
+	 * end-to-end test, 2026-11-21).
 	 */
 	fallbackUsername: string;
 	fetch?: typeof fetch;

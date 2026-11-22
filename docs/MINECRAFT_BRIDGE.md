@@ -230,7 +230,7 @@ WantedBy=multi-user.target
 | `rate limited … dropped a post` | Discord was refusing posts for a while; some lines were lost. Very busy chat can do this. |
 | An alert: "mcbridge can't read the crash-reports folder" | `crashReportsDir` points at a file, or the user running `mcbridge` can't list the folder. At most once every 10 minutes, like the log's. |
 | A crash, but no "Crashed" alert | `crashReportsDir` isn't set or points at the wrong folder (a folder that doesn't exist looks the same as no crashes yet), or `mcbridge` wasn't running when the report was written. The crash's `ERROR` lines in the log are still posted as errors. |
-| A player's picture is Discord's default one | Discord couldn't load the image: a broken `https` link in `players`, or mc-heads.net (for `skin`) or GitHub (for generated pictures) not answering. `mcbridge` can't tell, as Discord fetches the image, not `mcbridge`. |
+| A player's picture is Discord's default one | For a moment as a message appears, that's normal: Discord is still loading the picture. If it stays, Discord couldn't load the image: a broken `https` link in `players`, or mc-heads.net (for `skin`) or GitHub (for generated pictures) not answering. `mcbridge` can't tell, as Discord fetches the image, not `mcbridge`. |
 | No "is up" message | `mcbridge` started after the server. Start it first. |
 
 ## Not yet
