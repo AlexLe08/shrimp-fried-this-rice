@@ -13,6 +13,14 @@ const MIN_LENGTH = 10;
 // (the wrong port, say), and must not make the helper buffer it.
 const MAX_LENGTH = MIN_LENGTH + 64 * 1024;
 const PRINTABLE_ASCII = /^[\x20-\x7e]*$/;
+// Timeouts in a row before the connection is treated as dead and reopened:
+// one is a lag spike, two in a row more likely a connection that died
+// without a reset (a NAT or Docker's proxy dropping it).
+const MAX_TIMEOUTS_IN_A_ROW = 2;
+const KEEPALIVE_MS = 30_000;
+// A connection must last this long before the backoff starts over, so a
+// server that drops every connection right after login isn't retried every second.
+const STABLE_MS = 30_000;
 
 export type RconErrorCode = 'login-refused' | 'timeout' | 'closed' | 'protocol';
 
@@ -29,7 +37,10 @@ export interface ConnectOptions {
 	host: string;
 	port: number;
 	password: string;
-	/** For connecting and logging in together, and for each command. Defaults to 5 s. */
+	/**
+	 * For connecting and logging in together, and for each command from when
+	 * it's written (not while it waits behind another). Defaults to 5 s.
+	 */
 	timeoutMs?: number;
 	/** The connection closed without `close()` being called: the server stopped, or the network dropped it. */
 	onClose?(error: RconError): void;
@@ -47,9 +58,14 @@ export interface RconConnection {
 	close(): void;
 }
 
-interface Pending {
+interface Queued {
+	text: string;
 	resolve(body: string): void;
 	reject(error: RconError): void;
+}
+
+interface InFlight extends Queued {
+	id: number;
 	timer: NodeJS.Timeout;
 }
 
@@ -61,7 +77,9 @@ export function checkCommand(text: string): void {
 }
 
 export function encodePacket(id: number, type: number, payload: string): Buffer {
-	const body = Buffer.from(payload, 'latin1');
+	// UTF-8, as vanilla decodes it; commands are ASCII anyway, so this matters
+	// only for a password with an accent in it.
+	const body = Buffer.from(payload, 'utf8');
 	const packet = Buffer.alloc(14 + body.length);
 	packet.writeInt32LE(MIN_LENGTH + body.length, 0);
 	packet.writeInt32LE(id, 4);
@@ -75,7 +93,11 @@ export function connectRcon(options: ConnectOptions): Promise<RconConnection> {
 	const timeoutMs = options.timeoutMs ?? 5000;
 	return new Promise((resolve, reject) => {
 		const socket = createConnection({ host: options.host, port: options.port });
-		const pending = new Map<number, Pending>();
+		// One command at a time: vanilla reads one packet per read and drops a
+		// read that holds two, so commands written back to back could both be lost.
+		const queue: Queued[] = [];
+		let inFlight: InFlight | null = null;
+		let timeoutsInARow = 0;
 		let buffered: Buffer = Buffer.alloc(0);
 		let nextId = 1;
 		let loggedIn = false;
@@ -99,11 +121,12 @@ export function connectRcon(options: ConnectOptions): Promise<RconConnection> {
 			closed = true;
 			clearTimeout(loginTimer);
 			socket.destroy();
-			for (const entry of pending.values()) {
-				clearTimeout(entry.timer);
-				entry.reject(error);
+			if (inFlight) {
+				clearTimeout(inFlight.timer);
+				inFlight.reject(error);
+				inFlight = null;
 			}
-			pending.clear();
+			for (const entry of queue.splice(0)) entry.reject(error);
 			if (!loggedIn) reject(error);
 			else if (!expected) options.onClose?.(error);
 		}
@@ -119,14 +142,38 @@ export function connectRcon(options: ConnectOptions): Promise<RconConnection> {
 				}
 				return;
 			}
-			// A later fragment of a split reply finds nothing pending and is dropped.
-			const entry = pending.get(id);
-			if (!entry) return;
-			pending.delete(id);
-			clearTimeout(entry.timer);
-			entry.resolve(body);
+			// A later fragment of a split reply, or a reply after its command timed
+			// out, matches nothing and is dropped.
+			if (!inFlight || inFlight.id !== id) return;
+			const done = inFlight;
+			inFlight = null;
+			clearTimeout(done.timer);
+			timeoutsInARow = 0;
+			done.resolve(body);
+			next();
 		}
 
+		function next(): void {
+			if (closed || inFlight) return;
+			const queued = queue.shift();
+			if (!queued) return;
+			const id = takeId();
+			const timer = setTimeout(() => {
+				if (inFlight?.id !== id) return;
+				inFlight = null;
+				queued.reject(new RconError('timeout', `no answer to an RCON command within ${timeoutMs} ms`));
+				if (++timeoutsInARow >= MAX_TIMEOUTS_IN_A_ROW) {
+					fail(new RconError('closed', `${timeoutsInARow} RCON commands in a row had no answer`));
+				} else {
+					next();
+				}
+			}, timeoutMs);
+			inFlight = { ...queued, id, timer };
+			socket.write(encodePacket(id, TYPE_COMMAND, queued.text));
+		}
+
+		// Notices a connection that died silently even while no chat is sent.
+		socket.setKeepAlive(true, KEEPALIVE_MS);
 		socket.on('connect', () => socket.write(encodePacket(loginId, TYPE_LOGIN, options.password)));
 		socket.on('data', (chunk: Buffer) => {
 			buffered = buffered.length ? Buffer.concat([buffered, chunk]) : chunk;
@@ -138,8 +185,9 @@ export function connectRcon(options: ConnectOptions): Promise<RconConnection> {
 				}
 				if (buffered.length < 4 + length) return;
 				const id = buffered.readInt32LE(4);
-				// latin1, as a server can send `§` as the single byte 0xA7.
-				const body = buffered.toString('latin1', 12, 4 + length).replace(/\0+$/, '');
+				// UTF-8, as vanilla sends it. (The wiki's note of `§` sent as the byte
+				// 0xA7 is about CraftBukkit 1.4.7.)
+				const body = buffered.toString('utf8', 12, 4 + length).replace(/\0+$/, '');
 				buffered = buffered.subarray(4 + length);
 				onPacket(id, body);
 			}
@@ -152,14 +200,9 @@ export function connectRcon(options: ConnectOptions): Promise<RconConnection> {
 			command(text) {
 				checkCommand(text);
 				if (closed) return Promise.reject(new RconError('closed', 'RCON connection closed'));
-				const id = takeId();
 				return new Promise<string>((resolveCommand, rejectCommand) => {
-					const timer = setTimeout(() => {
-						pending.delete(id);
-						rejectCommand(new RconError('timeout', `no answer to an RCON command within ${timeoutMs} ms`));
-					}, timeoutMs);
-					pending.set(id, { resolve: resolveCommand, reject: rejectCommand, timer });
-					socket.write(encodePacket(id, TYPE_COMMAND, text));
+					queue.push({ text, resolve: resolveCommand, reject: rejectCommand });
+					next();
 				});
 			},
 			close() {
@@ -178,7 +221,10 @@ export interface RconOptions {
 	onLoginRefused?(): void;
 	/** Defaults to 5 s. */
 	timeoutMs?: number;
-	/** The first reconnect's delay, doubling up to `maxBackoffMs`. Defaults to 1 s and 60 s. */
+	/**
+	 * The first reconnect's delay, doubling up to `maxBackoffMs`; it starts over
+	 * once a connection has lasted 30 s. Defaults to 1 s and 60 s.
+	 */
 	minBackoffMs?: number;
 	maxBackoffMs?: number;
 	connect?: typeof connectRcon;
@@ -210,6 +256,7 @@ export function createRcon(options: RconOptions): Rcon {
 	let backoffMs = minBackoffMs;
 	let retryTimer: NodeJS.Timeout | null = null;
 	let connection: RconConnection | null = null;
+	let openedAt = 0;
 	const waiters = new Set<(connection: RconConnection | null) => void>();
 
 	function wake(value: RconConnection | null): void {
@@ -227,7 +274,8 @@ export function createRcon(options: RconOptions): Rcon {
 			onClose: (error) => {
 				if (current !== generation) return;
 				connection = null;
-				log(`${error.message}; reconnecting`);
+				if (Date.now() - openedAt >= STABLE_MS) backoffMs = minBackoffMs;
+				log(`${error.message}; reconnecting in ${backoffMs / 1000} s`);
 				retry();
 			},
 		}).then(
@@ -237,7 +285,7 @@ export function createRcon(options: RconOptions): Rcon {
 					return;
 				}
 				connection = opened;
-				backoffMs = minBackoffMs;
+				openedAt = Date.now();
 				log(`RCON connected to ${options.host}:${options.port}`);
 				wake(opened);
 			},

@@ -202,14 +202,19 @@ Later item), not a follow-up.
 - **RCON client for two-way chat** (2026-11-22, Track A8a).
   `src/minecraft/bridge/rcon.ts`, on `node:net` only, for the helper to
   run `tellraw` once two-way chat is wired up (A8e); nothing uses it yet.
-  It logs in, runs a command with a 5 s timeout, reconnects after a drop
-  (1 s, doubling to 60 s), and stays off after a wrong password, with one
+  It logs in, runs one command at a time with a 5 s timeout, reconnects
+  after a drop (1 s, doubling to 60 s, starting over once a connection
+  has lasted 30 s), and stays off after a wrong password, with one
   callback for the alert. A command cut off by a dropped connection is
   retried once; one that timed out isn't, as a lagging server still runs
-  it and a retry would show it twice. Commands must be printable ASCII
-  within the wiki's 1446 bytes. Tested against a fake RCON server; not
-  yet tried against a real Minecraft server (A8h measures the real
-  command limit).
+  it and a retry would show it twice. Two timeouts in a row, or TCP
+  keepalive, reopen a connection that died silently. Commands must be
+  printable ASCII within the wiki's 1446 bytes; the password and replies
+  are UTF-8. From review, recalled from vanilla's source but not
+  checked: vanilla reads one packet per read and drops a read holding
+  two (hence one command at a time), and uses UTF-8. Tested against a
+  fake RCON server; not yet tried against a real Minecraft server (A8h
+  checks both, and measures the real command limit).
 
 ## Next up
 

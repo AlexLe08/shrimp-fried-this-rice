@@ -235,6 +235,7 @@ src/
       sender.ts           # posts through the webhooks: batching, rate limits, retries, no mentions, never crashes the helper
       config.ts           # reads and checks mcbridge.json, reporting every problem at once
       avatars.ts          # the picture beside a player's chat: their skin's head, a generated one, a URL or none
+      rcon.ts             # RCON client for two-way chat (not wired up yet): login, one command at a time with a timeout, reconnecting with backoff, off after a wrong password
       bridge.ts           # wiring: lines to entries to events, alerts through the gate, posts to the right webhook
       main.ts             # the entrypoint (npm run mcbridge): --config, the tailer, crash watcher and sender, shutdown on SIGINT, SIGTERM, SIGHUP (and SIGBREAK on Windows)
 test/
@@ -294,6 +295,7 @@ test/
       sender.test.ts                # with a stubbed fetch and fake timers: batching (by name and picture), 429s, the username fallback, retries, overflow
       config.test.ts                # every config problem reported, unknown keys refused, the committed example accepted
       avatars.test.ts               # each avatar choice, offline-mode UUIDs, the pinned name hash, a bundled PNG for every picture
+      rcon.test.ts                  # against a fake RCON server on port 0: framing, split reads, one command at a time, timeouts, drops and retry, backoff, stop races
       bridge.test.ts                # a real log's posts, stack traces flushed when quiet, summaries, the backlog scan, crash reports, read errors
 ```
 
