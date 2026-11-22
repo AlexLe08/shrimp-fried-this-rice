@@ -103,39 +103,41 @@ export const DEFAULT_RCON_PORT = 25575;
 export type RconSettings =
 	{ enabled: true; port: number; password: string } | { enabled: false; reason: RconOffReason };
 
-/** Why RCON is off: `enable-rcon` isn't true, or the password is blank (the server then doesn't start RCON). */
-export type RconOffReason = 'disabled' | 'no-password';
+/**
+ * Why RCON is off: `enable-rcon` isn't true, the password is empty (the
+ * server then doesn't start RCON), or `rcon.port` is a number no TCP port can be.
+ */
+export type RconOffReason = 'disabled' | 'no-password' | 'bad-port';
 
 export interface ServerSettings {
 	rcon: RconSettings;
 	onlineMode: boolean;
 }
 
-// The server sets a missing or invalid value to its default (the wiki), so
-// mcbridge does the same rather than refusing the file.
+// A missing key is the server's default. A present one is true only if it
+// reads `true` in any case, as Java's Boolean.valueOf (the server's parser,
+// from review, recalled and not checked; A8h checks it). That is also the
+// safe side for linking: an unclear online-mode reads as offline.
 function booleanOr(value: string | undefined, fallback: boolean): boolean {
-	const lower = value?.toLowerCase();
-	if (lower === 'true') return true;
-	if (lower === 'false') return false;
-	return fallback;
+	return value === undefined ? fallback : value.toLowerCase() === 'true';
 }
 
-// The wiki's range for rcon.port. Whether the server also resets an
-// out-of-range number to the default isn't documented; this assumes so.
-function portOr(value: string | undefined, fallback: number): number {
-	if (value === undefined || !/^[+-]?\d+$/.test(value)) return fallback;
+// Something that isn't a whole number is set to the default (the wiki). A
+// number outside TCP's range is reported instead: the server's handling of
+// it isn't documented, and guessing would send mcbridge to the wrong port.
+function readPort(value: string | undefined): number | null {
+	if (value === undefined || !/^[+-]?\d+$/.test(value)) return DEFAULT_RCON_PORT;
 	const port = Number(value);
-	return port >= 1 && port <= 65534 ? port : fallback;
+	return port >= 1 && port <= 65535 ? port : null;
 }
 
 export function serverSettings(properties: Map<string, string>): ServerSettings {
 	const onlineMode = booleanOr(properties.get('online-mode'), true);
-	if (!booleanOr(properties.get('enable-rcon'), false))
-		return { rcon: { enabled: false, reason: 'disabled' }, onlineMode };
+	const off = (reason: RconOffReason): ServerSettings => ({ rcon: { enabled: false, reason }, onlineMode });
+	if (!booleanOr(properties.get('enable-rcon'), false)) return off('disabled');
 	const password = properties.get('rcon.password') ?? '';
-	if (password === '') return { rcon: { enabled: false, reason: 'no-password' }, onlineMode };
-	return {
-		rcon: { enabled: true, port: portOr(properties.get('rcon.port'), DEFAULT_RCON_PORT), password },
-		onlineMode,
-	};
+	if (password === '') return off('no-password');
+	const port = readPort(properties.get('rcon.port'));
+	if (port === null) return off('bad-port');
+	return { rcon: { enabled: true, port, password }, onlineMode };
 }

@@ -49,6 +49,12 @@ describe('chatCommand', () => {
 		expect(shownText(command)).toBe('café 😀');
 	});
 
+	it('removes bidi controls, so text cannot reorder how the line reads', () => {
+		const command = chatCommand('Al\u202eex', 'a\u202ab\u202bc\u202cd\u202de\u202ef\u2066g\u2067h\u2068i\u2069j')!;
+		expect(shownText(command)).toBe('abcdefghij');
+		expect(component(command).extra[1].text).toBe(' Alex: ');
+	});
+
 	it('makes one chat line, without § codes or control characters', () => {
 		const command = chatCommand('Alex', 'one\ntwo\r\nthree\u2028four\tfive §cred\u0007\u0000\u007f\u0085')!;
 		expect(shownText(command)).toBe('one two three four five cred');

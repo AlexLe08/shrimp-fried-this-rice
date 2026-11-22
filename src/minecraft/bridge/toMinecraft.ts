@@ -48,12 +48,13 @@ export function isPrefix(prefix: string): boolean {
 /**
  * Text as one chat line: line breaks become spaces, and `§` (formatting
  * codes, which the wiki says both are and aren't applied in a component's
- * text) and control characters are removed.
+ * text), control characters and bidi controls are removed. A bidi override
+ * would let a Discord user reorder how their line reads in game.
  */
 export function cleanText(text: string): string {
 	return text
 		.replace(/\r\n|[\r\n\t\u2028\u2029]/g, ' ')
-		.replace(/[\p{Cc}§]/gu, '')
+		.replace(/[\p{Cc}§\u202a-\u202e\u2066-\u2069]/gu, '')
 		.trim();
 }
 

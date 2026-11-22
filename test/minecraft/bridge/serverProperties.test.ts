@@ -106,17 +106,29 @@ describe('serverSettings', () => {
 		expect(settings('enable-rcon=true').rcon).toEqual({ enabled: false, reason: 'no-password' });
 	});
 
-	it('reads booleans without case, and an invalid one as the default', () => {
+	it('reads a boolean as true only when it says true, in any case, as the server does', () => {
 		expect(settings('enable-rcon=TRUE\nrcon.password=x').rcon.enabled).toBe(true);
 		expect(settings('enable-rcon=yes\nrcon.password=x').rcon).toEqual({ enabled: false, reason: 'disabled' });
-		expect(settings('online-mode=nope').onlineMode).toBe(true);
+		// Linking needs online mode, so anything unclear must read as offline.
+		expect(settings('online-mode=nope').onlineMode).toBe(false);
+		expect(settings('online-mode=false ').onlineMode).toBe(false);
+		expect(settings('online-mode=true ').onlineMode).toBe(false);
+		expect(settings('online-mode=').onlineMode).toBe(false);
 	});
 
-	it('reads an invalid or out-of-range port as the default', () => {
-		for (const port of ['', 'abc', '0', '65535', '-1', '25575.5']) {
+	it('reads a port that is not a whole number as the default', () => {
+		for (const port of ['', 'abc', '25575.5', '2557 5']) {
 			const rcon = settings(`enable-rcon=true\nrcon.password=x\nrcon.port=${port}`).rcon;
 			expect(rcon, port).toEqual({ enabled: true, port: DEFAULT_RCON_PORT, password: 'x' });
 		}
 		expect(settings('enable-rcon=true\nrcon.password=x\nrcon.port=+1').rcon).toMatchObject({ port: 1 });
+		expect(settings('enable-rcon=true\nrcon.password=x\nrcon.port=65535').rcon).toMatchObject({ port: 65535 });
+	});
+
+	it('says RCON is off for a port no TCP port can be, rather than guessing', () => {
+		for (const port of ['0', '-1', '65536', '99999999999']) {
+			const rcon = settings(`enable-rcon=true\nrcon.password=x\nrcon.port=${port}`).rcon;
+			expect(rcon, port).toEqual({ enabled: false, reason: 'bad-port' });
+		}
 	});
 });
