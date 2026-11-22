@@ -205,31 +205,45 @@ Later item), not a follow-up.
 Feature work, in this order unless the owner says otherwise. Schema
 changes are cheapest now, while the bot is pre-release (decision 0003).
 
-Items 1 to 3 are designed in
+Items 1 to 4 are designed in
 [`plans/minecraft-ff14-features.md`](plans/minecraft-ff14-features.md),
 which has their PR order (its "Suggested pull request order"), the inputs
 to ask the owner for, and which facts are still unverified. The owner put
-them ahead of items 4 and 5.
+them ahead of items 5 and 6.
 
-1. **Collection tracker (`/collection`, `/collectionadmin`)**
+1. **Minecraft bridge, what's left** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
+   The first version, crash reports and player avatars are done and tested
+   end to end (Done above). Left: Discord to Minecraft chat, designed in
+   [A8](plans/minecraft-ff14-features.md#discord-to-minecraft-chat-a8)
+   with decisions 0006 and 0007. It goes through the bot and is set up in
+   the dashboard, and players in the Discord server choose their picture
+   there (or with `/minecraft link` and `/minecraft avatar`) after linking their account by a
+   code typed in game. That replaces choosing in game (`!avatar`), the
+   owner's call (2026-11-21). Its helper-side parts A8a to A8c (the RCON
+   client, the `tellraw` builder and `server.properties` reader, the
+   `!link` line) go ahead now; the rest follows item 2.
+2. **Dashboard foundation, then two-way Minecraft chat**
+   ([Track D](plans/minecraft-ff14-features.md#track-d-web-dashboard)
+   D0 and D1, moved up by the owner on 2026-11-22, with the rest of the
+   Minecraft work, ahead of the collection tracker). The hostname and
+   HTTPS on free tiers only, Discord login, and a read-only reminders
+   page, each D0 choice a decision record first. Then A8d to A8i: two-way
+   chat, linking and pictures.
+3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the
    group's spreadsheet.
-2. **Minecraft bridge, what's left** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
-   The first version, crash reports and player avatars are done and tested
-   end to end (Done above). Left, in its own session: players choosing
-   their picture in game (`!avatar`).
-3. **Lodestone news and scheduled events**
+4. **Lodestone news and scheduled events**
    ([Track C](plans/minecraft-ff14-features.md#track-c-lodestone-news-and-scheduled-events)),
    then the **role check-in** after onboarding
    ([Track E, E2](plans/minecraft-ff14-features.md#e-role-check-in-after-choosing-a-role)),
    which needs the Server Members Intent switched on first.
-4. **File or audio attachments on reminders** (bundled sounds or user
+5. **File or audio attachments on reminders** (bundled sounds or user
    uploads). Open questions first: where uploads live (the VM's disk, or
    Discord's own CDN by re-posting the attachment URL, which expires),
    size limits, and the free tier. Likely a design note or decision record
    before code.
-5. **Rework `/remindme`** (brainstorm in its own session first). One
+6. **Rework `/remindme`** (brainstorm in its own session first). One
    command does everything through optional options: view (no options),
    update (`enabled`, `interval`, `message`, `embed`), snooze, and `reset`,
    with rules about which combine. Options to weigh include subcommands
@@ -266,10 +280,11 @@ runtime dependency is the owner's decision.
   covers it while there are no users or releases.
 - Dependabot version updates (`.github/dependabot.yml`); security updates
   are already on.
-- A web dashboard for configuration, after the tracks in Next up:
-  [Track D](plans/minecraft-ff14-features.md#track-d-web-dashboard-after-a-b-c-and-e)
-  says why it waits and what it needs (HTTPS on free tiers only, its
-  libraries being the owner's decision).
+- The rest of the web dashboard (D2 onwards: editing reminders, Lodestone
+  and collections), after the tracks in Next up:
+  [Track D](plans/minecraft-ff14-features.md#track-d-web-dashboard)
+  says why it waits and what it needs (its libraries being the owner's
+  decision).
 - Custom emoji limited to certain roles: the warning doesn't check
   whether the bot has one of the emoji's roles, so such an emoji can still
   show as text unwarned.

@@ -235,7 +235,6 @@ WantedBy=multi-user.target
 
 ## Not yet
 
-- Players choosing their own picture in game (for example `!avatar skin`).
 - Paper, Fabric and Forge log formats.
 - Deaths, advancements, `/say` and `/me`.
-- Discord to Minecraft chat.
+- Discord to Minecraft chat, and players choosing their own picture from Discord (designed, not built yet).
