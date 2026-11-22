@@ -218,7 +218,7 @@ them ahead of items 4 and 5.
 2. **Minecraft bridge, what's left** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
    The first version, crash reports and player avatars are done and tested
    end to end (Done above). Left: Discord to Minecraft chat, designed in
-   [A8](plans/minecraft-ff14-features.md#discord-to-minecraft-chat-a8-proposed-2026-11-21)
+   [A8](plans/minecraft-ff14-features.md#discord-to-minecraft-chat-a8-designed-2026-11-21)
    with decision 0006 (the helper reads the channel with its own Discord
    app and writes into the game over RCON). Players choosing their picture
    in game (`!avatar`) was dropped by the owner (2026-11-21): the config's

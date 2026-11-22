@@ -8,7 +8,7 @@ Status: Accepted · 2026-11-21
 beside the Minecraft server that posts to Discord through webhooks, and
 listed "one-way only" among its consequences: Discord to Minecraft chat
 would need a separate design. The owner asked for that direction on
-2026-11-21 (design in [A8](../plans/minecraft-ff14-features.md#discord-to-minecraft-chat-a8-proposed-2026-11-21)).
+2026-11-21 (design in [A8](../plans/minecraft-ff14-features.md#discord-to-minecraft-chat-a8-designed-2026-11-21)).
 
 Constraints carried over from 0005: the bot's token never leaves the VM,
 and no two processes share a token (README, `CASESTUDY.md` §2); the VM
@@ -63,4 +63,8 @@ application (not the bot's), and sends each message into the game as
 - The helper still links no Discord account to a Minecraft player: names
   cross as text. Posting in the bridge's channel is a Discord user's
   opt-in to being shown in game, which the channel's topic should say.
+  That opts in everyone already posting in an existing bridge channel the
+  moment its host switches this on, which sits uneasily with 0005's opt-in
+  default; a separate channel, or an announcement first, are the open
+  alternatives (plan, A8).
 - Without the new config key, nothing changes: the bridge stays one-way.
