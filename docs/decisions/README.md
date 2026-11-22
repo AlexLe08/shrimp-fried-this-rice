@@ -26,4 +26,5 @@ and Design notes sections; the history behind them is in
 | [0002](0002-schema-migrations-with-user-version.md) | Schema migrations in `storage.ts`, versioned by SQLite's `user_version`, applied on startup | Accepted · 2026-11-19 |
 | [0003](0003-pre-release-schema-resets.md) | Before the bot has users, a breaking schema change may reset the database instead of migrating | Accepted · 2026-11-19 |
 | [0004](0004-feature-storage-modules.md) | `core/database.ts` opens SQLite and owns the schema; each area's storage module queries it | Accepted · 2026-11-20 |
-| [0005](0005-minecraft-bridge-webhook-helper.md) | The Minecraft bridge is a separate, dependency-free helper beside the server, posting through a webhook | Accepted · 2026-11-21 |
+| [0005](0005-minecraft-bridge-webhook-helper.md) | The Minecraft bridge is a separate, dependency-free helper beside the server, posting through a webhook | Accepted · 2026-11-21; superseded in part by 0006 |
+| [0006](0006-discord-to-minecraft-chat.md) | Discord to Minecraft chat: the helper reads the channel with its own Discord app and writes into the game over RCON | Accepted · 2026-11-21 |

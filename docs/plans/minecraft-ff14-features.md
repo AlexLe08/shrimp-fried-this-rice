@@ -156,7 +156,7 @@ Checked 2026-11-21 (A4b), by fetching each service's head for one player by name
 
 If a picture's URL is broken, Discord shows its default avatar. The helper can't tell, because Discord fetches the image, not the helper. Avatar choice is a pure function (`avatarFor(player, config)`), tested without I/O, in its own PR after the sender (A4).
 
-Later, in its own session (the owner's call, 2026-11-21): players choose in game, for example by typing `!avatar skin` in chat. The helper reads it like any chat line (the sender's name is trustworthy because chat matching is anchored) and stores choices in a JSON file beside the config. Open questions: whether the line should also be relayed to Discord, and whether a player can opt out of their name appearing in Discord at all (an alias).
+Dropped (the owner's call, 2026-11-21): players choosing their picture in game (`!avatar skin` typed in chat, stored in a JSON file beside the config). The choice stays in the config's `avatars`, set by whoever runs the server, and pictures exist only on the Discord side.
 
 ### Log line formats
 
@@ -236,6 +236,87 @@ The helper must be running before the server starts, otherwise the "started" mes
 
 The owner's server runs in a Docker container (an image whose console prints `[init]` lines). The helper runs on the host and reads the log through the container's data volume, so `logPath` is the host side of `/data`, for example `<volume>/logs/latest.log`. The container's console output (JVM warnings, the image's setup lines) never reaches `latest.log`, so it can't cause alerts.
 
+### Discord to Minecraft chat (A8, proposed 2026-11-21)
+
+Decision record: [0006](../decisions/0006-discord-to-minecraft-chat.md), which extends 0005 (its "one-way only" consequence).
+
+```
+Discord channel ──REST poll, the helper's own Discord app──> mcbridge ──RCON: tellraw @a──> Minecraft server
+```
+
+Messages people type in the bridge's chat channel show in game as `[Discord] Name: text`. Optional: without the new config key the bridge stays one-way, as today.
+
+#### Reading the channel: options
+
+A webhook can only post; it can't read a channel. So something with a Discord identity has to read the messages and get them to the Minecraft host, which sits behind a home router.
+
+| Option | Cost | Verdict |
+|---|---|---|
+| **The helper polls the channel through REST with its own Discord application** | The server owner creates one more app in the Developer Portal and turns on the Message Content intent. A message reaches the game within about 2 s, not instantly. | **Chosen.** No change to the bot or the VM. The production token never leaves the VM, and the second token can only read the one channel its role is allowed to see. |
+| The production bot forwards messages to the helper | The bot already sees the messages (if it gets the Message Content intent too). But the VM would push to the Minecraft host, which needs an open port on the owner's home router. Or the helper would pull from an endpoint on the VM, which is the inbound port 0005 turned down. Messages are lost whenever either side restarts. | Turned down |
+| The helper opens a Gateway WebSocket with its own app | Delivery is instant. But without a library, the helper would implement heartbeats, identify, resume and reconnection by hand: several times the code of a poll, for about 2 s saved. | Later, if polling runs into rate limits |
+| The helper uses the bot's own token | Forbidden: two processes on one token (README, `CASESTUDY.md` §2), and the token would leave the VM. | Ruled out |
+
+Facts checked on 2026-11-21 against Discord's docs (topics/gateway, resources/message, topics/rate-limits):
+
+- Without the Message Content intent, an app gets empty `content`, `embeds` and `attachments` "across the APIs". The message object's own warning covers the object REST returns, so a REST poll needs the intent too. Apps with fewer than 10,000 users switch privileged intents on in the Developer Portal. The intent's own note says it "must be approved", so whether an unverified app under that size can just switch it on is checked when the owner creates the app (step A8d).
+- `GET /channels/{id}/messages` takes `after` and `limit` (1 to 100) and returns messages newest first. It needs View Channel, and it returns no messages without Read Message History. The docs ask for no gateway connection before REST calls.
+- No per-route limit is published. The helper reads the `X-RateLimit-*` headers, like the sender does. Every bot shares the global 50 requests a second, and an app that sends 10,000 requests answered 401, 403 or 429 within 10 minutes is blocked for a while. So the helper stops polling on a 401 or 403 instead of retrying.
+- `webhook_id` marks a webhook's message, which is how the bridge's own posts are skipped. `author.bot` marks an app's message. The display name is `author.global_name`, falling back to `author.username`. A server nickname is on the guild member, which a REST message doesn't carry. The first version shows the display name, not the nickname.
+
+Which channel: the chat webhook's own channel, so there is nothing new to keep in step. The helper reads its `channel_id` from Get Webhook with Token (the webhook URL itself, no bot token needed) at startup. Still to confirm in A8b.
+
+#### Writing into Minecraft: options
+
+| Option | Verdict |
+|---|---|
+| **RCON (the server's remote console, a TCP port) running `tellraw @a <component>`** | **Chosen.** A vanilla server has it built in. It works with any launcher, panel or container, as reading the log does. |
+| Typing into the server process's console (stdin) | That only works if `mcbridge` starts the server itself, which gives up "any launcher", and a container's console isn't the host's. |
+| A plugin or mod | None exists for a vanilla server (as in 0005) |
+| `say` instead of `tellraw` | It shows `[Server]` as the speaker and can't style the Discord name. Players' chat formatting would also apply. |
+
+Facts checked on 2026-11-21 (minecraft.wiki: RCON, Server.properties, Commands/tellraw, Text component format):
+
+- `server.properties`: `enable-rcon=true`, `rcon.password` (with a blank password, RCON doesn't start), `rcon.port` (default 25575), and `broadcast-rcon-to-ops` (default true: whether operators see the output of RCON commands). Changing these needs a server restart.
+- **RCON is not encrypted**, and the password goes over the wire in clear text. No setting binds RCON alone to localhost, and the wiki doesn't say whether it follows `server-ip`. So the setup guide says: never forward 25575 on the router. In Docker, publish it as `127.0.0.1:25575:25575`, or not at all if the helper runs in the same network. Whether the owner's image enables RCON, and how it sets the password, couldn't be checked from its docs; A8d checks it on the owner's container.
+- Packets: little-endian `int32` length, request id and type, then an ASCII payload ending in a null byte, then one more null byte. Type 3 logs in; the server answers with the same id (type 2), or with id -1 if the password is wrong. Type 2 runs a command. A command can be at most 1446 bytes (the wiki flags that number "outdated?"; A8a measures it on 26.3). A reply can be split over several 4096-byte packets. `tellraw` has no output, so the helper never needs to put a split reply back together.
+- Text components have been SNBT since 1.21.5 (25w02a). The wiki's own examples include JSON-style ones with quoted keys, and those are valid SNBT. So the helper builds the component with `JSON.stringify`, which quotes and escapes everything a Discord user types: they can't break out of the string and run a command. Whether 26.3 accepts it gets checked in A8d.
+- Whether `§` formatting codes inside a component's `text` are applied is unclear (the wiki says both yes and no). The helper strips `§` and control characters.
+- Whether the server logs `tellraw` output in `latest.log` isn't documented. If it does, the line would look like `System chat: [Discord] …`. The anchored join, leave and chat patterns can't match that (`[` can't be in a player name), so a Discord user can't fake a join or a chat line, and the message isn't relayed back to Discord. A8c adds a fixture for this once A8d shows what the real line looks like.
+
+#### Behaviour
+
+- **What is relayed**: plain and reply messages (`type` 0 and 19) with text or attachments. Skipped: messages with a `webhook_id` (the bridge's own posts and any other webhook), messages from apps (`author.bot`), and system messages (pins, joins, boosts).
+- **How it looks in game**: `[Discord]` in a fixed colour, the display name, then the text in white. Mentions `<@id>`, `<@&id>` and `<#id>` become `@name`, `@role` and `#channel`, from the message's `mentions` where it lists them, and are left as they are otherwise. Custom emoji `<:name:id>` become `:name:`. Each attachment becomes `[image]` or `[file]`, and a sticker becomes `[sticker]`. A reply gets `(reply to Name)`. Line breaks become spaces, so one message is one chat line. The text is cut with `…` to fit the RCON limit in UTF-8 bytes, not characters.
+- **Polling**: every 2 s, only while RCON is connected. At startup and after each reconnect, the newest message so far becomes the starting point, so nothing old is replayed. A message is relayed at most once. Messages sent while the server is down are dropped, not queued: an hour-old line popping up in game would be confusing. A 429 waits `retry_after`. A 401 (bad token) or 403 (missing Read Message History or View Channel) stops reading, with one console line and one alert, and the Minecraft-to-Discord direction carries on.
+- **RCON connection**: it opens once the log shows the server is up (`Done (…)!`) and closes at `Stopping server`. If the connection drops, it reconnects with backoff (1 s, doubling to 60 s). A wrong password stops trying until the helper is restarted, with one alert. A message that can't be sent is dropped after one retry. Each command times out after 5 s.
+- **Shutdown**: the signal handlers that exist already also stop the poll and close the socket.
+
+#### Configuration
+
+```jsonc
+"discordToMinecraft": {                      // optional; omit to stay one-way
+  "botToken": "…",                           // the helper's own application, NOT the bot's
+  "rcon": { "host": "127.0.0.1", "port": 25575, "password": "…" }
+}
+```
+
+The config is already git-ignored. It now holds a password and a token, so the setup guide says to make it readable only by the user running `mcbridge` (`chmod 600`; on Windows, the default user-profile permissions). The helper's app needs only View Channel and Read Message History, in the bridge's channel only. If its token leaks, someone can read that channel as the app; Reset Token in the Developer Portal revokes it.
+
+#### Privacy
+
+- Posting in the bridge's channel is how a Discord user opts in to their display name and messages being shown in game. The setup guide asks server owners to say so in the channel's topic.
+- Nothing links a Discord account to a Minecraft player, which keeps to 0005's reasoning: names cross in both directions as text, and the helper stores nothing.
+
+#### Steps
+
+- **A8a. RCON client** (`rcon.ts`, `node:net` only): login, run a command, wrong password, timeouts, a dropped connection, reconnecting. Tested against a fake RCON server listening on port 0 inside the test.
+- **A8b. Discord reader** (`discordReader.ts`): the channel id from the webhook, the polling cursor, the filters, the rate-limit headers, 401/403/404. Tested with a stubbed `fetch`, like `sender.ts`. Plus `toMinecraft.ts`, a pure function from a message to the `tellraw` command: mentions, emoji, attachments, stripping `§`, the byte limit, `JSON.stringify` escaping.
+- **A8c. Wiring and docs**: the `discordToMinecraft` config key (refused today, as unknown keys are), `main.ts` and `bridge.ts` opening RCON on start and closing it on stop, a new section in `docs/MINECRAFT_BRIDGE.md` (create the app, the intent, the role's permissions, `server.properties`, Docker, the channel topic, the config's permissions), and the README's Features.
+- **A8d. The owner's end-to-end test**, against a test channel and the vanilla 26.3 server: whether the Message Content intent switches on without review, whether `tellraw` accepts the JSON-style component, the real command limit, whether `tellraw` output is logged and what it looks like, whether `§` is applied, and whether the owner's Docker image enables RCON.
+
+Open questions for the owner: the `[Discord]` prefix and its colour, and whether messages sent while the server is down should be dropped (proposed) or queued.
+
 ### Steps
 
 - **A1. Parser and classifier.** `formats.ts`, `parseLine.ts`, `classify.ts`, `alertGate.ts` with fixture-driven tests. No I/O.
@@ -246,11 +327,11 @@ The owner's server runs in a Docker container (an image whose console prints `[i
 - **A5. `main.ts`, config, `npm run mcbridge`, the `.gitignore` entry.** Manual end-to-end test against the owner's server and a test channel. Done (#46), except the end-to-end test, which is the owner's (the helper needs a real webhook and server): `docs/MINECRAFT_BRIDGE.md` step 5.
 - **A6. `docs/MINECRAFT_BRIDGE.md`**, with the README's Features, Project Structure and Available Scripts updated in the same PR. Done (#47; Available Scripts went in with A5, which added the script).
 - **A7. Crash reports.** A new file in `crashReportsDir` posted as an alert (the Events table). Done: polled every 5 s, posted once its size holds still, through the alert gate (a crash loop posts once, then a count; never held back by the per-minute cap), with the report's `Description:` and exception and its file name. Reports there at startup aren't posted. Tested end to end by the owner with a real vanilla report from the game client (2026-11-21).
+- **A8. Discord to Minecraft chat** ([above](#discord-to-minecraft-chat-a8-proposed-2026-11-21)), as A8a to A8d: the RCON client, the Discord reader and the `tellraw` builder, the wiring and docs, then the owner's end-to-end test. Proposed, with decision 0006.
 
 ### A-later (not planned in detail)
 
 - `/minecraft status` in the bot, using a Server List Ping to the server's public address. Needs no helper.
-- Discord-to-Minecraft chat relay through RCON.
 - Bot-side ingest endpoint, if messages must come from the bot user itself.
 
 ---
@@ -810,7 +891,7 @@ Small PRs, each green on its own. These go ahead of the roadmap's earlier Next u
 5. B5 (import and export)
 6. A1 + A2 (parser and classifier, with the Track A record). The owner moved Track A ahead of B on 2026-11-21.
 7. A3 + A4 + A5 + A6 (tailer, sender, entrypoint, docs), split if too big to review
-8. A4b (player avatars, 10 bundled images); in-game opt-in is a later, separate session
+8. A4b (player avatars, 10 bundled images; choosing in game was dropped 2026-11-21), then A8a, A8b, A8c (Discord to Minecraft chat: RCON client, Discord reader, wiring and docs, with decision 0006)
 9. C0 + C1 + C2 (Lodestone news posting, with the Track C record)
 10. C3 (automatic maintenance events)
 11. C4 (manual events for other announcements)
