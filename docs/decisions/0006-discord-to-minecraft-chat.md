@@ -43,7 +43,9 @@ sends messages to the helper, which runs `tellraw @a` over RCON. Settings,
 links and pictures live in `bot.db`. Two-way chat waits for the
 dashboard's hostname, HTTPS and login (D0, D1).
 
-**Why:** TODO(Alex)
+**Why:**
+
+A dashboard was already part of the plan, just moved up now when considering the many benefits it will provide early on for this bridge. Discord is ultimately a chatting application so often times there's friction in the use experience when trying to perform website like functionality, so a dashboard should help reduce that friction. The bot handling secret values is ideal to ensure inexperienced users don't set up values incorrectly or worse, reveal it in public space unintentionally. A dashboard experience also removes the Developer Portal Step, so much of the experience is dependent on me to shape.
 
 ## Consequences
 

@@ -35,7 +35,9 @@ default. The choice applies while they're in the Discord server and log
 in with the linked UUID; otherwise, and for players who never link, the
 server's `avatars` setting decides as before. Links are kept in `bot.db`.
 
-**Why:** TODO(Alex)
+**Why:**
+
+Early decisions were made with assumptions tying accounts together would have many requirements that return more info than necessary, but after weighing the potential that comes from having a dashboard site, I chose to have the dashboard be central in this feature's functionality and user experience. Players still choose whether they wish to perform the link or not, and without it can still reap the functionality of the bridge channel without making links. Their identity ties can only be inferred without linking if their Discord name and Minecraft names are different, which is an acceptable scope for a bot designed for friend servers at this time. If this bot were to scale up further for more larger server use, then we can come back to refining the process.
 
 ## Consequences
 
