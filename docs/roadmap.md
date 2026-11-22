@@ -180,8 +180,11 @@ Later item), not a follow-up.
   the report's description, exception and file name. It goes through the
   alert gate, so a server crashing on every restart posts once and then a
   count, but never for the per-minute cap (a crash follows a burst of the
-  log's own errors, which could fill it). Reports there at startup aren't posted. Checked only against a
-  hand-written report in vanilla's documented layout.
+  log's own errors, which could fill it). Reports there at startup aren't posted. Tested end to end by
+  the owner with a real vanilla report (from the game client, made with
+  F3+C; the same layout as the server's): the alert, a copy of the same
+  report counted in the shutdown summary instead of posted again, and
+  reports present at startup skipped, all as expected.
 - **Minecraft player avatars** (2026-11-21, #51, Track A4b). An `avatars` key in
   the `mcbridge` config gives each player's chat lines a picture: by
   default one of 10 bundled pixel-art heads (`assets/mcbridge-avatars/`,
@@ -213,11 +216,9 @@ them ahead of items 4 and 5.
    Per-server collections (FF14 mounts first), imported once from the
    group's spreadsheet.
 2. **Minecraft bridge, what's left** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
-   The first version, crash reports and player avatars are done (Done
-   above). Next, on the owner's server: check crash reports (A7) against a
-   real report, by setting `crashReportsDir` and copying an old report into
-   the folder under a new name (`MINECRAFT_BRIDGE.md` step 5). Later, in its
-   own session: players choosing their picture in game (`!avatar`).
+   The first version, crash reports and player avatars are done and tested
+   end to end (Done above). Left, in its own session: players choosing
+   their picture in game (`!avatar`).
 3. **Lodestone news and scheduled events**
    ([Track C](plans/minecraft-ff14-features.md#track-c-lodestone-news-and-scheduled-events)),
    then the **role check-in** after onboarding
