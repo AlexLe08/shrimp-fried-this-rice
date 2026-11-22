@@ -95,6 +95,21 @@ describe('classify on the synthetic error fixture', () => {
 	});
 });
 
+// Written by hand in vanilla's format: no real `!link` line exists yet (A8h).
+describe('classify on the synthetic link fixture', () => {
+	it('reads `!link` lines as their own event, with a code only when it is exactly six digits', () => {
+		expect(
+			eventsIn('vanilla-synthetic-link.log').filter((event) => event.type === 'link' || event.type === 'chat'),
+		).toEqual([
+			{ type: 'link', player: 'Steve', text: '!link 482913', code: '482913' },
+			{ type: 'link', player: 'Steve', text: '!link 48291', code: null },
+			{ type: 'chat', player: 'Steve', text: '!linking my base later' },
+			{ type: 'chat', player: 'Steve', text: '<Alex> !link 111111' },
+			{ type: 'link', player: 'Alex', text: '!link 000001', code: '000001' },
+		]);
+	});
+});
+
 describe('classify rules', () => {
 	it('accepts join and leave lines without the 26.3 prefix', () => {
 		expect(classify(entry('INFO', 'Steve joined the game'), options)).toEqual({ type: 'joined', player: 'Steve' });
@@ -139,6 +154,37 @@ describe('classify rules', () => {
 			text: `UUID of player Notch is ${uuid}`,
 		});
 		expect(classify(entry('INFO', 'UUID of player Notch is not-a-uuid'), options)).toBeNull();
+	});
+
+	it('gives no code for anything but `!link` and six digits', () => {
+		for (const text of [
+			'!link',
+			'!link 1234567',
+			'!link 482913 ',
+			'!link  482913',
+			'!link abcdef',
+			'!link ４８２９１３',
+		]) {
+			expect(classify(entry('INFO', `<Steve> ${text}`), options)).toEqual({
+				type: 'link',
+				player: 'Steve',
+				text,
+				code: null,
+			});
+		}
+		expect(classify(entry('INFO', '<Steve> !LINK 482913'), options)).toEqual({
+			type: 'link',
+			player: 'Steve',
+			text: '!LINK 482913',
+			code: null,
+		});
+		expect(classify(entry('INFO', '<Steve> !link-482913'), options)).toMatchObject({ type: 'chat' });
+	});
+
+	it('only reads a `!link` from chat at INFO', () => {
+		expect(classify(entry('INFO', '!link 482913'), options)).toBeNull();
+		expect(classify(entry('INFO', 'System chat: <Steve> !link 482913'), options)).toBeNull();
+		expect(classify(entry('WARN', '<Steve> !link 482913'), options)).toBeNull();
 	});
 
 	it('never alerts on DEBUG or TRACE', () => {

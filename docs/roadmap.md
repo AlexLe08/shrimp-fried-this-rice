@@ -226,6 +226,16 @@ Later item), not a follow-up.
   syntax) and gives RCON's port and password, or why it's off, and
   `online-mode`. Nothing uses either yet (A8e). Whether 26.3 accepts the
   component and its escapes is for the end-to-end test (A8h).
+- **The `!link` line** (2026-11-22, Track A8c). `classify.ts` reads a
+  chat line starting `!link` as its own event, with the code only when
+  the text is exactly `!link` and six digits (anchored like chat, so only
+  that player can produce it). `bridge.ts` posts it as ordinary chat, as
+  before, unless it is given a `link` option, which only pairing will
+  pass (A8e): then no `!link` line reaches Discord, and a well-formed one
+  is reported with the player's UUID from this run's login line (or none
+  after a restart) and `online-mode`. Codes in the log read at startup
+  are never reported. Nothing passes the option yet. Tested from a
+  hand-written fixture; no real `!link` line has been logged yet (A8h).
 
 ## Next up
 
@@ -247,8 +257,8 @@ them ahead of items 5 and 6.
    there (or with `/minecraft link` and `/minecraft avatar`) after linking their account by a
    code typed in game. That replaces choosing in game (`!avatar`), the
    owner's call (2026-11-21). Its helper-side parts A8a to A8c (the RCON
-   client and the `tellraw` builder and `server.properties` reader, done,
-   and the `!link` line) go ahead now; the rest follows item 2.
+   client, the `tellraw` builder and `server.properties` reader, and the
+   `!link` line) are done; the rest follows item 2.
 2. **Dashboard foundation, then two-way Minecraft chat**
    ([Track D](plans/minecraft-ff14-features.md#track-d-web-dashboard)
    D0 and D1, moved up by the owner on 2026-11-22, with the rest of the
