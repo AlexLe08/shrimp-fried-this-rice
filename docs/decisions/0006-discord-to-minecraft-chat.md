@@ -56,19 +56,21 @@ server. The gateway client is written by hand, with Node 24's built-in
 
 - The bot and the VM don't change, and the production token stays on
   the VM. Each Minecraft host's owner creates one more Discord
-  application, switches on its Message Content intent, and invites it
-  with only View Channel and Read Message History in the bridge's
-  channel.
+  application, switches on its Message Content intent and switches
+  Public Bot off, and invites it with no permissions, then grants its
+  role View Channel, Read Message History and Manage Webhooks in the
+  bridge's channels only. The helper pins itself to one Discord server.
 - The helper now carries a hand-written gateway client: heartbeats,
   resume, and close codes. A restart loop must back off, as going over
   1,000 identifies a day resets the app's token, so the state file keeps
   the identify times and a lock file keeps one process per token. If this code becomes a
   burden, a library (a runtime dependency, the owner's call) is the way
   out.
-- The config now holds secrets (an app token and the RCON password), so
-  the setup guide asks for it to be readable only by its user. A leaked
-  token lets someone read that one channel and answer `/mcbridge` as the
-  app; Reset Token revokes it.
+- The config now holds a secret (the app token), and the state file holds
+  webhook URLs and links, so the setup guide asks for both to be readable
+  only by their user. A leaked token lets someone read the bridge's
+  channels, answer `/mcbridge`, and use or change any webhook in those
+  channels; Reset Token revokes it.
 - RCON must not be reachable from outside the host: never forwarded on
   the router, and in Docker published on `127.0.0.1` only. With a
   plain-text password, this is a setup step to get right, not one the

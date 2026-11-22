@@ -10,8 +10,8 @@ chosen by whoever runs the Minecraft server in `mcbridge`'s config
 players listed as opting in. The plan's next step was players choosing in
 game (`!avatar skin` in chat). On 2026-11-21 the owner changed that: a
 player who is in the Discord server chooses from Discord, since the
-picture is shown with their name there; anyone else keeps the config's
-default.
+picture is shown with their name there; anyone else keeps the server's
+default (the `avatars` setting, which can now also be set from Discord).
 
 [0005](0005-minecraft-bridge-webhook-helper.md)'s Why includes not tying
 Minecraft players directly to their Discord accounts. Choosing from
@@ -30,9 +30,9 @@ A Discord member links their account to a Minecraft name by running
 `!link <code>` in game as that player. The link is to the player's
 account (its UUID), not just the name. Once linked, they choose their
 picture with `/mcbridge avatar` (their Discord picture, their skin, a
-bundled picture, or the config's default). The choice applies while
+bundled picture, or the server's default). The choice applies while
 they're in the Discord server; otherwise, and for players who never
-link, the config decides as before. Links live only in the helper's state
+link, the server's `avatars` setting decides as before. Links live only in the helper's state
 file on the Minecraft host.
 
 **Why:** TODO(Alex)
@@ -42,8 +42,9 @@ file on the Minecraft host.
 - This narrows 0005's "not tying players to Discord accounts" to "never
   without the player doing it from both sides". Only the player can create
   a link, `unlink` removes it, and it never leaves the Minecraft host.
-- In-game `!avatar` is dropped. The config's `avatars` stays as the
-  default for everyone, and the server's own per-player choices still
+- In-game `!avatar` is dropped. The `avatars` setting (from the config,
+  or from `/mcbridge` by the Discord server's owner or allowed role)
+  stays as the default for everyone, and the server's own per-player choices still
   apply to players who don't link.
 - Linking needs a Mojang (version 4) UUID logged that run, so an
   offline-mode server, where anyone can join under any name, can't link.
