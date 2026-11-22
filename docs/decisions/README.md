@@ -27,5 +27,5 @@ and Design notes sections; the history behind them is in
 | [0003](0003-pre-release-schema-resets.md) | Before the bot has users, a breaking schema change may reset the database instead of migrating | Accepted · 2026-11-19 |
 | [0004](0004-feature-storage-modules.md) | `core/database.ts` opens SQLite and owns the schema; each area's storage module queries it | Accepted · 2026-11-20 |
 | [0005](0005-minecraft-bridge-webhook-helper.md) | The Minecraft bridge is a separate, dependency-free helper beside the server, posting through a webhook | Accepted · 2026-11-21; superseded in part by 0006 (Discord to Minecraft chat) and 0007 (players linking their Discord account) |
-| [0006](0006-discord-to-minecraft-chat.md) | Discord to Minecraft chat: the helper connects to Discord's gateway with its own app and writes into the game over RCON | Accepted · 2026-11-21 |
-| [0007](0007-players-choose-their-picture-from-discord.md) | Players in the Discord server choose their picture there, after linking their account by a code typed in game | Accepted · 2026-11-21 |
+| [0006](0006-discord-to-minecraft-chat.md) | Discord to Minecraft chat goes through the bot (the helper connects out to its endpoint) and is set up in the dashboard | Accepted · 2026-11-22 |
+| [0007](0007-players-choose-their-picture-from-discord.md) | Players in the Discord server choose their picture in the dashboard, after linking their account by a code typed in game | Accepted · 2026-11-22 |

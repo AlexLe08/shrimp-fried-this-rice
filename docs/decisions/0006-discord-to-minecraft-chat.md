@@ -1,93 +1,76 @@
-# 0006: Discord to Minecraft chat: the helper connects with its own Discord app and writes over RCON
+# 0006: Discord to Minecraft chat goes through the bot, set up in the dashboard
 
-Status: Accepted · 2026-11-21
+Status: Accepted · 2026-11-22
 
 ## Context
 
 [0005](0005-minecraft-bridge-webhook-helper.md) made `mcbridge` a helper
 beside the Minecraft server that posts to Discord through webhooks, and
 listed "one-way only" among its consequences: Discord to Minecraft chat
-would need a separate design. The owner asked for that direction on
-2026-11-21, along with players choosing their picture from Discord
-([0007](0007-players-choose-their-picture-from-discord.md)). Design:
-[A8](../plans/minecraft-ff14-features.md#discord-to-minecraft-chat-a8-designed-2026-11-21).
+would need a separate design. It also turned down a bot-side endpoint,
+for the inbound port, TLS and lost events it would cost. The owner asked
+for the other direction on 2026-11-21, along with players choosing their
+picture from Discord ([0007](0007-players-choose-their-picture-from-discord.md)).
+Design: [A8](../plans/minecraft-ff14-features.md#discord-to-minecraft-chat-a8).
 
-Constraints carried over from 0005: the bot's token never leaves the VM,
-and no two processes share a token (README, `CASESTUDY.md` §2); nothing
-opens an inbound port, on the VM or on the Minecraft host's network; the
-helper works with any launcher, panel or container, on Windows, macOS and
-Linux; no runtime dependencies; free tiers only.
+A webhook can't read a channel, and the Minecraft host sits behind a home
+router. A vanilla server takes input only from its console and from RCON,
+which is not encrypted.
 
-What was checked against the docs on 2026-11-21:
+The first design (this PR's history) gave the helper its own Discord
+application on the gateway: no change to the VM, and chat never passing
+through it, as DiscordSRV does. It left each server owner creating an app
+in the Developer Portal, and the helper with a hand-written gateway
+client. Moving most of the setup into Discord helped, but not with that
+first step. The owner wants a server owner to have as little to set up
+as possible beyond the bot, and accepted two-way chat being set up only
+in the dashboard ([Track D](../plans/minecraft-ff14-features.md#track-d-web-dashboard-after-a-b-c-and-e)).
+The dashboard already needs what 0005 turned down: a public HTTPS
+endpoint on the VM.
 
-- A webhook can't read a channel or receive commands. Reading needs an
-  app token and the Message Content intent; slash commands need the app
-  to receive interactions, over the gateway or at a public HTTP endpoint.
-- A vanilla server takes input only from its console and from RCON. RCON
-  is not encrypted, and the server has no setting that binds it to
-  localhost alone.
-
-Options for reaching Discord:
-
-- The helper on the gateway, with its own app.
-- The helper polling REST with its own app. This was the first draft,
-  dropped when choosing pictures moved to Discord, as a poll can't
-  receive slash commands.
-- The production bot owning the commands and passing choices to the
-  helper, which needs an inbound port or a channel used as a data store.
-- The bot's token on the host, ruled out.
-
-Options for writing into the game: RCON with `tellraw`; the server's
-stdin, which needs `mcbridge` to start the server; a plugin, of which
-there is none for vanilla.
+Discord's privileged intent review (checked 2026-11-22): an app that more
+than 10,000 users can see, across all its servers, must apply for
+Message Content and be reviewed yearly; below that it's switched on in
+the Developer Portal. The owner isn't publishing the bot widely.
 
 ## Decision
 
-When configured, `mcbridge` connects to Discord's gateway with a token
-from its own Discord application (not the bot's), relays messages from
-the chat webhook's channel into the game as `tellraw @a` over RCON on the
-Minecraft host, and registers its own `/mcbridge` command in that Discord
-server. The gateway client is written by hand, with Node 24's built-in
-`WebSocket`, rather than taking on a library.
+Two-way chat goes through the production bot. In the dashboard, a server
+owner adds a Minecraft server. The bot makes the bridge's webhooks and a
+secret, and hands over a config. The helper connects out to the bot's
+HTTPS endpoint with that secret. The bot reads the bridge's channel and
+sends messages to the helper, which runs `tellraw @a` over RCON. Settings,
+links and pictures live in `bot.db`. Two-way chat waits for the
+dashboard's hostname, HTTPS and login (D0, D1).
 
 **Why:** TODO(Alex)
 
 ## Consequences
 
-- The bot and the VM don't change, and the production token stays on
-  the VM. Each Minecraft host's owner creates one more Discord
-  application, switches on its Message Content intent and switches
-  Public Bot off, and invites it with no permissions, then grants its
-  role View Channel, Read Message History and Manage Webhooks in the
-  bridge's channels only. The helper pins itself to one Discord server.
-- The helper now carries a hand-written gateway client: heartbeats,
-  resume, and close codes. A restart loop must back off, as going over
-  1,000 identifies a day resets the app's token, so the state file keeps
-  the identify times and a lock file keeps one process per token. If this code becomes a
-  burden, a library (a runtime dependency, the owner's call) is the way
-  out.
-- The config now holds a secret (the app token), and the state file holds
-  webhook URLs and links, so the setup guide asks for both to be readable
-  only by their user. A leaked token lets someone read the bridge's
-  channels, answer `/mcbridge`, and use or change any webhook in those
-  channels; Reset Token revokes it.
+- A server owner's setup is the dashboard plus, on the host, the
+  downloaded config with `logPath` filled in and RCON switched on. No
+  Developer Portal, no second app, no Discord token on the host.
+- The helper has no Discord protocol in it. The VM gains its first
+  inbound endpoint, shared with the dashboard, and the bot gains the
+  `GuildMessages` and Message Content intents. With them it receives
+  every message in every server it's in, and reads only bridge channels.
+- Other servers' chat passes through the VM, in memory only: never
+  stored or logged. Links and settings are kept in `bot.db`, and deleted
+  when the bot leaves a server.
+- The VM is the hub: while it's down or restarting for a deploy,
+  two-way chat pauses (messages are held 30 s, then dropped). Minecraft
+  to Discord keeps working, as it still posts through webhooks from the
+  host.
+- Messages sent while the Minecraft server is down are dropped, and the
+  stop message says so. The relay is announced in the channel before it
+  starts.
 - RCON must not be reachable from outside the host: never forwarded on
-  the router, and in Docker published on `127.0.0.1` only. With a
-  plain-text password, this is a setup step to get right, not one the
-  helper can enforce.
-- Messages sent while the server is down are dropped, not queued, and
-  the stop message says so.
-- Posting in the bridge's channel is a Discord member's opt-in to being
-  shown in game. The helper announces it once in the channel, and the
-  setup guide asks for it to be announced ahead of time and said in the
-  channel's topic.
-- With the app in place, most setup moves to Discord (the owner's call,
-  2026-11-22). `/mcbridge setup` creates the webhooks, and
-  `/mcbridge settings` sets the server's name, pictures, prefix and
-  colour, for the Discord server's owner or a role they allow. These are
-  kept in a state file the helper writes beside its config, where they
-  win over the file's values. RCON's port and password and `online-mode`
-  are read from `server.properties`. The config file keeps only what the
-  host's owner should control: the token, the log and crash-report paths,
-  and the ignore patterns.
-- Without the new config key, nothing changes: the bridge stays one-way.
+  the router, and in Docker published on `127.0.0.1` only.
+- Two-way chat waits for Track D's foundation. One-way chat doesn't
+  change, and the parts that don't depend on the bot (the RCON client,
+  the `tellraw` builder, the `server.properties` reader, the `!link`
+  line) can be built before it.
+- If the bot were published widely and passed 10,000 users, Message
+  Content would need Discord's review. A refusal would stop every
+  bridge. The way out then would be a separate app just for the bridge,
+  or the per-host design. That would mean revisiting this record.

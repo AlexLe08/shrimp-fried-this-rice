@@ -218,12 +218,14 @@ them ahead of items 4 and 5.
 2. **Minecraft bridge, what's left** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
    The first version, crash reports and player avatars are done and tested
    end to end (Done above). Left: Discord to Minecraft chat, designed in
-   [A8](plans/minecraft-ff14-features.md#discord-to-minecraft-chat-a8-designed-2026-11-21)
-   with decisions 0006 and 0007: the helper connects to Discord with its
-   own app and writes into the game over RCON, and players in the Discord
-   server choose their picture there with `/mcbridge avatar`, after
-   linking their account by a code typed in game. That replaces choosing
-   in game (`!avatar`), the owner's call (2026-11-21).
+   [A8](plans/minecraft-ff14-features.md#discord-to-minecraft-chat-a8)
+   with decisions 0006 and 0007. It goes through the bot and is set up in
+   the dashboard, and players in the Discord server choose their picture
+   there after linking their account by a code typed in game. That
+   replaces choosing in game (`!avatar`), the owner's call (2026-11-21).
+   Two-way chat waits for Track D's foundation (D0, D1). Its helper-side
+   parts A8a to A8c (the RCON client, the `tellraw` builder and
+   `server.properties` reader, the `!link` line) can go ahead now.
 3. **Lodestone news and scheduled events**
    ([Track C](plans/minecraft-ff14-features.md#track-c-lodestone-news-and-scheduled-events)),
    then the **role check-in** after onboarding
