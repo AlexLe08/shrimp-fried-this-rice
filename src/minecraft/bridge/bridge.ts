@@ -7,9 +7,28 @@ import { alertMessage, escapeMarkdown, eventMessage, summaryMessage } from './me
 import { createEntryAssembler, parseLog, type LogEntry } from './parseLine.ts';
 import type { Sender } from './sender.ts';
 
+/** A player's `!link` code, for the bot to check against the one it gave (decision 0007). */
+export interface LinkReport {
+	player: string;
+	code: string;
+	/** From this run's login line; without it the bot answers "log in again and retry". */
+	uuid: string | undefined;
+	onlineMode: boolean;
+}
+
 export interface BridgeOptions {
 	config: BridgeConfig;
 	sender: Pick<Sender, 'send'>;
+	/**
+	 * Set only once the bridge is paired with the bot (A8e). Until then a
+	 * `!link` line is posted as the chat it looks like, so a one-way bridge
+	 * behaves as before.
+	 */
+	link?: {
+		report(link: LinkReport): void;
+		/** `online-mode` from `server.properties`, as read at the server's last start. */
+		onlineMode(): boolean;
+	};
 	log?: (message: string) => void;
 	gate?: AlertGate;
 	/** How long the log stays quiet before a stack trace still collecting lines is posted. Defaults to 1 s. */
@@ -102,10 +121,30 @@ export function createBridge(options: BridgeOptions): Bridge {
 	}
 
 	function handle(entry: LogEntry): void {
-		const event = classify(entry, { ignore: config.ignore });
-		if (!event) return;
-		track(event);
-		if (event.type === 'uuid') return;
+		const classified = classify(entry, { ignore: config.ignore });
+		if (!classified) return;
+		track(classified);
+		if (classified.type === 'uuid') return;
+		let event: Exclude<BridgeEvent, { type: 'link' }>;
+		if (classified.type === 'link') {
+			if (options.link) {
+				// Never relayed while paired, malformed or not: the code is the
+				// player's proof, and only the bot should see it.
+				const { player, code } = classified;
+				if (code !== null) {
+					options.link.report({
+						player,
+						code,
+						uuid: uuids.get(player.toLowerCase()),
+						onlineMode: options.link.onlineMode(),
+					});
+				}
+				return;
+			}
+			event = { type: 'chat', player: classified.player, text: classified.text };
+		} else {
+			event = classified;
+		}
 		if (event.type === 'alert') {
 			postAlert(event);
 			return;

@@ -227,7 +227,7 @@ src/
     bridge/               # mcbridge, a helper that runs beside a Minecraft server (setup: docs/MINECRAFT_BRIDGE.md; the bot never loads it)
       formats.ts          # the log line prefix of each server flavor (vanilla so far)
       parseLine.ts        # log lines to entries, with stack trace lines attached to the entry they follow
-      classify.ts         # an entry to a bridge event (start, stop, join, leave, chat, alert) or nothing
+      classify.ts         # an entry to a bridge event (start, stop, join, leave, chat, a `!link` code, alert) or nothing
       alertGate.ts        # holds back routine alerts: lag that doesn't repeat, duplicates, more than a few a minute
       tailer.ts           # polls the log file for new lines, following it when the server rotates or truncates it
       crashReports.ts     # polls the crash-reports folder for new reports, and reads a report's description and exception
@@ -238,7 +238,7 @@ src/
       rcon.ts             # RCON client for two-way chat (not wired up yet): login, one command at a time with a timeout, reconnecting with backoff, off after a wrong password
       toMinecraft.ts      # a Discord message as a tellraw command (not wired up yet): prefix and colour, one line, \u escapes, cut to fit RCON's limit
       serverProperties.ts # reads the Minecraft server's server.properties (not wired up yet): RCON's port and password, or why it's off, and online-mode
-      bridge.ts           # wiring: lines to entries to events, alerts through the gate, posts to the right webhook
+      bridge.ts           # wiring: lines to entries to events, alerts through the gate, posts to the right webhook, `!link` codes to the bot once paired (not yet)
       main.ts             # the entrypoint (npm run mcbridge): --config, the tailer, crash watcher and sender, shutdown on SIGINT, SIGTERM, SIGHUP (and SIGBREAK on Windows)
 test/
   setup.ts                       # points core/database.ts at an in-memory DB before any test imports it
@@ -287,9 +287,9 @@ test/
         registered.test.ts          # every file in src/ffxiv/recruit/subcommands/ is registered by /recruit
   minecraft/
     bridge/
-      fixtures/                     # vanilla 26.3 logs from the owner's server (player names replaced), and a hand-written error log and crash report
+      fixtures/                     # vanilla 26.3 logs from the owner's server (player names replaced), and a hand-written error log, `!link` log and crash report
       parseLine.test.ts             # line prefixes, stack traces, and the fixtures read as entries
-      classify.test.ts              # the events found in the fixtures, and each rule (impersonation in chat, ignore list, levels)
+      classify.test.ts              # the events found in the fixtures, and each rule (impersonation in chat, `!link` codes, ignore list, levels)
       alertGate.test.ts             # lag repeats, de-duplication with counts, and the per-minute cap
       tailer.test.ts                # against temp files: appends, partial lines, truncation, delete and recreate, rotation
       crashReports.test.ts          # a report's description and trace; against temp folders: old reports, half-written ones, a missing folder

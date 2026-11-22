@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAlertGate, DEFAULT_ALERT_GATE } from '../../../src/minecraft/bridge/alertGate.ts';
 import { DEFAULT_AVATARS, hashName } from '../../../src/minecraft/bridge/avatars.ts';
-import { createBridge } from '../../../src/minecraft/bridge/bridge.ts';
+import { createBridge, type LinkReport } from '../../../src/minecraft/bridge/bridge.ts';
 import { DEFAULT_IGNORE } from '../../../src/minecraft/bridge/classify.ts';
 import type { BridgeConfig } from '../../../src/minecraft/bridge/config.ts';
 import type { Post } from '../../../src/minecraft/bridge/sender.ts';
@@ -159,6 +159,87 @@ describe('createBridge', () => {
 			bridge.onLines(['[12:00:00] [Server thread/INFO]: <Steve> hi']);
 			vi.advanceTimersByTime(1000);
 			expect(posts[0]).not.toHaveProperty('avatarUrl');
+		});
+	});
+
+	describe('`!link` lines', () => {
+		const STEVE = '00000000-0000-4000-8000-000000000001';
+		function paired(onlineMode = true) {
+			const report = vi.fn<(link: LinkReport) => void>();
+			return { report, ...setup({ link: { report, onlineMode: () => onlineMode } }) };
+		}
+
+		it('posts them as chat, with the player and picture, until the bridge is paired', () => {
+			const { bridge, posts } = setup();
+			bridge.onLines(fixture('vanilla-synthetic-link.log').split('\n'));
+			vi.advanceTimersByTime(1000);
+			expect(
+				posts.filter(({ username }) => username !== 'Survival').map(({ username, content }) => [username, content]),
+			).toEqual([
+				['Steve', '!link 482913'],
+				['Steve', '!link 48291'],
+				['Steve', '!linking my base later'],
+				['Steve', '\\<Alex\\> !link 111111'],
+				['Alex', '!link 000001'],
+			]);
+			expect(posts.find(({ content }) => content === '!link 482913')?.avatarUrl).toBe(
+				posts.find(({ content }) => content === '!linking my base later')?.avatarUrl,
+			);
+		});
+
+		it('reports a code with the UUID from this run and online-mode once paired, and never posts a `!link` line', () => {
+			const { bridge, posts, report } = paired();
+			bridge.onLines(fixture('vanilla-synthetic-link.log').split('\n'));
+			vi.advanceTimersByTime(1000);
+			expect(report.mock.calls).toEqual([
+				[{ player: 'Steve', code: '482913', uuid: STEVE, onlineMode: true }],
+				[{ player: 'Alex', code: '000001', uuid: undefined, onlineMode: true }],
+			]);
+			expect(posts.map(({ content }) => content)).toEqual([
+				'🟢 **Survival** is up (started in 4.2 s)',
+				'➕ **Steve** joined',
+				'!linking my base later',
+				'\\<Alex\\> !link 111111',
+				'➖ **Steve** left',
+			]);
+		});
+
+		it('passes on online-mode as the caller reads it', () => {
+			const { bridge, report } = paired(false);
+			bridge.onLines(['[12:00:00] [Server thread/INFO]: <Steve> !link 482913']);
+			vi.advanceTimersByTime(1000);
+			expect(report).toHaveBeenCalledWith({ player: 'Steve', code: '482913', uuid: undefined, onlineMode: false });
+		});
+
+		it('reports no UUID from before the server restarted', () => {
+			const { bridge, report } = paired();
+			bridge.onLines([
+				`[12:00:00] [User Authenticator #1/INFO]: UUID of player Steve is ${STEVE}`,
+				'[12:01:00] [Server thread/INFO]: Stopping server',
+				'[12:02:00] [Server thread/INFO]: Done (4.2s)! For help, type "help"',
+				'[12:03:00] [Server thread/INFO]: <Steve> !link 482913',
+			]);
+			vi.advanceTimersByTime(1000);
+			expect(report).toHaveBeenCalledWith(expect.objectContaining({ uuid: undefined }));
+		});
+
+		it('matches the UUID to the player without case', () => {
+			const { bridge, report } = paired();
+			bridge.onLines([
+				`[12:00:00] [User Authenticator #1/INFO]: UUID of player steve is ${STEVE}`,
+				'[12:03:00] [Server thread/INFO]: <Steve> !link 482913',
+			]);
+			vi.advanceTimersByTime(1000);
+			expect(report).toHaveBeenCalledWith(expect.objectContaining({ player: 'Steve', uuid: STEVE }));
+		});
+
+		it('never reports a code from the backlog, which may be long used, but keeps its UUIDs', () => {
+			const { bridge, report } = paired();
+			bridge.onBacklog(fixture('vanilla-synthetic-link.log'));
+			expect(report).not.toHaveBeenCalled();
+			bridge.onLines(['[13:05:00] [Server thread/INFO]: <Steve> !link 482913']);
+			vi.advanceTimersByTime(1000);
+			expect(report).toHaveBeenCalledWith({ player: 'Steve', code: '482913', uuid: STEVE, onlineMode: true });
 		});
 	});
 

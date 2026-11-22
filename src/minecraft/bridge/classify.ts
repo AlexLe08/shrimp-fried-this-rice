@@ -9,6 +9,13 @@ export type BridgeEvent =
 	| { type: 'joined'; player: string }
 	| { type: 'left'; player: string }
 	| { type: 'chat'; player: string; text: string }
+	/**
+	 * A chat line starting `!link`: a player linking their account from the
+	 * game (decision 0007). `code` only when the text is exactly `!link`
+	 * and six digits; a malformed one is still a `link`, so a paired bridge
+	 * keeps a mistyped code out of Discord too.
+	 */
+	| { type: 'link'; player: string; text: string; code: string | null }
 	/** Logged as a player logs in, before the join line; never posted, it picks their skin. */
 	| { type: 'uuid'; player: string; uuid: string }
 	| {
@@ -49,6 +56,8 @@ const LEFT = new RegExp(`^(?:System chat: )?${PLAYER} left the game$`);
 // sending the text `<Admin> hi`. `[Not Secure]` marks a message without a
 // chat signature.
 const CHAT = new RegExp(`^(?:\\[Not Secure\\] )?<${PLAYER}> (.*)$`);
+const LINK = /^!link(?: |$)/;
+const LINK_CODE = /^!link (\d{6})$/;
 // From the User Authenticator thread: the account's UUID, version 4 for a
 // Mojang account, version 3 on an offline-mode server.
 const UUID_OF = new RegExp(
@@ -75,7 +84,12 @@ export function classify(entry: LogEntry, options: ClassifyOptions): BridgeEvent
 		const left = LEFT.exec(message);
 		if (left) return { type: 'left', player: left[1]! };
 		const chat = CHAT.exec(message);
-		if (chat) return { type: 'chat', player: chat[1]!, text: chat[2]! };
+		if (chat) {
+			const player = chat[1]!;
+			const text = chat[2]!;
+			if (LINK.test(text)) return { type: 'link', player, text, code: LINK_CODE.exec(text)?.[1] ?? null };
+			return { type: 'chat', player, text };
+		}
 		const uuid = UUID_OF.exec(message);
 		if (uuid) return { type: 'uuid', player: uuid[1]!, uuid: uuid[2]! };
 		return null;

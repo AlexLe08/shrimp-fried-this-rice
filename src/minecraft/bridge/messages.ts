@@ -12,7 +12,7 @@ export interface Message {
 	avatarUrl?: string;
 }
 
-type Posted = Exclude<BridgeEvent, { type: 'alert' } | { type: 'uuid' }>;
+type Posted = Exclude<BridgeEvent, { type: 'alert' } | { type: 'uuid' } | { type: 'link' }>;
 
 export function eventMessage(event: Posted, serverName: string): Message {
 	const server = (content: string) => ({ content, username: serverName });
