@@ -219,10 +219,11 @@ them ahead of items 4 and 5.
    The first version, crash reports and player avatars are done and tested
    end to end (Done above). Left: Discord to Minecraft chat, designed in
    [A8](plans/minecraft-ff14-features.md#discord-to-minecraft-chat-a8-designed-2026-11-21)
-   with decision 0006 (the helper reads the channel with its own Discord
-   app and writes into the game over RCON). Players choosing their picture
-   in game (`!avatar`) was dropped by the owner (2026-11-21): the config's
-   `avatars` stays the only way to choose.
+   with decisions 0006 and 0007: the helper connects to Discord with its
+   own app and writes into the game over RCON, and players in the Discord
+   server choose their picture there with `/mcbridge avatar`, after
+   linking their account by a code typed in game. That replaces choosing
+   in game (`!avatar`), the owner's call (2026-11-21).
 3. **Lodestone news and scheduled events**
    ([Track C](plans/minecraft-ff14-features.md#track-c-lodestone-news-and-scheduled-events)),
    then the **role check-in** after onboarding

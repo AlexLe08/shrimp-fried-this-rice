@@ -1,6 +1,6 @@
 # 0005: The Minecraft bridge is a separate helper that posts through a webhook
 
-Status: Accepted · 2026-11-21; superseded in part by [0006](0006-discord-to-minecraft-chat.md) (Discord to Minecraft chat)
+Status: Accepted · 2026-11-21; superseded in part by [0006](0006-discord-to-minecraft-chat.md) (Discord to Minecraft chat) and [0007](0007-players-choose-their-picture-from-discord.md) (players linking their Discord account)
 
 ## Context
 

@@ -237,4 +237,4 @@ WantedBy=multi-user.target
 
 - Paper, Fabric and Forge log formats.
 - Deaths, advancements, `/say` and `/me`.
-- Discord to Minecraft chat (designed, not built yet).
+- Discord to Minecraft chat, and players choosing their own picture from Discord (designed, not built yet).

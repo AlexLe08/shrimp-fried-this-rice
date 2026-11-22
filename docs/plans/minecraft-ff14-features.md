@@ -156,7 +156,7 @@ Checked 2026-11-21 (A4b), by fetching each service's head for one player by name
 
 If a picture's URL is broken, Discord shows its default avatar. The helper can't tell, because Discord fetches the image, not the helper. Avatar choice is a pure function (`avatarFor(player, config)`), tested without I/O, in its own PR after the sender (A4).
 
-Dropped (the owner's call, 2026-11-21): players choosing their picture in game (`!avatar skin` typed in chat, stored in a JSON file beside the config). The choice stays in the config's `avatars`, set by whoever runs the server, and pictures exist only on the Discord side.
+Changed (the owner's call, 2026-11-21): players don't choose their picture in game (`!avatar skin` typed in chat). A player who is in the Discord server chooses it there, with the helper's `/mcbridge avatar`, after linking their account by typing a code in game. Everyone else gets what the config's `avatars` gives them. Designed in [A8](#discord-to-minecraft-chat-a8-designed-2026-11-21), decision 0007.
 
 ### Log line formats
 
@@ -238,33 +238,43 @@ The owner's server runs in a Docker container (an image whose console prints `[i
 
 ### Discord to Minecraft chat (A8, designed 2026-11-21)
 
-Decision record: [0006](../decisions/0006-discord-to-minecraft-chat.md), which supersedes 0005 in part (its "one-way only" consequence).
+Decision records: [0006](../decisions/0006-discord-to-minecraft-chat.md) (the relay; supersedes 0005 in part, its "one-way only" consequence) and [0007](../decisions/0007-players-choose-their-picture-from-discord.md) (players linking their Discord account to choose their picture).
 
 ```
-Discord channel ──REST poll, the helper's own Discord app──> mcbridge ──RCON: tellraw @a──> Minecraft server
+Discord ──gateway: messages, /mcbridge commands (the helper's own app)──> mcbridge ──RCON: tellraw @a──> Minecraft server
+        <──webhook: chat, joins, alerts (as today)─────────────────────────┘
 ```
 
-Messages people type in the bridge's chat channel show in game as `[Discord] Name: text`. Optional: without the new config key the bridge stays one-way, as today.
+Messages people type in the bridge's chat channel show in game as `[Discord] Name: text`. Players who are in the Discord server choose their own picture with `/mcbridge`. Everything here is optional: without the new config key the bridge stays one-way, as today.
 
-#### Reading the channel: options
+#### The owner's calls (2026-11-21)
 
-A webhook can only post; it can't read a channel. So something with a Discord identity has to read the messages and get them to the Minecraft host, which sits behind a home router.
+- **Pictures are chosen from Discord**, not in game (`!avatar` is dropped). A player in the Discord server chooses their own picture, as it's shown with their name. Anyone else gets the picture the config's `avatars` gives them.
+- **Opting in by announcing**: the relay is announced in the channel before it starts (below).
+- **Messages sent while the server is down are dropped.** The existing "is stopping" message says so.
+- **`[Discord]` and its colour are the defaults.** The Discord server's owner, or members with a role they allow, can change both.
+
+#### Connecting to Discord: options
+
+A webhook can only post; it can't read a channel or receive commands. The helper sits behind a home router, so nothing can connect to it from outside.
 
 | Option | Cost | Verdict |
 |---|---|---|
-| **The helper polls the channel through REST with its own Discord application** | The server owner creates one more app in the Developer Portal and turns on the Message Content intent. A message reaches the game within about 2 s, not instantly. | **Chosen.** No change to the bot or the VM. The production token never leaves the VM, and the second token can only read the one channel its role is allowed to see. |
-| The production bot forwards messages to the helper | The bot already sees the messages (if it gets the Message Content intent too). But the VM would push to the Minecraft host, which needs an open port on the owner's home router. Or the helper would pull from an endpoint on the VM, which is the inbound port 0005 turned down. Messages are lost whenever either side restarts. | Turned down |
-| The helper opens a Gateway WebSocket with its own app | Delivery is instant. But without a library, the helper would implement heartbeats, identify, resume and reconnection by hand: several times the code of a poll, for about 2 s saved. | Later, if polling runs into rate limits |
+| **The helper connects to Discord's gateway (a WebSocket) with its own Discord application** | The helper handles heartbeats, identify, resume and reconnects by hand (no library). The server owner creates one more app and turns on its Message Content intent. | **Chosen.** Messages arrive as they're sent, and `/mcbridge` gets what slash commands give: options with fixed choices, private (ephemeral) replies, and the member's roles in each interaction for the permission check. The bot and the VM don't change, and the bot's token stays on the VM. |
+| The helper polls the channel over REST with its own app (this design's first draft) | Little code, but a poll can't receive slash commands. Choosing a picture would be a typed text command (`!mcbridge avatar skin`): public, with no fixed choices, and the role check would need extra requests. | Turned down once pictures moved to Discord |
+| The production bot owns `/mcbridge`, and passes choices to the helper | The bot would need a way to reach the helper: an open port on the owner's router, an endpoint on the VM (the inbound port 0005 turned down), or a "settings" message in Discord that the helper reads. It would also need to know every bridge, and the link check happens in game, on the helper's side. | Turned down: the state would live in two places |
 | The helper uses the bot's own token | Forbidden: two processes on one token (README, `CASESTUDY.md` §2), and the token would leave the VM. | Ruled out |
 
-Facts checked on 2026-11-21 against Discord's docs (topics/gateway, resources/message, topics/rate-limits):
+Facts checked on 2026-11-21 against Discord's docs (topics/gateway, gateway-events, opcodes-and-status-codes, interactions, application-commands, resources/message, reference):
 
-- Without the Message Content intent, an app gets empty `content`, `embeds` and `attachments` "across the APIs". The message object's own warning covers the object REST returns, so a REST poll needs the intent too. Apps with fewer than 10,000 users switch privileged intents on in the Developer Portal. The intent's own note says it "must be approved", so whether an unverified app under that size can just switch it on is checked when the owner creates the app (step A8d).
-- `GET /channels/{id}/messages` takes `after` and `limit` (1 to 100) and returns messages newest first. It needs View Channel, and it returns no messages without Read Message History. The docs ask for no gateway connection before REST calls.
-- No per-route limit is published. The helper reads the `X-RateLimit-*` headers, like the sender does. Each bot has a global limit of 50 requests a second, and an app that sends 10,000 requests answered 401, 403 or 429 within 10 minutes is blocked for a while. So the helper stops polling on a 401 or 403 instead of retrying.
-- `webhook_id` marks a webhook's message, which is how the bridge's own posts are skipped. `author.bot` marks an app's message. The display name is `author.global_name`, falling back to `author.username`. A server nickname is on the guild member, which a REST message doesn't carry. The first version shows the display name, not the nickname.
+- **Gateway**: `GET /gateway/bot` gives the URL. Hello (op 10) gives `heartbeat_interval`; the first heartbeat goes after a random fraction of it. A missed heartbeat ACK means closing with a code other than 1000 or 1001, then resuming. Ready gives `session_id` and `resume_gateway_url`. Resume (op 6) sends the token, session and last sequence, and a resume doesn't count against the identify limit. Reconnect (op 7) means resume. Invalid Session (op 9) with `false` means identifying again. Close codes 4004 (bad token), 4013 and 4014 (intents not allowed or not switched on) must not be retried; the others may. The limit is 1,000 identifies a day, and going over it **resets the token**, so a helper restarting in a loop must back off. The limit for sending is 120 events a minute.
+- **Intents**: `GUILD_MESSAGES` (1 << 9) for messages in a server. `MESSAGE_CONTENT` (1 << 15) is privileged: without it `content`, `embeds` and `attachments` come back empty. Apps with fewer than 10,000 users switch privileged intents on in the Developer Portal. Identifying with one that isn't switched on closes with 4014. Interactions need no intent.
+- **Commands**: `PUT /applications/{app}/guilds/{guild}/commands` replaces the server's commands for the app, and guild commands update instantly. Inviting with the `bot` scope includes `applications.commands`. A string option takes up to 25 fixed `choices`.
+- **Interactions** over the gateway are answered over HTTP: `POST /interactions/{id}/{token}/callback`, type 4 with flag 64 (ephemeral), within 3 s. That endpoint isn't bound by the global rate limit. A server interaction carries `member.roles`, `member.permissions` and the user's avatar hash. It doesn't carry the server owner's id, which comes from `GET /guilds/{id}`.
+- **Pictures**: `cdn.discordapp.com/avatars/{user}/{hash}.png` for a user's avatar, `guilds/{guild}/users/{user}/avatars/{hash}.png` for a per-server one, and `embed/avatars/{(id >> 22) % 6}.png` for someone with none.
+- **Messages**: `webhook_id` marks a webhook's message, which is how the bridge's own posts are skipped. `author.bot` marks an app's message. On the gateway, a message in a server comes with the sender's `member` (nickname included), so the name shown in game is the server nickname, then `global_name`, then `username`.
 
-Which channel: the chat webhook's own channel, so there is nothing new to keep in step. The helper reads its `channel_id` from Get Webhook with Token (the webhook URL itself, no bot token needed) at startup. Still to confirm in A8b.
+Which server and channel: the chat webhook's. The helper reads `guild_id` and `channel_id` from Get Webhook with Token (the webhook URL itself, no token needed) at startup. Still to confirm in A8b.
 
 #### Writing into Minecraft: options
 
@@ -273,24 +283,68 @@ Which channel: the chat webhook's own channel, so there is nothing new to keep i
 | **RCON (the server's remote console, a TCP port) running `tellraw @a <component>`** | **Chosen.** A vanilla server has it built in. It works with any launcher, panel or container, as reading the log does. |
 | Typing into the server process's console (stdin) | That only works if `mcbridge` starts the server itself, which gives up "any launcher", and a container's console isn't the host's. |
 | A plugin or mod | None exists for a vanilla server (as in 0005) |
-| `say` instead of `tellraw` | It shows `[Server]` as the speaker and can't style the Discord name. Players' chat formatting would also apply. |
+| `say` instead of `tellraw` | It shows `[Server]` as the speaker and can't style the Discord name. |
 
 Facts checked on 2026-11-21 (minecraft.wiki: RCON, Server.properties, Commands/tellraw, Text component format):
 
 - `server.properties`: `enable-rcon=true`, `rcon.password` (with a blank password, RCON doesn't start), `rcon.port` (default 25575), and `broadcast-rcon-to-ops` (default true: whether operators see the output of RCON commands). Changing these needs a server restart.
-- **RCON is not encrypted**, and the password goes over the wire in clear text. No setting binds RCON alone to localhost, and the wiki doesn't say whether it follows `server-ip`. So the setup guide says: never forward 25575 on the router. In Docker, publish it as `127.0.0.1:25575:25575`, or not at all if the helper runs in the same network. Whether the owner's image enables RCON, and how it sets the password, couldn't be checked from its docs; A8d checks it on the owner's container.
-- Packets: little-endian `int32` length, request id and type, then an ASCII payload ending in a null byte, then one more null byte. Type 3 logs in; the server answers with the same id (type 2), or with id -1 if the password is wrong. Type 2 runs a command. A command can be at most 1446 bytes (the wiki flags that number "outdated?"; A8a measures it on 26.3). A reply can be split over several 4096-byte packets. `tellraw` has no output, so the helper never needs to put a split reply back together.
-- Text components have been SNBT since 1.21.5 (25w02a). The wiki's own examples include JSON-style ones with quoted keys, and those are valid SNBT. So the helper builds the component with `JSON.stringify`, which quotes and escapes everything a Discord user types: they can't break out of the string and run a command. Whether 26.3 accepts it gets checked in A8d.
+- **RCON is not encrypted**, and the password goes over the wire in clear text. No setting binds RCON alone to localhost, and the wiki doesn't say whether it follows `server-ip`. So the setup guide says: never forward 25575 on the router. In Docker, publish it as `127.0.0.1:25575:25575`. Whether the owner's image enables RCON, and how it sets the password, couldn't be checked from its docs; the end-to-end test checks it.
+- Packets: little-endian `int32` length, request id and type, then an ASCII payload ending in a null byte, then one more null byte. Type 3 logs in; the server answers with the same id, or with -1 if the password is wrong. Type 2 runs a command. A command can be at most 1446 bytes (the wiki flags that number "outdated?"; A8a measures it on 26.3). A reply can be split over several 4096-byte packets. `tellraw` has no output, so the helper never needs to put a split reply back together.
+- Text components have been SNBT since 1.21.5. The wiki's own examples include JSON-style ones with quoted keys, and those are valid SNBT. So the helper builds the component with `JSON.stringify`, which quotes and escapes everything a Discord user types: they can't break out of the string and run a command. Whether 26.3 accepts it gets checked end to end.
 - Whether `§` formatting codes inside a component's `text` are applied is unclear (the wiki says both yes and no). The helper strips `§` and control characters.
-- Whether the server logs `tellraw` output in `latest.log` isn't documented. If it does, the line would look like `System chat: [Discord] …`. The anchored join, leave and chat patterns can't match that (`[` can't be in a player name), so a Discord user can't fake a join or a chat line, and the message isn't relayed back to Discord. A8c adds a fixture for this once A8d shows what the real line looks like.
+- Whether the server logs `tellraw` output in `latest.log` isn't documented. If it does, the line would look like `System chat: [Discord] …`. The anchored join, leave and chat patterns can't match that (`[` can't be in a player name), so a Discord user can't fake a join or a chat line, and the message isn't relayed back to Discord. A fixture for it follows once the end-to-end test shows the real line. A prefix the owner changes is checked against the same rule: it must start with a character a player name can't contain (validation below).
 
-#### Behaviour
+#### The relay
 
-- **What is relayed**: plain and reply messages (`type` 0 and 19) with text or attachments. Skipped: messages with a `webhook_id` (the bridge's own posts and any other webhook), messages from apps (`author.bot`), and system messages (pins, joins, boosts).
-- **How it looks in game**: `[Discord]` in a fixed colour, the display name, then the text in white. Mentions `<@id>`, `<@&id>` and `<#id>` become `@name`, `@role` and `#channel`, from the message's `mentions` where it lists them, and are left as they are otherwise. Custom emoji `<:name:id>` become `:name:`. Each attachment becomes `[image]` or `[file]`, and a sticker becomes `[sticker]`. A reply gets `(reply to Name)`. Line breaks become spaces, so one message is one chat line. The text is cut with `…` to fit the RCON limit in UTF-8 bytes, not characters.
-- **Polling**: every 2 s, only while RCON is connected. At startup and after each reconnect, the newest message so far becomes the starting point, so nothing old is replayed. A message is relayed at most once. Messages sent while the server is down are dropped, not queued: an hour-old line popping up in game would be confusing. A 429 waits `retry_after`. A 401 (bad token), 403 (missing Read Message History or View Channel) or 404 (the channel or webhook deleted, including when reading the channel id at startup) stops reading, with one console line and one alert, and the Minecraft-to-Discord direction carries on.
-- **RCON connection**: it opens once the log shows the server is up (`Done (…)!`) and closes at `Stopping server`. If the connection drops, it reconnects with backoff (1 s, doubling to 60 s). A wrong password stops trying until the helper is restarted, with one alert. A message that can't be sent is dropped after one retry. Each command times out after 5 s.
-- **Shutdown**: the signal handlers that exist already also stop the poll and close the socket.
+- **What is relayed**: messages in the chat webhook's channel, plain or replies (`type` 0 and 19), with text or attachments. Skipped: messages with a `webhook_id` (the bridge's own posts and any other webhook), messages from apps (`author.bot`), and system messages (pins, joins, boosts).
+- **How it looks in game**: the prefix in its colour (by default `[Discord]` in Discord's blurple, `#5865F2`), the sender's name, then the text in white. Mentions `<@id>`, `<@&id>` and `<#id>` become `@name`, `@role` and `#channel` where the message lists them, and stay as they are otherwise. Custom emoji `<:name:id>` become `:name:`. Each attachment becomes `[image]` or `[file]`, and a sticker becomes `[sticker]`. A reply gets `(reply to Name)`. Line breaks become spaces, so one message is one chat line. The text is cut with `…` to fit the RCON limit in UTF-8 bytes, not characters.
+- **While the server is down**: messages are dropped, not queued. With the relay on, the stop message gains a line: "🔴 **Survival** is stopping. Messages sent here won't reach the game until it's back." The start message is left as it is.
+- **RCON connection**: it opens once the log shows the server is up (`Done (…)!`, or the startup scan finding it already running) and closes at `Stopping server`. If the connection drops, it reconnects with backoff (1 s, doubling to 60 s). A wrong password stops trying until the helper is restarted, with one alert. A message that can't be sent is dropped after one retry. Each command times out after 5 s.
+- **Gateway connection**: it stays connected whether the server is up or not, so `/mcbridge` keeps working while it's down. It resumes after a drop and backs off (1 s, doubling to 5 minutes) between new identifies, to stay well clear of the 1,000-a-day limit. On 4004, 4013 or 4014 it stops, with one console line and one alert naming the fix (wrong token, or Message Content not switched on), and Minecraft to Discord carries on.
+- **Shutdown**: the signal handlers that exist already also close the gateway (with code 1000, so the session ends) and the RCON socket.
+
+#### Opting in: the announcement
+
+The first time the helper starts with `discordToMinecraft`, it posts once in the channel, through the chat webhook: "Messages posted in this channel now also show in game on **Survival**, under your server nickname. Posting here means you're OK with that. Use `/mcbridge avatar` to choose your picture for in-game chat posted here." It records in the state file that it was posted, so it posts once. The setup guide also asks the server owner to announce the relay ahead of time and to say it in the channel's topic.
+
+#### `/mcbridge`, the helper's command
+
+Registered by the helper in the webhook's Discord server at each start (`PUT` of guild commands: instant, and it replaces what an older version registered). All replies are ephemeral. Several Minecraft servers bridged into one Discord server means several apps, each with its own `/mcbridge`; Discord shows each with its app's name.
+
+| Subcommand | Who | What |
+|---|---|---|
+| `link name:` | Anyone in the server | Starts linking their Discord account to a Minecraft name (below) |
+| `unlink` | A linked member | Removes the link and their picture choice |
+| `avatar choice:` | A linked member | `discord` (their picture in this Discord server), `skin` (their Minecraft skin from mc-heads.net), `generated` (a bundled picture picked from their name), or `default` (whatever the config gives them) |
+| `settings` | Server owner or allowed role | Shows the prefix, colour and allowed role |
+| `settings prefix:` / `color:` | Server owner or allowed role | Changes the prefix or its colour |
+| `settings role:` / `clear-role` | The Discord server's owner only | Sets or clears the role that may change the prefix and colour |
+
+- **Who counts as the server owner**: the Discord server's owner (`owner_id` from `GET /guilds/{id}`, read at startup and when a check needs it), not whoever runs the Minecraft server, who already controls the config. Discord's `default_member_permissions` can't express "this one role", so the check is in the handler, from the interaction's `member.roles`.
+- **Prefix**: 1 to 24 characters, without `§` or control characters, and starting with a character a Minecraft name can't contain (not a letter, digit or underscore), so it can't make a relayed line look like a player's.
+- **Colour**: one of Minecraft's 16 named colours (`blue`, `gold`, …) or `#rrggbb`. Named colours are offered as choices, with a hex colour accepted as typed text.
+- A URL option for pictures is left out on purpose. A member who wants a custom picture sets it as their Discord picture and chooses `discord`. That way no one can show an image under their name that Discord hasn't already accepted for them.
+
+#### Linking a Discord member to a Minecraft player
+
+Choosing someone's picture needs proof that the Discord member is that player. A display name proves nothing (anyone can set their nickname to `Steve`). So the member proves it from both sides:
+
+1. In Discord: `/mcbridge link name:Steve` replies privately: "Type `!link 482913` in game chat within 10 minutes."
+2. In game, Steve types `!link 482913`. The helper sees `<Steve> !link 482913` in the log. That's trustworthy, as chat matching is anchored: only Steve can produce a line from `<Steve>`. It records Discord member ↔ `Steve`, and replies to Steve alone with `tellraw Steve`.
+3. A `!link …` line is never relayed to Discord. The code is 6 random digits, used once, and expires after 10 minutes. A member has at most one code waiting, and a name at most one link; linking a name again replaces the old link.
+
+While offline mode is on (seen from the UUID, as in A4b), names aren't owned, so linking is refused: anyone could join as `Steve`.
+
+#### Which picture a player gets
+
+1. A linked player's choice from `/mcbridge avatar`, while they're still in the Discord server.
+2. Otherwise, the config's `avatars`, as today: their entry in `players`, then `default`.
+
+`discord` resolves to the member's per-server picture, then their user picture, then Discord's default for their id. The URL holds a hash that changes when they change their picture, so the helper refreshes it from every interaction and message it receives from them, and from `GET /guilds/{guild}/members/{user}` when they join the game. That request needs no privileged intent for one member (to confirm in A8c). A 404 there means they left the Discord server: their choice stops applying (step 2), but the link stays, in case they come back.
+
+#### State file
+
+`mcbridge-state.json`, beside the config (so `mcbridge*.json` already git-ignores it). The helper writes it, nobody edits it by hand. It's written whole to a temporary file, then renamed over the old one, so a crash can't leave half a file. It holds links (Discord user id, Minecraft name, chosen picture, picture hash), the prefix, the colour, the allowed role, and whether the announcement was posted. Deleting it resets all of that.
 
 #### Configuration
 
@@ -301,21 +355,25 @@ Facts checked on 2026-11-21 (minecraft.wiki: RCON, Server.properties, Commands/t
 }
 ```
 
-The config (`mcbridge*.json` in the repository folder) is already git-ignored. It now holds a password and a token, so the setup guide says to make it readable only by the user running `mcbridge` (`chmod 600`; on Windows, the default user-profile permissions). The helper's app needs only View Channel and Read Message History, in the bridge's channel only. If its token leaks, someone can read that channel as the app; Reset Token in the Developer Portal revokes it.
+The config now holds a password and a token, so the setup guide says to make it readable only by the user running `mcbridge` (`chmod 600`; on Windows, the default user-profile permissions). The helper's app is invited with the `bot` scope and only View Channel and Read Message History, in the bridge's channel. If its token leaks, someone can read that channel and answer `/mcbridge` as the app; Reset Token in the Developer Portal revokes it.
 
 #### Privacy
 
-- Posting in the bridge's channel is how a Discord user opts in to their display name and messages being shown in game. The setup guide asks server owners to say so in the channel's topic.
-- Nothing links a Discord account to a Minecraft player, which keeps to 0005's reasoning: names cross in both directions as text, and the helper stores nothing.
+- Posting in the bridge's channel is how a Discord member opts in to their name and messages showing in game: announced once by the helper, and in the channel's topic.
+- Linking ties a Discord account to a Minecraft player, which 0005's reasoning avoided. Here only the player can create it, by acting on both sides, and `unlink` removes it. It's stored only in the state file on the Minecraft host: never on the VM, and never sent anywhere. It's recorded as decision 0007.
 
 #### A8 steps
 
-- **A8a. RCON client** (`rcon.ts`, `node:net` only): login, run a command, wrong password, timeouts, a dropped connection, reconnecting. Tested against a fake RCON server listening on port 0 inside the test.
-- **A8b. Discord reader** (`discordReader.ts`): the channel id from the webhook, the polling cursor, the filters, the rate-limit headers, 401/403/404. Tested with a stubbed `fetch`, like `sender.ts`. Plus `toMinecraft.ts`, a pure function from a message to the `tellraw` command: mentions, emoji, attachments, stripping `§`, the byte limit, `JSON.stringify` escaping.
-- **A8c. Wiring and docs**: the `discordToMinecraft` config key (refused today, as unknown keys are), `main.ts` and `bridge.ts` opening RCON on start and closing it on stop, a new section in `docs/MINECRAFT_BRIDGE.md` (create the app, the intent, the role's permissions, `server.properties`, Docker, the channel topic, the config's permissions), and the README's Features.
-- **A8d. The owner's end-to-end test**, against a test channel and the vanilla 26.3 server: whether the Message Content intent switches on without review, whether `tellraw` accepts the JSON-style component, the real command limit, whether `tellraw` output is logged and what it looks like, whether `§` is applied, and whether the owner's Docker image enables RCON.
+- **A8a. RCON client** (`rcon.ts`, `node:net` only): login, running a command, a wrong password, timeouts, a dropped connection, reconnecting. Tested against a fake RCON server listening on port 0 inside the test.
+- **A8b. Gateway client** (`gateway.ts`, Node 24's global `WebSocket`): Hello, heartbeats and missed ACKs, identify, resume, op 7 and op 9, the close codes that stop it, backoff between identifies. Tested with a fake WebSocket injected in place of the global one, with fake timers. Also the server and channel ids, read from the webhook.
+- **A8c. The relay**: `toMinecraft.ts`, a pure function from a message to the `tellraw` command (names, mentions, emoji, attachments, stripping `§`, the byte limit, `JSON.stringify` escaping), the `discordToMinecraft` config key (refused today, as unknown keys are), the wiring in `main.ts` and `bridge.ts`, the stop message's extra line, and the one-time announcement with the state file.
+- **A8d. `/mcbridge`**: registering it, answering interactions, linking (`!link` in game), `avatar` and the picture order above, `settings` and its permission check. Tested with stubbed `fetch` and fake interactions.
+- **A8e. Docs**: a new section in `docs/MINECRAFT_BRIDGE.md` (create the app, the intent, the invite and its permissions, `server.properties`, Docker, the announcement and channel topic, the config's permissions), and the README's Features.
+- **A8f. The owner's end-to-end test**, against a test channel and the vanilla 26.3 server: whether the Message Content intent switches on without review, whether `tellraw` accepts the JSON-style component, the real command limit, whether `tellraw` output is logged and how, whether `§` is applied, whether the owner's Docker image enables RCON, linking, each picture choice on desktop and mobile, and the settings permission check.
 
-Open questions for the owner: the `[Discord]` prefix and its colour; whether messages sent while the server is down should be dropped (proposed) or queued; and opting in. 0005's Why asks for opt-in defaults, and here posting in the channel is the opt-in, so everyone already posting in an existing bridge channel is opted in the moment its host adds `discordToMinecraft`. Alternatives: a separate channel for the two-way bridge, or announcing it in the channel before switching it on.
+A8a and A8b don't depend on each other. Each PR ships with the feature still off (the config key arrives in A8c), so nothing changes for a running bridge until A8c.
+
+Open questions for the owner: none left from the first draft. New: whether the prefix and colour settings should also be open to members with Manage Server, as well as the owner and the allowed role. Proposed: no, as asked.
 
 ### Steps
 
@@ -327,7 +385,7 @@ Open questions for the owner: the `[Discord]` prefix and its colour; whether mes
 - **A5. `main.ts`, config, `npm run mcbridge`, the `.gitignore` entry.** Manual end-to-end test against the owner's server and a test channel. Done (#46), except the end-to-end test, which is the owner's (the helper needs a real webhook and server): `docs/MINECRAFT_BRIDGE.md` step 5.
 - **A6. `docs/MINECRAFT_BRIDGE.md`**, with the README's Features, Project Structure and Available Scripts updated in the same PR. Done (#47; Available Scripts went in with A5, which added the script).
 - **A7. Crash reports.** A new file in `crashReportsDir` posted as an alert (the Events table). Done: polled every 5 s, posted once its size holds still, through the alert gate (a crash loop posts once, then a count; never held back by the per-minute cap), with the report's `Description:` and exception and its file name. Reports there at startup aren't posted. Tested end to end by the owner with a real vanilla report from the game client (2026-11-21).
-- **A8. Discord to Minecraft chat** ([above](#discord-to-minecraft-chat-a8-designed-2026-11-21)), as A8a to A8d: the RCON client, the Discord reader and the `tellraw` builder, the wiring and docs, then the owner's end-to-end test. Designed, with decision 0006.
+- **A8. Discord to Minecraft chat** ([above](#discord-to-minecraft-chat-a8-designed-2026-11-21)), as A8a to A8f: the RCON client, the gateway client, the relay, `/mcbridge` (linking, pictures, settings), the docs, then the owner's end-to-end test. Designed, with decisions 0006 and 0007.
 
 ### A-later (not planned in detail)
 
@@ -891,7 +949,7 @@ Small PRs, each green on its own. These go ahead of the roadmap's earlier Next u
 5. B5 (import and export)
 6. A1 + A2 (parser and classifier, with the Track A record). The owner moved Track A ahead of B on 2026-11-21.
 7. A3 + A4 + A5 + A6 (tailer, sender, entrypoint, docs), split if too big to review
-8. A4b (player avatars, 10 bundled images; choosing in game was dropped 2026-11-21), then A8a, A8b, A8c (Discord to Minecraft chat: RCON client, Discord reader, wiring and docs, with decision 0006)
+8. A4b (player avatars, 10 bundled images), then A8a to A8e (Discord to Minecraft chat and choosing pictures from Discord: RCON client, gateway client, the relay, `/mcbridge`, docs; decisions 0006 and 0007)
 9. C0 + C1 + C2 (Lodestone news posting, with the Track C record)
 10. C3 (automatic maintenance events)
 11. C4 (manual events for other announcements)
