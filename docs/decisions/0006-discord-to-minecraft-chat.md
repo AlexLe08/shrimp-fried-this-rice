@@ -24,7 +24,7 @@ in the Developer Portal, and the helper with a hand-written gateway
 client. Moving most of the setup into Discord helped, but not with that
 first step. The owner wants a server owner to have as little to set up
 as possible beyond the bot, and accepted two-way chat being set up only
-in the dashboard ([Track D](../plans/minecraft-ff14-features.md#track-d-web-dashboard-after-a-b-c-and-e)).
+in the dashboard ([Track D](../plans/minecraft-ff14-features.md#track-d-web-dashboard)).
 The dashboard already needs what 0005 turned down: a public HTTPS
 endpoint on the VM.
 

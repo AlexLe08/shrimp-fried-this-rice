@@ -58,3 +58,6 @@ Early decisions were made with assumptions tying accounts together would have ma
   already accepted for them.
 - Linking needs two-way chat, so it also waits for the dashboard's
   foundation.
+- `/minecraft avatar` offers the same picture choice in Discord, for
+  when the dashboard can't be reached while the bot is up (the owner's
+  call, 2026-11-22).
