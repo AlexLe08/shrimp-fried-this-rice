@@ -30,7 +30,7 @@ Tracks A, B, C and E are independent apart from two shared pieces: [decision rec
 - The commands are generic (**`/collection`**, not `/mounts`), so a server can track anything (minions, other games) without new code.
 - Lodestone news is posted **by the bot itself** (replacing the third-party webhook the server uses today), so the bot can also create **Discord scheduled events** for maintenance. Other dated announcements (PvP season or series start, housing demolition) should be able to become events too.
 - Events for other announcements have a **per-server mode: off, manual, or auto**. Auto tries to parse the dates and create the event without a mod; the owner wants to try it and switch back to manual if it proves unreliable.
-- A **web dashboard** is wanted for existing and planned features. Its foundation (D0, D1) comes after Track B and before two-way Minecraft chat, which needs it; the rest comes after the feature tracks (reasons in Track D).
+- A **web dashboard** is wanted for existing and planned features. Its foundation (D0, D1) comes right after the Minecraft bridge's helper-side parts and before the rest of two-way Minecraft chat, which needs it, and before Track B (the owner's call, 2026-11-22). The rest comes after the feature tracks (reasons in Track D).
 - The server uses **Discord onboarding** to have new members choose a Free Company or Guest role. Thirty days after choosing, the member is reminded in a chosen channel to check that the role is still right.
 - Moderators record **trial FC members by in-game name** (some have no Discord account) with a short editable note. Thirty days later the bot pings moderators to check on them and promote them in game.
 
@@ -331,21 +331,21 @@ When a bridge is paired, the bot posts once in its chat channel through the brid
 - **Prefix**: 1 to 24 characters from a safe set (letters, digits, spaces, and `[ ] ( ) { } - . : | * # ! ~`), starting with one of the punctuation characters, and not starting with `[Not Secure]`. It has no `<` or `>`, so it can't make a relayed line look like a player's chat or a join, in game or read back from the log.
 - **No picture links** from the dashboard. A member who wants a custom picture sets it as their Discord picture and chooses `discord`. Links stay possible only in the host's config file, which the host's owner controls.
 
-#### `/minecraft avatar`, when the dashboard can't be reached (the owner's call, 2026-11-22)
+#### `/minecraft avatar` and `/minecraft link`, when the dashboard can't be reached (the owner's calls, 2026-11-22)
 
-The dashboard runs in the bot's process, but it can be unreachable while the bot is up: its hostname, its certificate, or the proxy in front of it. So the bot also has `/minecraft avatar choice: name: server:` for linked members:
+The dashboard runs in the bot's process, but it can be unreachable while the bot is up: its hostname, its certificate, or the proxy in front of it. So the bot also has two slash commands. `/minecraft link name: server:` starts linking, answering privately with the same code the dashboard gives (below). `/minecraft avatar choice: name: server:` is for linked members:
 
 - `choice`: `discord`, `skin`, `generated` or `default`, as fixed choices.
 - `name`: autocompletes the member's linked names, and is needed only with more than one.
 - `server`: autocompletes the Discord server's bridges, and is needed only with more than one.
 
-Replies are ephemeral, the command works only in a server, and it calls the same function the dashboard's page does, as the plan's thin-command convention asks. Without a link it says to link in the dashboard first. If the bot itself is down, neither the command nor the dashboard works. Like any command, it reaches users when the deploy re-registers commands.
+Replies are ephemeral, both commands work only in a server, and each calls the same function the dashboard's page does, as the plan's thin-command convention asks. Without a link, `avatar` says to run `/minecraft link` first. If the bot itself is down, neither the commands nor the dashboard work. Like any command, they reach users when the deploy re-registers commands.
 
 #### Linking a Discord member to a Minecraft player
 
 A display name proves nothing (anyone can set their nickname to `Steve`), so the member proves it from both sides:
 
-1. In the dashboard, the member enters `Steve` and gets a code: "Type `!link 482913` in game chat within 10 minutes."
+1. In the dashboard, or with `/minecraft link name:Steve` (answered privately), the member gets a code: "Type `!link 482913` in game chat within 10 minutes."
 2. In game, Steve types it. The helper sees `<Steve> !link 482913` in the log. That's trustworthy, as chat matching is anchored: only Steve can produce a line from `<Steve>`. The text must be exactly `^!link (\d{6})$`. The helper sends the bot the name, the code, Steve's UUID from this run's `UUID of player … is …` line, and `online-mode`.
 3. The bot accepts it only if the code is the one it gave this member for that name on this bridge (the name compared without case; the code used once, within 10 minutes; voided after 5 wrong tries for that name, so a modified helper can't guess its way through a million codes), the UUID is a Mojang one (version 4), and `online-mode` is `true`. Without a UUID from this run, the answer is "log in again and retry". It stores the link (Discord user id, name, UUID) and the helper answers Steve alone with `tellraw Steve`.
 4. While a bridge is paired, a `!link …` line is never relayed to Discord. `!link` reports count against the bridge's rate limit. A member may link several names (alts). A name has at most one link, and linking it again replaces the old one. Codes live only in the bot's memory: a restart throws them away, and the member asks for a new one.
@@ -399,13 +399,13 @@ Each ships switched off: nothing reaches RCON until pairing exists.
 #### After D0 and D1
 
 - **A8d. The bot's endpoint and storage**: the migration, `src/minecraft/storage.ts`, pairing, the long-poll (or WebSocket) route, rate limits, holding messages for 30 s, refusing a second helper, and `GuildDelete` clean-up.
-- **A8e. The relay**: the bot reading bridge channels (`GuildMessages` and `MessageContent` intents; Message Content is privileged, and a bot that asks for it before it's switched on is refused at login, which would fail the deploy's login check and leave production down. So the owner switches it on in the Developer Portal for both the production and the local-dev app **before** this merges, and the same PR updates the README's Local Setup, which says the bot needs no privileged intents, and `ORACLE_CLOUD_DEPLOYMENT.md`, as E2 does for Server Members) and the helper's side: the `bot` config key, connecting, RCON on start and off on stop, the announcement, the stop message's extra line, the settings cache.
-- **A8f. Dashboard pages and `/minecraft avatar`**: adding a bridge, settings, who may change them, My Minecraft accounts (linking, pictures with previews), and the command (`src/minecraft/commands/minecraft.ts`), with the README's Commands section.
+- **A8e. The relay**: the bot reading bridge channels (`GuildMessages` and `MessageContent` intents; Message Content is privileged, and a bot that asks for it before it's switched on is refused at login, which would fail the deploy's login check and leave production down. The owner switched it on for both the production and the local-dev app on 2026-11-22; check it's still on before this merges, and the same PR updates the README's Local Setup, which says the bot needs no privileged intents, and `ORACLE_CLOUD_DEPLOYMENT.md`, as E2 does for Server Members) and the helper's side: the `bot` config key, connecting, RCON on start and off on stop, the announcement, the stop message's extra line, the settings cache.
+- **A8f. Dashboard pages, `/minecraft link` and `/minecraft avatar`**: adding a bridge, settings, who may change them, My Minecraft accounts (linking, pictures with previews), and the command with its two subcommands (`src/minecraft/commands/minecraft.ts`), with the README's Commands section.
 - **A8g. Docs**: `docs/MINECRAFT_BRIDGE.md` (pairing, `enable-rcon` and a password in `server.properties`, Docker's `rcon` override, the announcement and channel topic, file permissions) and the README's Features.
 - **A8h. The owner's end-to-end test**, against a test channel and the vanilla 26.3 server: whether `tellraw` accepts the JSON-style component, whether accents and emoji arrive intact, the real command limit, whether `tellraw` output is logged and how, whether `§` is applied, whether the owner's Docker image enables RCON, pairing, the relay surviving a bot deploy, linking, each picture choice on desktop and mobile, and the settings permission check.
 - **A8i. `npm run mcbridge -- init`** (optional): finds `logs/latest.log` and `server.properties` when run in the server's folder, offers to turn `enable-rcon` on with a random password (taking effect at the server's next restart, which it says), and writes `logPath` into the downloaded config.
 
-Settled by the owner (2026-11-22): an unlinked player gets their per-player picture before the default; `/minecraft avatar` is added as a fallback for when the dashboard can't be reached; and Track D's D0 and D1 come earlier (after Track B and A8a to A8c), so two-way chat isn't last. Open: whether `/minecraft link` (a code by private reply) should be a fallback too, as a player who hasn't linked can't use `/minecraft avatar`.
+Settled by the owner (2026-11-22): an unlinked player gets their per-player picture before the default; `/minecraft avatar` and `/minecraft link` are fallbacks for when the dashboard can't be reached; and Track D's D0 and D1, with the rest of A8, come ahead of Track B, so the Minecraft work comes first. No open questions left.
 
 ### Steps
 
@@ -779,7 +779,7 @@ Each step updates the README (Features, Commands, Project Structure) in its own 
 
 ## Track D: Web dashboard
 
-Not planned in detail yet. **D0 and D1 come earlier** (the owner's call, 2026-11-22): after Track B, whose collection grid is D1's first page, and after A8a to A8c, because two-way chat (A8, decision 0006) needs the dashboard's endpoint and login. D2 onwards still wait, for the reasons below. This section records why it waits, what to do now so it is cheap later, and the decisions it will need.
+Not planned in detail yet. **D0 and D1 come earlier** (the owner's call, 2026-11-22): right after A8a to A8c and ahead of Track B, because two-way chat (A8, decision 0006) needs the dashboard's endpoint and login, and the owner put the Minecraft work first. D2 onwards still wait, for the reasons below. This section records why it waits, what to do now so it is cheap later, and the decisions it will need.
 
 ### Why D2 onwards come after the other tracks
 
@@ -805,7 +805,7 @@ One rule, in the conventions below: **command files stay thin.** Validation, per
 ### Suggested order when it starts
 
 - **D0. Decisions**, each a decision record: the hostname and HTTPS route (free only), proxy or tunnel, web framework or none.
-- **D1. Read-only site**: login, server picker, and pages that only display. The collection grid (members by items) is the best first page, because it restores the spreadsheet view the group is used to.
+- **D1. Read-only site**: login, server picker, and pages that only display. With D1 now ahead of Track B, the first page is a server's reminders (they exist today), and the Minecraft bridge's pages follow in A8f. The collection grid (members by items) joins when Track B lands; it restores the spreadsheet view the group is used to.
 - **D2. Editing**: reminders, Lodestone subscriptions and modes, collection catalog and entries.
 - **D3. Minecraft**: two-way chat and linking ([A8](#discord-to-minecraft-chat-a8), A8d to A8i): the helper's endpoint, pairing, bridge settings, My Minecraft accounts. The bridge then reports to the bot, which gives the status and recent events page.
 
@@ -975,15 +975,15 @@ In addition:
 Small PRs, each green on its own. These go ahead of the roadmap's earlier Next up items.
 
 1. E1 (`/recruit`, after the refactor in [`refactor.md`](refactor.md)): done, as three stacked PRs (storage, follow-up check, command)
-2. B2 (collection storage)
-3. B3 (`/collection`)
-4. B4 (`/collectionadmin`)
-5. B5 (import and export)
-6. A1 + A2 (parser and classifier, with the Track A record). The owner moved Track A ahead of B on 2026-11-21.
-7. A3 + A4 + A5 + A6 (tailer, sender, entrypoint, docs), split if too big to review
-8. A4b (player avatars, 10 bundled images), then A8a to A8c (the helper's parts of two-way chat that don't need the dashboard; decisions 0006 and 0007)
-9. D0 + D1 (the dashboard's foundation: hostname and HTTPS, Discord login, the read-only collection page), moved up by the owner on 2026-11-22
-10. A8d to A8i (two-way chat, linking and pictures, through the bot and the dashboard)
+2. A1 + A2 (parser and classifier, with the Track A record). The owner moved Track A ahead of B on 2026-11-21.
+3. A3 + A4 + A5 + A6 (tailer, sender, entrypoint, docs), split if too big to review
+4. A4b (player avatars, 10 bundled images), then A8a to A8c (the helper's parts of two-way chat that don't need the dashboard; decisions 0006 and 0007)
+5. D0 + D1 (the dashboard's foundation: hostname and HTTPS, Discord login, a read-only reminders page). The owner moved it, and the rest of A8, ahead of Track B on 2026-11-22.
+6. A8d to A8i (two-way chat, linking and pictures, through the bot and the dashboard)
+7. B2 (collection storage)
+8. B3 (`/collection`)
+9. B4 (`/collectionadmin`)
+10. B5 (import and export)
 11. C0 + C1 + C2 (Lodestone news posting, with the Track C record)
 12. C3 (automatic maintenance events)
 13. C4 (manual events for other announcements)

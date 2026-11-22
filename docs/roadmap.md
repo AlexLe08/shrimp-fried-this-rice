@@ -211,27 +211,28 @@ which has their PR order (its "Suggested pull request order"), the inputs
 to ask the owner for, and which facts are still unverified. The owner put
 them ahead of items 5 and 6.
 
-1. **Collection tracker (`/collection`, `/collectionadmin`)**
-   ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
-   Per-server collections (FF14 mounts first), imported once from the
-   group's spreadsheet.
-2. **Minecraft bridge, what's left** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
+1. **Minecraft bridge, what's left** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
    The first version, crash reports and player avatars are done and tested
    end to end (Done above). Left: Discord to Minecraft chat, designed in
    [A8](plans/minecraft-ff14-features.md#discord-to-minecraft-chat-a8)
    with decisions 0006 and 0007. It goes through the bot and is set up in
    the dashboard, and players in the Discord server choose their picture
-   there (or with `/minecraft avatar`) after linking their account by a
+   there (or with `/minecraft link` and `/minecraft avatar`) after linking their account by a
    code typed in game. That replaces choosing in game (`!avatar`), the
    owner's call (2026-11-21). Its helper-side parts A8a to A8c (the RCON
    client, the `tellraw` builder and `server.properties` reader, the
-   `!link` line) go ahead now; the rest follows item 3.
-3. **Dashboard foundation, then two-way Minecraft chat**
+   `!link` line) go ahead now; the rest follows item 2.
+2. **Dashboard foundation, then two-way Minecraft chat**
    ([Track D](plans/minecraft-ff14-features.md#track-d-web-dashboard)
-   D0 and D1, moved up by the owner on 2026-11-22). The hostname and
-   HTTPS on free tiers only, Discord login, and a read-only collection
+   D0 and D1, moved up by the owner on 2026-11-22, with the rest of the
+   Minecraft work, ahead of the collection tracker). The hostname and
+   HTTPS on free tiers only, Discord login, and a read-only reminders
    page, each D0 choice a decision record first. Then A8d to A8i: two-way
    chat, linking and pictures.
+3. **Collection tracker (`/collection`, `/collectionadmin`)**
+   ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
+   Per-server collections (FF14 mounts first), imported once from the
+   group's spreadsheet.
 4. **Lodestone news and scheduled events**
    ([Track C](plans/minecraft-ff14-features.md#track-c-lodestone-news-and-scheduled-events)),
    then the **role check-in** after onboarding
