@@ -79,7 +79,13 @@ server. The gateway client is written by hand, with Node 24's built-in
   shown in game. The helper announces it once in the channel, and the
   setup guide asks for it to be announced ahead of time and said in the
   channel's topic.
-- The prefix and its colour are set from Discord by the Discord server's
-  owner or a role they allow, and kept in a state file the helper writes
-  beside its config.
+- With the app in place, most setup moves to Discord (the owner's call,
+  2026-11-22). `/mcbridge setup` creates the webhooks, and
+  `/mcbridge settings` sets the server's name, pictures, prefix and
+  colour, for the Discord server's owner or a role they allow. These are
+  kept in a state file the helper writes beside its config, where they
+  win over the file's values. RCON's port and password and `online-mode`
+  are read from `server.properties`. The config file keeps only what the
+  host's owner should control: the token, the log and crash-report paths,
+  and the ignore patterns.
 - Without the new config key, nothing changes: the bridge stays one-way.

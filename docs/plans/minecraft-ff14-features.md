@@ -274,7 +274,7 @@ Facts checked on 2026-11-21 against Discord's docs (topics/gateway, gateway-even
 - **Pictures**: `cdn.discordapp.com/avatars/{user}/{hash}.png` for a user's avatar, `guilds/{guild}/users/{user}/avatars/{hash}.png` for a per-server one, and `embed/avatars/{(id >> 22) % 6}.png` for someone with none.
 - **Messages**: `webhook_id` marks a webhook's message, which is how the bridge's own posts are skipped. `author.bot` marks an app's message. On the gateway, a message in a server comes with the sender's `member` (nickname included), so the name shown in game is the server nickname, then `global_name`, then `username`.
 
-Which server and channel: the chat webhook's. The helper reads `guild_id` and `channel_id` from Get Webhook with Token (the webhook URL itself, no token needed) at startup. Still to confirm in A8b.
+Which server and channel: the chat webhook's. With `/mcbridge setup` (below) the helper creates the webhooks itself, so it knows both. With webhook URLs kept in the file, it reads `guild_id` and `channel_id` from Get Webhook with Token (the webhook URL itself, no token needed) at startup. Still to confirm in A8b.
 
 #### Writing into Minecraft: options
 
@@ -300,13 +300,14 @@ Facts checked on 2026-11-21 (minecraft.wiki: RCON, Server.properties, Commands/t
 - **How it looks in game**: the prefix in its colour (by default `[Discord]` in Discord's blurple, `#5865F2`), the sender's name, then the text in white. Mentions `<@id>`, `<@&id>` and `<#id>` become `@name`, `@role` and `#channel` where the message lists them, and stay as they are otherwise. Custom emoji `<:name:id>` become `:name:`. Each attachment becomes `[image]` or `[file]`, and a sticker becomes `[sticker]`. A reply gets `(reply to Name)`. Line breaks become spaces, so one message is one chat line. Role and channel names come from the server data the gateway keeps current; one it doesn't know shows as `@role` or `#channel`. The text is cut with `…` so the whole command, escapes included, fits the RCON limit.
 - **Rate**: at most 5 messages a second into the game; more are dropped, with a console line. Discord's slowmode on the channel is the server owner's tool for a busy channel.
 - **While the server is down**: messages are dropped, not queued. With the relay on, the stop message gets a second line: "Messages sent here won't reach the game until it's back." The start message is left as it is. A crash logs no `Stopping server`, so then nothing says so; the "Crashed" alert (if crash reports are set up) is the sign, and that's accepted.
+- **RCON settings** come from the server's own `server.properties` (`enable-rcon`, `rcon.port`, `rcon.password`), which sits beside `logs/` (found from `logPath`; a `serverPropertiesPath` key overrides it). They're read again at each server start, as the server reads them only then. If `enable-rcon` is false or the password is blank, the relay stays off, with one alert saying which line to change. Host `127.0.0.1`. An optional `rcon` key in the config (`host`, `port`) overrides them for Docker, where the published port may differ from the one inside the container. So the password is never typed twice. `online-mode` comes from the same file, and linking needs it to be `true` as well as the Mojang UUID (below).
 - **RCON connection**: it opens once the log shows the server is up (`Done (…)!`, or the startup scan finding it already running; when the scan can't tell, it tries anyway, with the backoff below) and closes at `Stopping server`. Today the scan's answer is only logged, so A8c passes it on. If the connection drops, it reconnects with backoff (1 s, doubling to 60 s). A wrong password stops trying until the helper is restarted, with one alert. A message that can't be sent is dropped after one retry. Each command times out after 5 s.
 - **Gateway connection**: it stays connected whether the server is up or not, so `/mcbridge` keeps working while it's down. It resumes after a drop and backs off (1 s, doubling to 5 minutes) between new identifies, to stay well clear of the 1,000-a-day limit. A restart loop (a service manager restarting a helper that crashes) would get round a backoff kept in memory, so the state file records each identify's time, and at startup the helper waits out the backoff and stops identifying for the day after 100 in 24 hours, with one alert. The setup guide's systemd unit also gets a longer `RestartSec` and a start limit. One helper token runs in one process: two copies would relay every message twice and race each other to answer interactions (the same incident as the bot's, `CASESTUDY.md` §2), so the helper takes a lock file beside the state file and refuses to start if another copy holds it. On 4004, 4013 or 4014 it stops, with one console line and one alert naming the fix (wrong token, or Message Content not switched on), and Minecraft to Discord carries on.
 - **Shutdown**: the signal handlers that exist already also close the gateway (with code 1000, so the session ends) and the RCON socket.
 
 #### Opting in: the announcement
 
-The first time the helper starts with `discordToMinecraft`, it posts once in the channel, through the chat webhook: "Messages posted in this channel now also show in game on **Survival**, under your server nickname. Posting here means you're OK with that. If you play on **Survival**, `/mcbridge link` lets you choose the picture shown with your Minecraft chat here." It records in the state file that it was posted, so it posts once. **Nothing is relayed until that's recorded**: if the post fails (Discord down, the webhook gone), it's retried with the sender's backoff and the relay waits. The setup guide also asks the server owner to announce the relay ahead of time and to say it in the channel's topic.
+The first time the helper has a chat webhook with the `discord` key set (right after `/mcbridge setup`, or at its first start with webhooks in the file), it posts once in the channel, through that webhook: "Messages posted in this channel now also show in game on **Survival**, under your server nickname. Posting here means you're OK with that. If you play on **Survival**, `/mcbridge link` lets you choose the picture shown with your Minecraft chat here." It records in the state file that it was posted, so it posts once. **Nothing is relayed until that's recorded**: if the post fails (Discord down, the webhook gone), it's retried with the sender's backoff and the relay waits. The setup guide also asks the server owner to announce the relay ahead of time and to say it in the channel's topic.
 
 #### `/mcbridge`, the helper's command
 
@@ -314,14 +315,16 @@ Registered by the helper in the webhook's Discord server at each start (`PUT` of
 
 | Subcommand and options | Who | What |
 |---|---|---|
+| `setup chat: alerts:` | Server owner or allowed role | Creates the bridge's webhooks in the channels picked (`alerts` optional, defaulting to `chat`), replacing ones it made before (and deleting those). Nobody copies a webhook URL. |
 | `link name:` | Anyone in the server | Starts linking their Discord account to a Minecraft name (below) |
 | `unlink name:` | A linked member | Removes that link and its picture choice (`name` autocompletes their linked names) |
 | `avatar choice: name:` | A linked member | `choice` is one of `discord` (their picture in this Discord server), `skin` (their Minecraft skin from mc-heads.net), `generated` (a bundled picture picked from their name), or `default` (whatever the config gives them); fixed choices. `name` is needed only with more than one linked name. |
 | `settings` with no options | Server owner or allowed role | Shows the prefix, colour, allowed role and linked names |
-| `settings prefix: color: remove-link:` (each optional) | Server owner or allowed role | Changes the prefix or its colour, or removes any member's link to a Minecraft name |
+| `settings prefix: color: server-name: default-avatar: remove-link: reset:` (each optional) | Server owner or allowed role | Changes the prefix, its colour, the server's name in messages, or the default picture (`generated`, `skin` or `none`), removes any member's link, or `reset`s a setting back to the config file's value |
+| `player-avatar name: choice:` | Server owner or allowed role | The config's per-player `players` entry from Discord: `generated`, `generated:N`, `skin`, `none`, an `https` link, or `remove` |
 | `settings role: clear-role:` (each optional) | The Discord server's owner only | Sets the role that may change settings, or clears it (`clear-role` is a boolean) |
 
-`settings` is one subcommand whose options are all optional, so running it bare shows the values. A member may link several names (alts), each by its own code.
+`settings` is one subcommand whose options are all optional, so running it bare shows the values. A member may link several names (alts), each by its own code. `server-name` follows the config's rules (1 to 80 characters, without `clyde` or `discord`), and every picture value goes through the config's validation, so a value set from Discord can't be one the file would refuse.
 
 - **Who counts as the server owner**: the Discord server's owner (`owner_id` from the server data the gateway sends), not whoever runs the Minecraft server, who already controls the config. Discord's `default_member_permissions` can't express "this one role", so the check is in the handler, from the interaction's `member.roles`.
 - **Prefix**: 1 to 24 characters from a safe set (letters, digits, spaces, and `[ ] ( ) { } - . : | * # ! ~`), starting with one of the punctuation characters, and not starting with `[Not Secure]`. So it has no `<` or `>`, and it can't make a relayed line look like a player's chat or a join, in game or read back from the log.
@@ -346,18 +349,37 @@ Choosing someone's picture needs proof that the Discord member is that player. A
 
 #### State file
 
-`mcbridge-state.json`, beside the config (so `mcbridge*.json` already git-ignores it). The helper writes it, nobody edits it by hand. It's written whole to a temporary file, then renamed over the old one, so a crash can't leave half a file. It holds links (Discord user id, Minecraft name, UUID, chosen picture, picture hash), the prefix, the colour, the allowed role, whether the announcement was posted, and the recent identify times. Deleting it resets all of that. It links Discord ids to players, so the setup guide asks for the same `chmod 600` as the config. The lock file (`mcbridge-state.lock`) isn't matched by `mcbridge*.json`, so it gets its own `.gitignore` entry in A8b.
+`mcbridge-state.json`, beside the config (so `mcbridge*.json` already git-ignores it). The helper writes it, nobody edits it by hand. It's written whole to a temporary file, then renamed over the old one, so a crash can't leave half a file. It holds links (Discord user id, Minecraft name, UUID, chosen picture, picture hash), the webhooks `setup` made, the settings set from Discord (prefix, colour, server name, default and per-player pictures), the allowed role, whether the announcement was posted, and the recent identify times. Deleting it resets all of that. It links Discord ids to players, so the setup guide asks for the same `chmod 600` as the config. The lock file (`mcbridge-state.lock`) isn't matched by `mcbridge*.json`, so it gets its own `.gitignore` entry in A8b.
+
+#### What lives where (the owner's call, 2026-11-22)
+
+The aim: a server owner sets up as little as possible on the Minecraft host and does the rest from Discord. Each value sits with whoever should control it, not just by how secret it is.
+
+| Value | Where | Why |
+|---|---|---|
+| The helper's app token | Config file | It's how the helper reaches Discord, so it can't come from Discord |
+| `logPath`, `crashReportsDir` | Config file | They choose which files on the host are read and posted. That's the host owner's call, not a Discord admin's. |
+| `ignorePatterns` | Config file | A regular expression typed in Discord could be written to backtrack for ever and freeze the helper |
+| RCON port, password; `online-mode` | Neither: read from `server.properties` | The server already has them, so they're never typed twice |
+| Webhooks | Neither: created by `/mcbridge setup` | Nobody copies or pastes a URL, the riskiest step of today's setup |
+| `serverName`, `avatars` (`default`, `players`), the prefix and its colour | `/mcbridge settings` and `player-avatar` | Presentation, decided on the Discord side. The file's values, where present, are the starting point. |
+
+A value set from Discord is kept in the state file and wins over the file's, until `settings reset:` hands it back to the file. So the file still works as today, and a host owner who wants a value fixed can keep it there and simply not set it from Discord. A config without a `discord` key is today's one-way bridge, unchanged: webhooks and the rest in the file, no app.
 
 #### Configuration
 
+With the two-way bridge, the smallest config is:
+
 ```jsonc
-"discordToMinecraft": {                      // optional; omit to stay one-way
-  "botToken": "…",                           // the helper's own application, NOT the bot's
-  "rcon": { "host": "127.0.0.1", "port": 25575, "password": "…" }
+{
+  "logPath": "/path/to/server/logs/latest.log",
+  "discord": { "token": "…" }               // the helper's own application, NOT the bot's
 }
 ```
 
-The config now holds a password and a token, so the setup guide says to make it readable only by the user running `mcbridge` (`chmod 600`; on Windows, the default user-profile permissions). The helper's app is invited with the `bot` scope and only View Channel and Read Message History, in the bridge's channel. If its token leaks, someone can read that channel and answer `/mcbridge` as the app; Reset Token in the Developer Portal revokes it.
+Optional: `crashReportsDir`, `ignorePatterns`, `serverPropertiesPath`, `rcon` (`host`, `port`, for Docker), and today's `serverName`, `webhooks` and `avatars` as starting values. `webhooks` and `serverName` stop being required once `discord` is set (`serverName` then defaults to the Discord server's name until `/mcbridge settings server-name:` sets one). Until `/mcbridge setup` has run, the helper has nowhere to post, so it logs one console line asking for it.
+
+The config now holds a token, so the setup guide says to make it readable only by the user running `mcbridge` (`chmod 600`; on Windows, the default user-profile permissions). The helper's app is invited with the `bot` scope and only View Channel, Read Message History and Manage Webhooks, in the bridge's channels (Manage Webhooks is what lets `setup` create them; Create Webhook needs it, to confirm in A8d). If its token leaks, someone can read those channels, answer `/mcbridge`, and make webhooks there as the app; Reset Token in the Developer Portal revokes it. The webhook URLs `setup` makes are kept in the state file, which is `chmod 600` too.
 
 #### Privacy
 
@@ -368,10 +390,11 @@ The config now holds a password and a token, so the setup guide says to make it 
 
 - **A8a. RCON client** (`rcon.ts`, `node:net` only): login, running a command, a wrong password, timeouts, a dropped connection, reconnecting. Tested against a fake RCON server listening on port 0 inside the test.
 - **A8b. Gateway client** (`gateway.ts`, Node 24's global `WebSocket`): Hello, heartbeats and missed ACKs, identify, resume, op 7 and op 9, the close codes that stop it, backoff between identifies. Tested with a fake WebSocket injected in place of the global one, with fake timers. Also the server and channel ids, read from the webhook.
-- **A8c. The relay**: `toMinecraft.ts`, a pure function from a message to the `tellraw` command (names, mentions, emoji, attachments, stripping `§`, the byte limit, `JSON.stringify` escaping), the `discordToMinecraft` config key (refused today, as unknown keys are), the wiring in `main.ts` and `bridge.ts`, the stop message's extra line, and the one-time announcement with the state file.
-- **A8d. `/mcbridge`**: registering it, answering interactions, linking (`!link` in game), `avatar` and the picture order above, `settings` and its permission check. Tested with stubbed `fetch` and fake interactions.
-- **A8e. Docs**: a new section in `docs/MINECRAFT_BRIDGE.md` (create the app, the intent, the invite and its permissions, `server.properties`, Docker, the announcement and channel topic, the config's permissions), and the README's Features.
-- **A8f. The owner's end-to-end test**, against a test channel and the vanilla 26.3 server: whether the Message Content intent switches on without review, whether `tellraw` accepts the JSON-style component, whether accents and emoji arrive intact (the `\u` escapes), the real command limit, whether `tellraw` output is logged and how, whether `§` is applied, whether the owner's Docker image enables RCON, linking, each picture choice on desktop and mobile, and the settings permission check.
+- **A8c. The relay**: `toMinecraft.ts`, a pure function from a message to the `tellraw` command (names, mentions, emoji, attachments, stripping `§`, the byte limit, `JSON.stringify` escaping), the `discord` config key (refused today, as unknown keys are) and the keys that stop being required with it, RCON settings and `online-mode` from `server.properties`, the wiring in `main.ts` and `bridge.ts`, the stop message's extra line, and the one-time announcement with the state file.
+- **A8d. `/mcbridge`**: registering it, answering interactions, linking (`!link` in game), `avatar` and the picture order above, `setup` (creating and replacing webhooks), `settings` and `player-avatar` with the state file winning over the config, and the permission check. Tested with stubbed `fetch` and fake interactions. Split into two PRs if it's too big to review: linking and pictures, then `setup` and settings.
+- **A8e. Docs**: a new section in `docs/MINECRAFT_BRIDGE.md` (create the app, the intent, the invite and its permissions, `enable-rcon` and a password in `server.properties`, Docker's `rcon` override, `/mcbridge setup`, the announcement and channel topic, the file permissions), and the README's Features.
+- **A8g. `npm run mcbridge -- init`** (optional, after A8f): asks for the token, finds `logs/latest.log` and `server.properties` when run in the server's folder, offers to turn `enable-rcon` on with a random password, writes the config with `chmod 600`, and prints the auto-start entry for the OS it runs on. The auto-start entries themselves stay as documented today.
+- **A8f. The owner's end-to-end test**, against a test channel and the vanilla 26.3 server: whether the Message Content intent switches on without review, whether `tellraw` accepts the JSON-style component, whether accents and emoji arrive intact (the `\u` escapes), the real command limit, whether `tellraw` output is logged and how, whether `§` is applied, whether the owner's Docker image enables RCON, `setup` creating webhooks, settings from Discord winning over the file and `reset`, linking, each picture choice on desktop and mobile, and the settings permission check.
 
 A8a and A8b don't depend on each other. Each PR ships with the feature still off (the config key arrives in A8c), so nothing changes for a running bridge until A8c.
 
@@ -387,7 +410,7 @@ Open questions for the owner: whether settings should also be open to members wi
 - **A5. `main.ts`, config, `npm run mcbridge`, the `.gitignore` entry.** Manual end-to-end test against the owner's server and a test channel. Done (#46), except the end-to-end test, which is the owner's (the helper needs a real webhook and server): `docs/MINECRAFT_BRIDGE.md` step 5.
 - **A6. `docs/MINECRAFT_BRIDGE.md`**, with the README's Features, Project Structure and Available Scripts updated in the same PR. Done (#47; Available Scripts went in with A5, which added the script).
 - **A7. Crash reports.** A new file in `crashReportsDir` posted as an alert (the Events table). Done: polled every 5 s, posted once its size holds still, through the alert gate (a crash loop posts once, then a count; never held back by the per-minute cap), with the report's `Description:` and exception and its file name. Reports there at startup aren't posted. Tested end to end by the owner with a real vanilla report from the game client (2026-11-21).
-- **A8. Discord to Minecraft chat** ([above](#discord-to-minecraft-chat-a8-designed-2026-11-21)), as A8a to A8f: the RCON client, the gateway client, the relay, `/mcbridge` (linking, pictures, settings), the docs, then the owner's end-to-end test. Designed, with decisions 0006 and 0007.
+- **A8. Discord to Minecraft chat** ([above](#discord-to-minecraft-chat-a8-designed-2026-11-21)), as A8a to A8g: the RCON client, the gateway client, the relay, `/mcbridge` (linking, pictures, `setup`, settings), the docs, the owner's end-to-end test, then an optional `init`. Designed, with decisions 0006 and 0007.
 
 ### A-later (not planned in detail)
 
