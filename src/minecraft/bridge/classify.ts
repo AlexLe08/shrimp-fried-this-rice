@@ -56,7 +56,9 @@ const LEFT = new RegExp(`^(?:System chat: )?${PLAYER} left the game$`);
 // sending the text `<Admin> hi`. `[Not Secure]` marks a message without a
 // chat signature.
 const CHAT = new RegExp(`^(?:\\[Not Secure\\] )?<${PLAYER}> (.*)$`);
-const LINK = /^!link(?: |$)/;
+// Any case, so a paired bridge keeps a mis-capitalised code out of Discord
+// too; the code itself must be exact.
+const LINK = /^!link(?: |$)/i;
 const LINK_CODE = /^!link (\d{6})$/;
 // From the User Authenticator thread: the account's UUID, version 4 for a
 // Mojang account, version 3 on an offline-mode server.

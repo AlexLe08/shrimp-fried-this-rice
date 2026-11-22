@@ -172,7 +172,12 @@ describe('classify rules', () => {
 				code: null,
 			});
 		}
-		expect(classify(entry('INFO', '<Steve> !LINK 482913'), options)).toMatchObject({ type: 'chat' });
+		expect(classify(entry('INFO', '<Steve> !LINK 482913'), options)).toEqual({
+			type: 'link',
+			player: 'Steve',
+			text: '!LINK 482913',
+			code: null,
+		});
 		expect(classify(entry('INFO', '<Steve> !link-482913'), options)).toMatchObject({ type: 'chat' });
 	});
 

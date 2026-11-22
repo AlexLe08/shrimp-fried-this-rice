@@ -300,7 +300,7 @@ test/
       rcon.test.ts                  # against a fake RCON server on port 0: framing, split reads, one command at a time, timeouts, drops and retry, backoff, stop races
       toMinecraft.test.ts           # the component's shape, quotes and backslashes kept in the string, escapes, § and control characters, cutting to the limit, prefix and colour rules
       serverProperties.test.ts      # Java properties syntax (separators, escapes, continuations, comments), UTF-8 with the ISO-8859-1 fallback, RCON settings and defaults
-      bridge.test.ts                # a real log's posts, stack traces flushed when quiet, summaries, the backlog scan, crash reports, read errors
+      bridge.test.ts                # a real log's posts, stack traces flushed when quiet, summaries, the backlog scan, `!link` lines (chat until paired, then reported), crash reports, read errors
 ```
 
 Repository workflow (for Claude Code and contributors) lives in `CLAUDE.md`, `scripts/` (worktrees, `check.sh` mirroring CI, cleanup after merges), `docs/decisions/`, and `docs/roadmap.md` (status and next steps). Setting up the Minecraft bridge: `docs/MINECRAFT_BRIDGE.md`.
