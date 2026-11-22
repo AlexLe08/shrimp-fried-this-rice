@@ -71,7 +71,7 @@ Minecraft server ──writes──> logs/latest.log ──tailed by──> mcbr
 
 - `mcbridge` is a standalone Node script in this repo with **zero runtime dependencies** (only `node:fs`, `node:path`, global `fetch`). The Minecraft host needs Node 24 and a copy of the repo, but no `npm install`, so `better-sqlite3` never has to compile on Windows.
 - It reads the log file rather than wrapping the server process, so it works with any launcher, start script or hosting panel on any OS.
-- It posts through a webhook URL, so no bot token leaves the VM and the VM needs no inbound firewall change.
+- It posts through a webhook URL, so no bot token leaves the VM and the VM needs no inbound firewall change. (Two-way chat, A8, later adds an endpoint on the VM, shared with the dashboard: decision 0006.)
 
 What the owner should know about this choice: messages arrive from the **webhook**, not from the bot user. The webhook can be given the bot's name and avatar. The upside is that each chat line can carry the player's own name as the sender.
 
@@ -79,7 +79,7 @@ What the owner should know about this choice: messages arrive from the **webhook
 
 | Option | Why not (for now) |
 |---|---|
-| Helper sends events to an HTTP endpoint on the bot | Needs an inbound port opened in both the OCI security list and the VM's iptables, plus TLS or a shared secret. Events are lost whenever the bot restarts. Worth revisiting only if the bot needs to *know* server state (see A-later). |
+| Helper sends events to an HTTP endpoint on the bot | Needs an inbound port opened in both the OCI security list and the VM's iptables, plus TLS or a shared secret. Events are lost whenever the bot restarts. Worth revisiting only if the bot needs to *know* server state (see A-later). Revisited for two-way chat: [A8](#discord-to-minecraft-chat-a8), decision 0006, once the dashboard pays for the endpoint. |
 | Helper logs in with the bot token | Forbidden by the two-process rule above. |
 | Off-the-shelf plugin or mod (DiscordSRV and similar) | None exist for a vanilla server, which is what runs today. |
 
@@ -264,7 +264,7 @@ A webhook can only post; it can't read a channel. The Minecraft host sits behind
 | Option | Verdict |
 |---|---|
 | **The helper connects out to the bot's HTTPS endpoint, which the dashboard needs anyway; the bot reads the channel and holds the settings** | **Chosen** (2026-11-22). The server owner invites the bot (already done) and works in the dashboard. On the host: a downloaded config, the log path, and the helper. The helper has no Discord protocol in it and no Discord token. The bot already speaks Discord through discord.js. |
-| The helper has its own Discord app on the gateway (designed first, in this PR's history) | Set aside. Each server owner would have to create an app in the Developer Portal, switch on Message Content and Public Bot off, and the helper would carry a hand-written gateway client. It needs no VM endpoint and never puts chat through the VM, which is why DiscordSRV works this way. If this bot is ever published widely, it's the fallback (below). |
+| The helper has its own Discord app on the gateway (designed first, in PR #53's history) | Set aside. Each server owner would have to create an app in the Developer Portal, switch on Message Content and Public Bot off, and the helper would carry a hand-written gateway client. It needs no VM endpoint and never puts chat through the VM, which is why DiscordSRV works this way. If this bot is ever published widely, it's the fallback (below). |
 | The helper polls REST with its own app | Set aside earlier. It can't receive commands, and has the same per-owner setup as above. |
 | The helper uses the bot's own token | Ruled out: two processes on one token (README, `CASESTUDY.md` §2), and the token would leave the VM. |
 
@@ -280,9 +280,10 @@ What this costs, accepted by the owner:
 - **Pairing**: in the dashboard, "Add Minecraft server" makes the bridge's webhooks (the bot has Manage Webhooks) and a random 32-byte secret. Then it offers a ready-made `mcbridge.json`: the endpoint, the secret, the webhooks and the server's name, with `logPath` left to fill in. The secret is shown once and stored only as a hash in `bot.db`. "Regenerate" in the dashboard revokes it.
 - **Transport**: the helper connects out over HTTPS, so the Minecraft host opens no port. There are two ways to do it, decided with D0. Long-polling over `node:http` on the bot (the helper keeps one request open, the bot answers it when a message arrives) needs no dependency. A WebSocket needs the `ws` package on the bot, a runtime dependency and the owner's call. Leaning: long-polling.
 - **Bot to helper**: chat to relay, the bridge's settings (prefix, colour, server name, pictures), linked players' pictures, and link results. **Helper to bot**: server up or down (from the log), `!link` lines, and a player joining (so the bot can look up a linked player's Discord picture).
-- **Messages while the helper is away**: the bot holds a chat message for up to 30 s, so one that arrives between two polls isn't lost. After that, or while the server is down, it's dropped.
-- **Settings while the VM is away**: the helper keeps the last settings it got in a cache file beside the config, so Minecraft to Discord posts keep their pictures and name while the bot is down.
-- **One helper per bridge**: a second helper connecting with the same secret is refused while the first is connected, so two copies can't relay everything twice (`CASESTUDY.md` §2 again).
+- **Messages while the helper is away**: the bot holds a chat message for up to 30 s, so one that arrives between two polls, or while the helper reconnects, isn't lost. After that, or while the server is down, it's dropped. While **the bot** is down or restarting for a deploy, it receives nothing, and Discord doesn't replay missed messages, so those are simply not relayed.
+- **Settings while the VM is away**: the helper keeps the bridge's last settings (server name, prefix, colour, default and per-player pictures) in a cache file beside the config, so Minecraft to Discord posts keep their name and pictures while the bot is down. Linked players' pictures are **not** cached: links stay on the VM only (0007), so while the bot is down a linked player gets the server's default. The dashboard's server name wins over the config's `serverName`, which is only the first value and the fallback before the first connection.
+- **One helper per bridge**: connecting gives the helper a session id, a lease that lapses after 60 s without a poll. A new connection with the same secret takes the lease over, and the old session's next request is answered 409, after which that helper stops relaying until it's restarted, with one alert ("another mcbridge took over this bridge"). So a helper restarted after a crash takes over at once, and two copies can't both relay (`CASESTUDY.md` §2 again): the older one stops.
+- **Retries**: on a network error or a 5xx, the helper backs off (1 s, doubling to 60 s), and it honours a 429's `retry_after`. A 401 or 403 means the secret was regenerated or the bridge removed, so it stops calling the bot until restarted, with one alert, instead of polling in a loop.
 - **Endpoint safety**: secrets are compared in constant time, and each bridge's requests are rate-limited. It shares the dashboard's HTTPS and has no login session of its own: the secret is the only credential.
 
 #### Writing into Minecraft: options
@@ -336,8 +337,8 @@ A display name proves nothing (anyone can set their nickname to `Steve`), so the
 
 1. In the dashboard, the member enters `Steve` and gets a code: "Type `!link 482913` in game chat within 10 minutes."
 2. In game, Steve types it. The helper sees `<Steve> !link 482913` in the log. That's trustworthy, as chat matching is anchored: only Steve can produce a line from `<Steve>`. The text must be exactly `^!link (\d{6})$`. The helper sends the bot the name, the code, Steve's UUID from this run's `UUID of player … is …` line, and `online-mode`.
-3. The bot accepts it only if the code is the one it gave for that name (compared without case, used once, within 10 minutes), the UUID is a Mojang one (version 4), and `online-mode` is `true`. Without a UUID from this run, the answer is "log in again and retry". It stores the link (Discord user id, name, UUID) and the helper answers Steve alone with `tellraw Steve`.
-4. A `!link …` line is never relayed to Discord. A member may link several names (alts). A name has at most one link, and linking it again replaces the old one. Codes live only in the bot's memory: a restart throws them away, and the member asks for a new one.
+3. The bot accepts it only if the code is the one it gave this member for that name on this bridge (the name compared without case; the code used once, within 10 minutes; voided after 5 wrong tries for that name, so a modified helper can't guess its way through a million codes), the UUID is a Mojang one (version 4), and `online-mode` is `true`. Without a UUID from this run, the answer is "log in again and retry". It stores the link (Discord user id, name, UUID) and the helper answers Steve alone with `tellraw Steve`.
+4. While a bridge is paired, a `!link …` line is never relayed to Discord. `!link` reports count against the bridge's rate limit. A member may link several names (alts). A name has at most one link, and linking it again replaces the old one. Codes live only in the bot's memory: a restart throws them away, and the member asks for a new one.
 
 #### Which picture a player gets
 
@@ -352,7 +353,7 @@ A new migration, additive. Before it's written, the tables are worked out in the
 - `minecraft_bridge_pictures`: bridge, player name, picture.
 - `minecraft_links`: bridge, Discord user, player name, UUID, chosen picture.
 
-When the bot leaves a server (`GuildDelete`), that server's bridges, pictures and links are deleted and its secrets stop working.
+When the bot leaves a server (`GuildDelete`), that server's bridges, pictures and links are deleted and its secrets stop working. A bridge whose channel is deleted, or whose webhook is deleted by hand, shows as broken in the dashboard until its channels are picked again. The new tables go into `__resetForTests` in `core/database.ts`. Webhook tokens in `bot.db` are secrets, like the token in `.env`. If a second Minecraft feature with its own tables arrives (`/minecraft status` needs none), storage splits into one file per feature, as decision 0004 says.
 
 #### The helper's config
 
@@ -381,20 +382,20 @@ Self-contained helper parts that don't depend on how the two ends meet:
 
 - **A8a. RCON client** (`rcon.ts`, `node:net` only): login, running a command, a wrong password, timeouts, a dropped connection, reconnecting. Tested against a fake RCON server listening on port 0 inside the test.
 - **A8b. `tellraw` builder and `server.properties` reader**: `toMinecraft.ts`, a pure function from plain text, a name and the settings to a command (stripping `§` and control characters, `\u` escapes, `JSON.stringify`, the byte limit). Plus `serverProperties.ts`, the escape-decoding parser. Both pure and tested.
-- **A8c. The `!link` line**: classifying `<Name> !link 123456` as its own event, never relayed as chat, with the UUID and `online-mode` beside it. A small change to `classify.ts` and `bridge.ts`, tested from fixtures.
+- **A8c. The `!link` line**: classifying `<Name> !link 123456` as its own event, with the UUID and `online-mode` beside it. Until a bridge is paired the helper still posts it as chat, as today, so nothing changes for a one-way bridge. Small changes to `classify.ts` and `bridge.ts`, tested from fixtures.
 
 Each ships switched off: nothing reaches RCON until pairing exists.
 
 #### After D0 and D1
 
 - **A8d. The bot's endpoint and storage**: the migration, `src/minecraft/storage.ts`, pairing, the long-poll (or WebSocket) route, rate limits, holding messages for 30 s, refusing a second helper, and `GuildDelete` clean-up.
-- **A8e. The relay**: the bot reading bridge channels (`GuildMessages` and `MessageContent` intents) and the helper's side: the `bot` config key, connecting, RCON on start and off on stop, the announcement, the stop message's extra line, the settings cache.
+- **A8e. The relay**: the bot reading bridge channels (`GuildMessages` and `MessageContent` intents; Message Content is privileged, and a bot that asks for it before it's switched on is refused at login, which would fail the deploy's login check and leave production down. So the owner switches it on in the Developer Portal for both the production and the local-dev app **before** this merges, and the same PR updates the README's Local Setup, which says the bot needs no privileged intents, and `ORACLE_CLOUD_DEPLOYMENT.md`, as E2 does for Server Members) and the helper's side: the `bot` config key, connecting, RCON on start and off on stop, the announcement, the stop message's extra line, the settings cache.
 - **A8f. Dashboard pages**: adding a bridge, settings, who may change them, My Minecraft accounts (linking, pictures with previews).
 - **A8g. Docs**: `docs/MINECRAFT_BRIDGE.md` (pairing, `enable-rcon` and a password in `server.properties`, Docker's `rcon` override, the announcement and channel topic, file permissions) and the README's Features.
 - **A8h. The owner's end-to-end test**, against a test channel and the vanilla 26.3 server: whether `tellraw` accepts the JSON-style component, whether accents and emoji arrive intact, the real command limit, whether `tellraw` output is logged and how, whether `§` is applied, whether the owner's Docker image enables RCON, pairing, the relay surviving a bot deploy, linking, each picture choice on desktop and mobile, and the settings permission check.
 - **A8i. `npm run mcbridge -- init`** (optional): finds `logs/latest.log` and `server.properties` when run in the server's folder, offers to turn `enable-rcon` on with a random password (taking effect at the server's next restart, which it says), and writes `logPath` into the downloaded config.
 
-Open questions for the owner: whether an unlinked player falls back to the per-player setting before the default (proposed: yes, as today); and whether to bring Track D's D0 and D1 forward, so two-way chat isn't last.
+Open questions for the owner: whether an unlinked player falls back to the per-player setting before the default (proposed: yes, as today); whether choosing a picture in the dashboard (logged in with Discord) is "from Discord" enough, or whether players should also get a slash command for it (`/minecraft avatar`, a thin wrapper over the same function); and whether to bring Track D's D0 and D1 forward, so two-way chat isn't last.
 
 ### Steps
 
@@ -411,7 +412,7 @@ Open questions for the owner: whether an unlinked player falls back to the per-p
 ### A-later (not planned in detail)
 
 - `/minecraft status` in the bot, using a Server List Ping to the server's public address. Needs no helper.
-- Bot-side ingest endpoint, if messages must come from the bot user itself.
+- The helper reporting events to the bot: comes with two-way chat's endpoint ([A8](#discord-to-minecraft-chat-a8)).
 
 ---
 
@@ -774,7 +775,7 @@ Not planned in detail yet. This section records why it waits, what to do now so 
 
 - **It is the largest single piece of work**, and the first thing in this project that accepts connections from the internet. Today the VM has no inbound ports open at all. A dashboard needs a web server, Discord login, sessions, HTTPS, a stable hostname, and either firewall changes in both the OCI security list and the VM's iptables, or a tunnel.
 - **It is a second way to do things the slash commands must do anyway.** Built first, it would be designed against features that do not exist yet and reworked as each one lands.
-- **It makes one Track A extra cheap.** Once the bot has an HTTPS endpoint, the Minecraft helper can report to the bot directly (the "ingest endpoint" in A-later), which is what a Minecraft status page would need.
+- **It makes one Track A extra cheap.** Once the bot has an HTTPS endpoint, the Minecraft helper can report to the bot directly (two-way chat's endpoint, [A8](#discord-to-minecraft-chat-a8)), which is what a Minecraft status page would need.
 
 ### What to do during the feature tracks so the dashboard is cheap later
 

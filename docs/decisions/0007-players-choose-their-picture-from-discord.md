@@ -1,4 +1,4 @@
-# 0007: Players in the Discord server choose their picture there, after linking their account in game
+# 0007: Players in the Discord server choose their picture in the dashboard, after linking their account in game
 
 Status: Accepted · 2026-11-22
 
@@ -43,7 +43,9 @@ server's `avatars` setting decides as before. Links are kept in `bot.db`.
   without the player doing it from both sides". Only the player can create
   a link, and unlinking, or the bot leaving the server, deletes it.
 - Links live on the VM, not the Minecraft host, as the bot checks the
-  code and serves the pictures.
+  code and serves the pictures. The helper's settings cache leaves linked
+  players' pictures out, so while the bot is down they get the server's
+  default.
 - In-game `!avatar` is dropped. The `avatars` setting (from the config,
   or from the dashboard by the Discord server's owner or allowed role)
   stays as the default for everyone.

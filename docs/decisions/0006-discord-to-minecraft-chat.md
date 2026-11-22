@@ -17,7 +17,7 @@ A webhook can't read a channel, and the Minecraft host sits behind a home
 router. A vanilla server takes input only from its console and from RCON,
 which is not encrypted.
 
-The first design (this PR's history) gave the helper its own Discord
+The first design (in PR #53's history) gave the helper its own Discord
 application on the gateway: no change to the VM, and chat never passing
 through it, as DiscordSRV does. It left each server owner creating an app
 in the Developer Portal, and the helper with a hand-written gateway
@@ -58,9 +58,10 @@ dashboard's hostname, HTTPS and login (D0, D1).
   stored or logged. Links and settings are kept in `bot.db`, and deleted
   when the bot leaves a server.
 - The VM is the hub: while it's down or restarting for a deploy,
-  two-way chat pauses (messages are held 30 s, then dropped). Minecraft
-  to Discord keeps working, as it still posts through webhooks from the
-  host.
+  messages sent in Discord aren't relayed (the bot doesn't receive them,
+  and Discord doesn't replay them). A 30 s hold covers only the helper
+  reconnecting. Minecraft to Discord keeps working, as it still posts
+  through webhooks from the host.
 - Messages sent while the Minecraft server is down are dropped, and the
   stop message says so. The relay is announced in the channel before it
   starts.
