@@ -236,6 +236,8 @@ src/
       config.ts           # reads and checks mcbridge.json, reporting every problem at once
       avatars.ts          # the picture beside a player's chat: their skin's head, a generated one, a URL or none
       rcon.ts             # RCON client for two-way chat (not wired up yet): login, one command at a time with a timeout, reconnecting with backoff, off after a wrong password
+      toMinecraft.ts      # a Discord message as a tellraw command (not wired up yet): prefix and colour, one line, \u escapes, cut to fit RCON's limit
+      serverProperties.ts # reads the Minecraft server's server.properties (not wired up yet): RCON's port and password, or why it's off, and online-mode
       bridge.ts           # wiring: lines to entries to events, alerts through the gate, posts to the right webhook
       main.ts             # the entrypoint (npm run mcbridge): --config, the tailer, crash watcher and sender, shutdown on SIGINT, SIGTERM, SIGHUP (and SIGBREAK on Windows)
 test/
@@ -296,6 +298,8 @@ test/
       config.test.ts                # every config problem reported, unknown keys refused, the committed example accepted
       avatars.test.ts               # each avatar choice, offline-mode UUIDs, the pinned name hash, a bundled PNG for every picture
       rcon.test.ts                  # against a fake RCON server on port 0: framing, split reads, one command at a time, timeouts, drops and retry, backoff, stop races
+      toMinecraft.test.ts           # the component's shape, quotes and backslashes kept in the string, escapes, § and control characters, cutting to the limit, prefix and colour rules
+      serverProperties.test.ts      # Java properties syntax (separators, escapes, continuations, comments), UTF-8 with the ISO-8859-1 fallback, RCON settings and defaults
       bridge.test.ts                # a real log's posts, stack traces flushed when quiet, summaries, the backlog scan, crash reports, read errors
 ```
 
