@@ -180,9 +180,12 @@ Later item), not a follow-up.
   the report's description, exception and file name. It goes through the
   alert gate, so a server crashing on every restart posts once and then a
   count, but never for the per-minute cap (a crash follows a burst of the
-  log's own errors, which could fill it). Reports there at startup aren't posted. Checked only against a
-  hand-written report in vanilla's documented layout.
-- **Minecraft player avatars** (2026-11-21, Track A4b). An `avatars` key in
+  log's own errors, which could fill it). Reports there at startup aren't posted. Tested end to end by
+  the owner with a real vanilla report (from the game client, made with
+  F3+C; the same layout as the server's): the alert, a copy of the same
+  report counted in the shutdown summary instead of posted again, and
+  reports present at startup skipped, all as expected.
+- **Minecraft player avatars** (2026-11-21, #51, Track A4b). An `avatars` key in
   the `mcbridge` config gives each player's chat lines a picture: by
   default one of 10 bundled pixel-art heads (`assets/mcbridge-avatars/`,
   placeholders the owner may redraw under the same names) picked by a hash
@@ -190,9 +193,12 @@ Later item), not a follow-up.
   who opt in, from mc-heads.net by the UUID logged at login (crafatar has
   blocked Discord; minotar 404s an unknown name); a picked picture, an
   `https` link, or none. An offline-mode UUID gets a generated picture,
-  not the skin of whoever owns the name on Mojang's side. Not yet tried
-  against a real webhook; the generated pictures load only once merged, as
-  they're served from `main`.
+  not the skin of whoever owns the name on Mojang's side. Tested end to end
+  by the owner on Discord desktop and mobile: the default pictures, a skin
+  by UUID, a picked picture, a link, none, logging in again while online,
+  an offline-mode server, and a refused config all behaved as expected. A
+  picture can show Discord's default avatar for a moment before it loads,
+  never longer.
 
 ## Next up
 
@@ -210,13 +216,9 @@ them ahead of items 4 and 5.
    Per-server collections (FF14 mounts first), imported once from the
    group's spreadsheet.
 2. **Minecraft bridge, what's left** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
-   The first version, crash reports and player avatars are done (Done
-   above). Next, on the owner's server: check crash reports (A7) against a
-   real report, by setting `crashReportsDir` and copying an old report into
-   the folder under a new name (`MINECRAFT_BRIDGE.md` step 5), and check
-   that chat shows each player's picture, including one set to `skin`.
-   Later, in its own session: players choosing their picture in game
-   (`!avatar`).
+   The first version, crash reports and player avatars are done and tested
+   end to end (Done above). Left, in its own session: players choosing
+   their picture in game (`!avatar`).
 3. **Lodestone news and scheduled events**
    ([Track C](plans/minecraft-ff14-features.md#track-c-lodestone-news-and-scheduled-events)),
    then the **role check-in** after onboarding
