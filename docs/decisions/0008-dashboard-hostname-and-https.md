@@ -1,4 +1,4 @@
-# 0008: The dashboard is served at a free deSEC name, through Caddy on the VM
+# 0008: The dashboard is served at a free DuckDNS name, through Caddy on the VM
 
 Status: Proposed · 2026-11-23
 
@@ -25,14 +25,15 @@ below):
 
 | Option | Free, no card | Stable hostname | Inbound ports on the VM | Notes |
 |---|---|---|---|---|
-| **deSEC (`<name>.dedyn.io`) + Caddy on the VM** | Free; sign-up is an email and a password | Yes | 80 and 443 | One `dedyn.io` name per account; no inactivity rule found. A full DNS host with an API, rate limits documented, and ACME DNS-01 documented if ever needed. Who runs it couldn't be confirmed: its legal notice renders in the browser only (to check before signing up). |
-| DuckDNS (`<name>.duckdns.org`) + Caddy | Free; sign-in with Google, GitHub and others | Yes | 80 and 443 | Run by two engineers; terms last updated 2018; no inactivity rule; one TXT value only, no documented ACME client. |
+| **DuckDNS (`<name>.duckdns.org`) + Caddy on the VM** | Free; sign-in with Google, GitHub and others | Yes | 80 and 443 | Open for sign-ups (checked 2026-11-23, no notice on its pages). Run by two engineers; terms last updated 2018; no inactivity rule; no per-account limit stated. One TXT value only and no documented ACME client, which matters only for DNS-01, not used here. |
+| deSEC (`<name>.dedyn.io`) + Caddy | Free; sign-up is an email and a password | Yes | 80 and 443 | Ruled out: `dedyn.io` registration is "suspended until further notice" after a wave of abusive sign-ups (the banner on desec.io, which the owner saw on 2026-11-23; its pages render in the browser only, so fetching them showed nothing). Otherwise the stronger option: a full DNS host with an API and documented limits. |
+| FreeDNS (afraid.org), a shared domain such as `mooo.com` + Caddy | Free sign-up, no payment field | Yes, while the domain's owner keeps it shared | 80 and 443 | Set aside: the shared domains belong to other members (`mooo.com` holds about 880,000 hosts), and unless a domain is on the Public Suffix List every name on it shares one Let's Encrypt limit. |
 | No-IP free + Caddy | "No credit card required" | Yes | 80 and 443 | One hostname. Its confirmation rule for free hostnames wasn't on the page read (from memory it's monthly, which would mean a recurring manual step). |
 | Tailscale Funnel (`<machine>.<tailnet>.ts.net`) | Free Personal plan, non-commercial; whether sign-up asks for a card wasn't stated | Yes, unless the machine is renamed; the tailnet part is generated and can't be chosen | None | Beta, with bandwidth limits Tailscale doesn't publish. TLS ends on the VM (the relay can't read it). Long-lived requests aren't documented. Adds `tailscaled` on the VM and a Tailscale account. |
 | Cloudflare Tunnel (named) | No: Zero Trust onboarding asks for payment details | Only on a domain on Cloudflare | None | Ruled out: needs a bought domain and a payment method. |
 | Cloudflare quick tunnel | Free, no account | No: random, changes each run | None | Ruled out: "for testing and development", no uptime guarantee, 200 requests in flight. |
 
-Both `dedyn.io` and `duckdns.org` are on the Public Suffix List, so Let's
+`duckdns.org` is on the Public Suffix List (as is `dedyn.io`), so Let's
 Encrypt counts each name as its own registered domain (50 certificates
 per 7 days), not one shared by every user of the provider.
 
@@ -58,7 +59,7 @@ a month of outbound data.
 ## Decision
 
 The dashboard and the helper's endpoint are served at a free
-`<name>.dedyn.io` name from deSEC, pointing at the VM's public IP. Caddy
+`<name>.duckdns.org` name from DuckDNS, pointing at the VM's public IP. Caddy
 on the VM terminates HTTPS with Let's Encrypt certificates and proxies to
 the bot, which listens on `127.0.0.1` only. Ports 80 and 443 are opened
 in the OCI security list and the VM's `iptables`, and nothing else.
@@ -71,7 +72,7 @@ in the OCI security list and the VM's `iptables`, and nothing else.
   the internet, so the bot's HTTP server is never reachable directly, and
   Caddy's TLS and HTTP parsing are a maintained project's, not ours.
 - Setup is by hand, once, on the VM and outside the deploy job: the
-  deSEC account and A record, Caddy's apt repository and a short
+  DuckDNS sign-in and its name's address, Caddy's apt repository and a short
   Caddyfile, and the firewall rules. `ORACLE_CLOUD_DEPLOYMENT.md` records
   each step when it's done, in D1 (its note that no inbound firewall or
   security list changes are needed becomes wrong then), so the VM can be
@@ -80,19 +81,25 @@ in the OCI security list and the VM's `iptables`, and nothing else.
   502, and a page loaded then shows an error until reloaded. The helper
   is designed to back off on a 5xx (A8).
 - If the VM's public IP changes (the instance recreated), the A record
-  is updated through deSEC's dynamic DNS API. Until then the dashboard
+  is updated through DuckDNS's update URL. Until then the dashboard
   and every helper are unreachable. A reserved IP would avoid that; how
   many Always Free includes wasn't confirmed.
-- Users and helpers see a `dedyn.io` name, not a branded domain. Moving
+- Users and helpers see a `duckdns.org` name, not a branded domain. Moving
   to another name later means changing Discord's OAuth2 redirect URL and
   every helper's config, so it's worth choosing the label once.
 - The VM's IP is public in DNS (as it would be with any proxy; only a
   tunnel hides it), and certificate transparency logs list the hostname.
   Scanners will find it.
-- Depends on deSEC staying free and online. If it doesn't, DuckDNS is a
+- Depends on DuckDNS, a two-person free service, staying free and
+  online; deSEC closing its sign-ups on short notice shows that's a real
+  risk for any free name. Its DNS going down takes the dashboard and every
+  helper's connection with it, though Minecraft to Discord chat keeps
+  working through webhooks. If it goes, deSEC (if it reopens) is a
   drop-in replacement (same Caddy setup, a new name), and Tailscale Funnel
   the route with no open ports, once it leaves beta and documents its
   limits. Either would supersede this record.
+- Sign-up is checked in a browser before this is accepted: a fetched
+  page can miss a banner like deSEC's.
 - Not used: DNS-01 and wildcard certificates (Caddy would need a plugin
   build), and IPv6.
 
@@ -100,7 +107,7 @@ in the OCI security list and the VM's `iptables`, and nothing else.
 
 Read 2026-11-23.
 
-- deSEC: [domains](https://desec.readthedocs.io/en/latest/dns/domains.html),
+- deSEC (sign-ups suspended, per the banner on [desec.io](https://desec.io/)): [domains](https://desec.readthedocs.io/en/latest/dns/domains.html),
   [account](https://desec.readthedocs.io/en/latest/auth/account.html),
   [rate limits](https://desec.readthedocs.io/en/latest/rate-limits.html),
   [Let's Encrypt](https://desec.readthedocs.io/en/latest/integrations/lets-encrypt.html),
@@ -109,6 +116,8 @@ Read 2026-11-23.
   [about](https://www.duckdns.org/about.jsp),
   [terms](https://www.duckdns.org/tac.jsp),
   [API](https://www.duckdns.org/spec.jsp)
+- FreeDNS: [FAQ](https://freedns.afraid.org/faq/),
+  [shared domain registry](https://freedns.afraid.org/domain/registry/)
 - No-IP: [free plan](https://www.noip.com/free)
 - Tailscale: [Funnel](https://tailscale.com/kb/1223/funnel),
   [HTTPS](https://tailscale.com/kb/1153/enabling-https),
