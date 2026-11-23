@@ -49,7 +49,7 @@ Ask for each before the step that needs it.
 3. **Discord webhook URL(s)** for the Minecraft channel(s), created by the owner in Server Settings → Integrations → Webhooks. These are secrets: they live only in the helper's config file, which A5 adds to `.gitignore` (`mcbridge*.json`), like `.env`.
 4. **For Lodestone news**: which region's Lodestone to follow (NA, EU, FR, DE, JP), which channel gets the posts, and which data center the group plays on (used to filter maintenance events). All are set at runtime with commands. The bot also needs the **Create Events** permission added to its role in the server.
 5. **For membership follow-ups**: the **Server Members Intent** switched on in the Discord Developer Portal for both the production and the dev application (Bot tab). This must be done **before** the code that requests it is merged; see Track E. Channels, roles and day counts are set at runtime with commands.
-6. **For the dashboard, when Track D starts**: the D0 decisions, including how the site gets HTTPS for free (see Track D). Proposed in decisions 0008 and 0009, for the owner to accept or change. The domain, `alexle.dev`, is bought (2026-11-23); its nameservers move to Cloudflare and the tunnel is set up by hand in D1.
+6. **For the dashboard, when Track D starts**: the D0 decisions, including how the site gets its hostname and HTTPS (see Track D). Proposed in decisions 0008 and 0009, for the owner to accept or change. The domain, `alexle.dev`, is bought (2026-11-23); its nameservers move to Cloudflare and the tunnel is set up by hand in D1.
 
 ---
 
@@ -71,7 +71,7 @@ Minecraft server ──writes──> logs/latest.log ──tailed by──> mcbr
 
 - `mcbridge` is a standalone Node script in this repo with **zero runtime dependencies** (only `node:fs`, `node:path`, global `fetch`). The Minecraft host needs Node 24 and a copy of the repo, but no `npm install`, so `better-sqlite3` never has to compile on Windows.
 - It reads the log file rather than wrapping the server process, so it works with any launcher, start script or hosting panel on any OS.
-- It posts through a webhook URL, so no bot token leaves the VM and the VM needs no inbound firewall change. (Two-way chat, A8, later adds an endpoint on the VM, shared with the dashboard: decision 0006.)
+- It posts through a webhook URL, so no bot token leaves the VM and the VM needs no inbound firewall change. (Two-way chat, A8, later adds an endpoint on the bot, shared with the dashboard and reached through a tunnel: decisions 0006 and 0008.)
 
 What the owner should know about this choice: messages arrive from the **webhook**, not from the bot user. The webhook can be given the bot's name and avatar. The upside is that each chat line can carry the player's own name as the sender.
 
@@ -333,7 +333,7 @@ When a bridge is paired, the bot posts once in its chat channel through the brid
 
 #### `/minecraft avatar` and `/minecraft link`, when the dashboard can't be reached (the owner's calls, 2026-11-22)
 
-The dashboard runs in the bot's process, but it can be unreachable while the bot is up: its hostname, its certificate, or the proxy in front of it. So the bot also has two slash commands. `/minecraft link name: server:` starts linking, answering privately with the same code the dashboard gives (below). `/minecraft avatar choice: name: server:` is for linked members:
+The dashboard runs in the bot's process, but it can be unreachable while the bot is up: its hostname, its certificate, or the tunnel in front of it. So the bot also has two slash commands. `/minecraft link name: server:` starts linking, answering privately with the same code the dashboard gives (below). `/minecraft avatar choice: name: server:` is for linked members:
 
 - `choice`: `discord`, `skin`, `generated` or `default`, as fixed choices.
 - `name`: autocompletes the member's linked names, and is needed only with more than one.
@@ -804,7 +804,7 @@ One rule, in the conventions below: **command files stay thin.** Validation, per
 
 ### Suggested order when it starts
 
-- **D0. Decisions**, each a decision record: the hostname and HTTPS route (free only), proxy or tunnel, web framework or none. Proposed 2026-11-23 as two records, since a tunnel brings its own hostname and certificate: [0008](../decisions/0008-dashboard-hostname-and-https.md) (`shrimp-fried-rice.alexle.dev` through a Cloudflare Tunnel) and [0009](../decisions/0009-dashboard-on-node-http.md) (`node:http` in the bot, long-polling for the helper).
+- **D0. Decisions**, each a decision record: the hostname and HTTPS route (free tiers, plus the owner's domain), proxy or tunnel, web framework or none. Proposed 2026-11-23 as two records, since a tunnel brings its own hostname and certificate: [0008](../decisions/0008-dashboard-hostname-and-https.md) (`shrimp-fried-rice.alexle.dev` through a Cloudflare Tunnel) and [0009](../decisions/0009-dashboard-on-node-http.md) (`node:http` in the bot, long-polling for the helper).
 - **D1. Read-only site**: login, server picker, and pages that only display. With D1 now ahead of Track B, the first page is a server's reminders (they exist today), and the Minecraft bridge's pages follow in A8f. The collection grid (members by items) joins when Track B lands; it restores the spreadsheet view the group is used to.
 - **D2. Editing**: reminders, Lodestone subscriptions and modes, collection catalog and entries.
 - **D3. Minecraft**: two-way chat and linking ([A8](#discord-to-minecraft-chat-a8), A8d to A8i): the helper's endpoint, pairing, bridge settings, My Minecraft accounts. The bridge then reports to the bot, which gives the status and recent events page.

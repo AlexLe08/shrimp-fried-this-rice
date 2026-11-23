@@ -6,7 +6,7 @@ Status: Proposed · 2026-11-23
 
 The dashboard ([Track D](../plans/minecraft-ff14-features.md#track-d-web-dashboard))
 and two-way Minecraft chat ([0006](0006-discord-to-minecraft-chat.md))
-need a public HTTPS endpoint on the VM: the browser for the pages and
+need a public HTTPS endpoint for the bot: the browser for the pages and
 Discord login, and `mcbridge`, which connects out to the bot. Discord's
 OAuth2 redirect URL and the helper's config both hold the hostname, so it
 has to stay the same across restarts, deploys and changes of hosting.
@@ -48,8 +48,7 @@ for the origin to start answering (then error 524) and 30 s for writes,
 and closes a connection idle for 900 s. WebSockets work on all plans.
 
 `.dev` is on browsers' HTTPS-only list (from memory): every name under
-`alexle.dev` must be served over HTTPS, which Cloudflare and Vercel both
-do.
+`alexle.dev` must be served over HTTPS, which Cloudflare does.
 
 ## Decision
 
@@ -58,7 +57,9 @@ on Cloudflare's free plan. The dashboard and the helper's endpoint are
 served at `https://shrimp-fried-rice.alexle.dev` through a Cloudflare
 Tunnel: `cloudflared` runs on the VM as a systemd service, connects out
 to Cloudflare, and passes requests to the bot on `127.0.0.1`. No inbound
-port is opened on the VM.
+port is opened on the VM. If creating the tunnel asks for a payment
+method, Caddy on the same name is used instead (the fallback, below),
+as CLAUDE.md allows nothing else that needs one.
 
 **Why:** TODO(Alex)
 
@@ -69,9 +70,12 @@ port is opened on the VM.
   certificates.
 - Requests are decrypted at Cloudflare's edge before the tunnel carries
   them to the VM: page views, login cookies, relayed Minecraft chat and
-  the helper's secret. 0006 said chat passes through the VM in memory
-  only; it now also passes through Cloudflare, which 0006's status notes.
-  Caddy instead would keep it to the VM.
+  the helper's secret. Caddy instead would keep it to the VM. 0006 said
+  chat passes through the VM in memory only, and that the VM gains its
+  first inbound endpoint; when this record is accepted, 0006's status
+  becomes "superseded in part by [0008](0008-dashboard-hostname-and-https.md)
+  (reached through a Cloudflare Tunnel with no inbound port; chat also
+  passes through Cloudflare's edge, decrypted)", in the index too.
 - Setup is by hand, once, outside the deploy job: moving the domain's
   nameservers from Porkbun to Cloudflare, creating the tunnel and its
   route in Cloudflare's dashboard, and installing `cloudflared` with the

@@ -40,8 +40,9 @@ Options (versions checked 2026-11-23 in each project's `package.json`:
 ## Decision
 
 The dashboard and the helper's endpoint run in the bot process, on
-Node's `node:http`, listening on `127.0.0.1` behind the Cloudflare Tunnel. No web
-framework: OAuth2 uses `fetch`, sessions and secrets use `node:crypto`,
+Node's `node:http`, listening on `127.0.0.1` behind the Cloudflare
+Tunnel. No web framework: OAuth2 uses `fetch`, sessions and secrets use
+`node:crypto`,
 and pages are server-rendered strings through one escaping helper. The
 helper talks to the bot by long-polling, so `ws` isn't added.
 
@@ -52,13 +53,18 @@ helper talks to the bot by long-polling, so `ws` isn't added.
 - No new runtime dependency, and nothing new in `package.json` for the
   deploy's `npm ci`.
 - The security-relevant pieces are ours and need their own tests: HTML
-  escaping, session cookies (`HttpOnly`, `Secure`, `SameSite=Lax`, a
-  random id or an HMAC, and named with the `__Host-` prefix so browsers
-  accept them only from this exact hostname: other names under
-  `alexle.dev` host the owner's other projects), rejecting cross-site form posts by `Origin`,
-  OAuth2's `state` check, constant-time secret comparison, and rate
-  limits. They live in `src/core/` (or a `src/dashboard/` area) as plain
-  functions, tested like the rest.
+  escaping, session cookies, rejecting forged form posts, OAuth2's
+  `state` check, constant-time secret comparison, and rate limits. They
+  live in `src/core/` (or a `src/dashboard/` area) as plain functions,
+  tested like the rest.
+- Other names under `alexle.dev` host the owner's other projects, and
+  count as the same site as the dashboard. So session cookies are
+  `HttpOnly`, `Secure`, `SameSite=Lax` and named with the `__Host-`
+  prefix, which forbids a `Domain` attribute and requires `Secure` and
+  `Path=/`, so another name under the domain can't set or overwrite them.
+  And a form post is accepted only when its `Origin` is exactly
+  `https://shrimp-fried-rice.alexle.dev`: `SameSite=Lax`, or a
+  `Sec-Fetch-Site` check, would let a post from a sibling name through.
 - The HTTP server starts and stops with the bot, and `shutdown.ts`
   closes it before the database, so no request touches a closed
   database. `server.close()` waits for requests in flight, and a held
@@ -75,8 +81,12 @@ helper talks to the bot by long-polling, so `ws` isn't added.
   proxy gives up on an answer after 125 s (error 524), so the bot answers
   each poll within about 60 s, with or without a message, which also
   stays below Node's own server timeouts (`requestTimeout`, 300 s by
-  default from memory, checked in D1). Rate limits key on the visitor's
-  address from Cloudflare's header, not the socket's (0008).
+  default from memory, checked in D1). Node's keep-alive timeout (5 s
+  by default, from memory) must outlast `cloudflared`'s reuse of idle
+  connections, or requests fail now and then with a 502; both are set in
+  D1. Rate limits key on the visitor's address from Cloudflare's header,
+  not the socket's (0008), which can be trusted only because the server
+  listens on `127.0.0.1` and only `cloudflared` reaches it.
 - Worth revisiting at D2 (editing: forms, validation, more routes), when
   hand-written routing and form handling grow. Hono is the first
   candidate then, as a new record superseding this one.
