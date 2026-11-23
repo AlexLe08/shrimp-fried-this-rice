@@ -59,6 +59,12 @@ describe('saveSnapshot', () => {
 		if (process.platform !== 'win32') expect(fs.statSync(backups).mode & 0o777).toBe(0o700);
 	});
 
+	it('makes the copy readable only by its owner', () => {
+		const file = saveSnapshot(db, backups, 'daily', new Date());
+
+		if (process.platform !== 'win32') expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+	});
+
 	it('includes writes still only in the WAL file', () => {
 		db.exec(`INSERT INTO things VALUES ('c')`);
 

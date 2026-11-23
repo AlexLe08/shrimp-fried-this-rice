@@ -57,6 +57,9 @@ export function saveSnapshot(db: Database.Database, dir: string, prefix: string,
 	}
 	try {
 		db.prepare('VACUUM INTO ?').run(partial);
+		// VACUUM INTO creates the copy by the umask (usually 0644), not the
+		// database's mode; the folder's 0700 covers it only while it stays there.
+		fs.chmodSync(partial, 0o600);
 		fs.renameSync(partial, file);
 	} catch (error) {
 		fs.rmSync(partial, { force: true });

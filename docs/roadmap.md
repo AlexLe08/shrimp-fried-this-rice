@@ -270,6 +270,16 @@ Later item), not a follow-up.
   changed here: `deploycommands` imports `database.ts` too, so on a
   deploy with a migration it races the restarted bot to migrate (as
   before this) and to snapshot. Not yet run on the VM.
+- **`bot.db` readable only by the bot's user** (2026-11-23, second part
+  of Next up item 1). `core/database.ts` sets `bot.db` to `0600` on
+  every start (creating a new one that way) and any `-wal` and `-shm`
+  left over; snapshots are `0600` before they're renamed into place. Done
+  in code rather than with `UMask=0077` in the systemd unit, as planned:
+  the unit lives only on the VM, outside the deploy, and a probe on
+  `better-sqlite3`'s SQLite 3.53.4 showed SQLite gives `-wal` and `-shm`
+  the database's own mode whatever the umask, so a umask alone would have
+  left them `0644` beside a `0644` `bot.db`. A failed `chmod` is logged
+  and the bot runs on. Not yet run on the VM.
 
 ## Next up
 
@@ -295,11 +305,8 @@ them ahead of items 6 and 7.
      encrypted are checked and decided first, likely as a decision
      record: it probably needs a tool or a runtime dependency, the
      owner's decision.
-   - `bot.db`, its `-wal` and `-shm` files and the snapshots readable
-     only by the bot's service user: `UMask=0077` in the systemd unit,
-     so files created later stay that way, and a one-off `chmod 600` for
-     those already there. And a restore procedure in
-     `ORACLE_CLOUD_DEPLOYMENT.md`, tried once.
+   - A restore procedure in `ORACLE_CLOUD_DEPLOYMENT.md`, tried once.
+     (`bot.db` and the snapshots are now owner-only: Done above.)
 2. **Minecraft bridge, what's left** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
    The first version, crash reports and player avatars are done and tested
    end to end (Done above). Left: Discord to Minecraft chat, designed in
