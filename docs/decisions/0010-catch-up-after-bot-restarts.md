@@ -27,7 +27,9 @@ old and at most 20, relayed in order at the normal rate, before any new
 ones. Anything older or beyond that is dropped, as before. The design's
 details are in the plan's [A8](../plans/minecraft-ff14-features.md#discord-to-minecraft-chat-a8).
 
-**Why:** TODO(Alex)
+**Why:**
+
+The bot restarting is an easy case to work towards covering to ensure chats do not just disappear. The other cases mentioned are ones I believe are natural to not queue for.
 
 ## Consequences
 
