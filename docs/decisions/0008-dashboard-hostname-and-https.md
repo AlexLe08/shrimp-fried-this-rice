@@ -22,9 +22,9 @@ CLAUDE.md allowed free tiers only, with nothing that needs a payment
 method, which ruled out a bought domain. The first drafts of this record
 (in PR #57's history) proposed a free deSEC name, then a free DuckDNS
 name, each behind Caddy. On 2026-11-23 the owner chose instead to buy a
-domain of their own, `alexle.dev`, at Porkbun: for their portfolio and
-other projects as well, and so the bot could use Cloudflare, a name they
-know. That is the one exception CLAUDE.md now makes to free tiers only.
+domain of their own, `alexle.dev`, at Porkbun, also used for their
+portfolio and other projects. That is the one exception CLAUDE.md now
+makes to free tiers only.
 Porkbun lets a domain use another provider's nameservers, so its DNS can
 be on Cloudflare's free plan while the registration stays independent
 of Cloudflare.
@@ -64,7 +64,7 @@ one.
 
 **Why:**
 
-A domain is something I'm sure a developer needs to go through getting at least once in their professional or hobby life. Despite the always free rule, I believe this is one of the acceptable exceptions to make for something that is commo nto deal with in the developer world. This alos simplifies alot of the project development process for a yearly cost I'm willing to foot for the forseeable future. This also allows me to utilize and obtain CLoudflare experience as a professional with little exposure to it.
+A domain is something I'm sure a developer needs to go through getting at least once in their professional or hobby life. Despite the always free rule, I believe this is one of the acceptable exceptions to make for something that is common to deal with in the developer world. This also simplifies a lot of the project development process for a yearly cost I'm willing to foot for the foreseeable future. This also allows me to utilize and obtain Cloudflare experience as a professional with little exposure to it.
 
 ## Consequences
 

@@ -236,8 +236,8 @@ Later item), not a follow-up.
   after a restart) and `online-mode`. Codes in the log read at startup
   are never reported. Nothing passes the option yet. Tested from a
   hand-written fixture; no real `!link` line has been logged yet (A8h).
-- **Dashboard decisions, proposed** (2026-11-23, Track D0; awaiting the
-  owner's Why and acceptance). Two records, as a tunnel brings its own
+- **Dashboard decisions, proposed** (2026-11-23, Track D0; 0008 awaiting
+  acceptance, 0009 the owner's Why and acceptance). Two records, as a tunnel brings its own
   hostname and certificate, so the three D0 choices are two:
   [0008](decisions/0008-dashboard-hostname-and-https.md) serves the
   dashboard at `shrimp-fried-rice.alexle.dev`, on the owner's own domain

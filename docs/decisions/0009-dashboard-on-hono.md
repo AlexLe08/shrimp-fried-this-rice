@@ -41,11 +41,11 @@ Options (versions checked 2026-11-23 in each project's `package.json`:
 
 | Option | Runtime dependencies | What it brings | What it costs |
 |---|---|---|---|
-| **Hono 4 with `@hono/node-server` 2** | Two packages, neither with dependencies of its own; Node 20 or later | Routing; signed cookies (`setSignedCookie`, HMAC SHA-256); a CSRF middleware (on form posts, checks `Origin`, or `Sec-Fetch-Site` against `same-origin` by default); an `html` template helper that escapes what it's given (implied by its docs, which say only `raw()` content isn't escaped). Requests and responses are the web-standard `Request` and `Response`. | Its JSX needs `.tsx` and a JSX transform, which type stripping doesn't do, so pages use the `html` helper. Two packages to keep updated. No built-in rate limiter (from memory). |
-| `node:http`, `fetch` and `node:crypto` (Node 24 built-ins) | None | Nothing to update or audit, and every mechanism visible. Long-polling is a held response. | We write and test the routing, the cookie parsing and signing, the HTML escaping, the forged-post check and the rate limiter ourselves: small, but each a security bug if wrong. D2's forms and routes would likely mean moving to a framework anyway. |
+| **Hono 4 with `@hono/node-server` 2** | Two packages, neither with dependencies of its own; Node 20 or later | Routing; signed cookies (`setSignedCookie`, HMAC SHA-256); a CSRF middleware (for unsafe methods with a form-like content type, `application/x-www-form-urlencoded`, `multipart/form-data` or `text/plain`, it accepts a request when either `Origin` matches or `Sec-Fetch-Site` is allowed, `same-origin` by default); an `html` template helper that escapes what it's given (implied by its docs, which say only `raw()` content isn't escaped). Requests and responses are the web-standard `Request` and `Response`. | Its JSX needs `.tsx` and a JSX transform, which type stripping doesn't do, so pages use the `html` helper. Two packages to keep updated. No built-in rate limiter (from memory). |
+| `node:http`, `fetch` and `node:crypto` (Node 24 built-ins) | None | Nothing to update or audit, and every mechanism visible. Long-polling is a held response. | We write and test the routing, the cookie parsing and signing, the HTML escaping, the forged-post check and the rate limiter ourselves: small, but each a security bug if wrong. D2's forms and routes add more of this code. |
 | Fastify, with its plugins | Many, transitively | The most mature: schema validation, and official plugins for cookies, CSRF, rate limits and OAuth2 | Far more than a few pages need; the most to keep updated. |
 | Express | Many, transitively | The most examples | Older design; cookies, CSRF and rate limits all from separate packages. |
-| A separate Next.js app (on Vercel, say) | Many, and a second app | The owner's strongest frontend stack | A second deploy, secrets in two places, and the bot still needs its own HTTP API through the tunnel for the dashboard's data and the helper. |
+| A separate Next.js app (on Vercel, say) | Many, and a second app | A full React framework with familiar tooling | A second deploy, secrets in two places, and the bot still needs its own HTTP API through the tunnel for the dashboard's data and the helper. |
 | Hono with JSX | As Hono, plus a build or loader | Nicer templates | Puts a build step into the run path, which the project avoids. |
 
 ## Decision
@@ -77,14 +77,18 @@ approves for the dashboard (CLAUDE.md).
 - Other names under `alexle.dev` host the owner's other projects, and
   count as the same site as the dashboard. So session cookies are
   `HttpOnly`, `Secure`, `SameSite=Lax` and named with the `__Host-`
-  prefix (Hono's cookie helper has an option for it, from memory), which
+  prefix (Hono's cookie helper has an option for it, from memory; the
+  cookie docs were read for signed cookies only), which
   forbids a `Domain` attribute and requires `Secure` and `Path=/`, so
   another name under the domain can't set or overwrite them. The CSRF
   middleware is given the exact origin
   `https://shrimp-fried-rice.alexle.dev`, not left to work it out from
   the request behind the tunnel, and its default `Sec-Fetch-Site` check
-  accepts only `same-origin`: `SameSite=Lax` alone would let a form post
-  from a sibling name through.
+  accepts only `same-origin`. A sibling name is `same-site`, not
+  `same-origin`, so it fails both checks, where `SameSite=Lax` alone would
+  let its form post through. The middleware covers the browser pages
+  only: `mcbridge` isn't a browser and sends neither header, so the
+  helper's endpoint takes JSON and its own secret instead.
 - Handlers stay thin: they call the same plain functions the slash
   commands call (Track D's convention), so Hono stays at the edge and
   could be swapped without touching the logic.
@@ -101,17 +105,18 @@ approves for the dashboard (CLAUDE.md).
   page could delay the scheduler's loop; pages stay small and read from
   SQLite, which is fast and synchronous.
 - Long-polling holds one open request per paired helper: a handler that
-  awaits the next message. Cloudflare's proxy gives up on an answer after
-  125 s (error 524), so the bot answers each poll within about 60 s, with
-  or without a message, which also stays below Node's own server
-  timeouts (`requestTimeout`, 300 s by default from memory, checked in
-  D1). A poll whose helper disconnects is dropped (through the request's
-  abort signal, checked in D1). Node's keep-alive timeout (5 s by
-  default, from memory) must outlast `cloudflared`'s reuse of idle
-  connections, or requests fail now and then with a 502; both are set in
-  D1. Rate limits key on the visitor's address from Cloudflare's header,
-  not the socket's (0008), which can be trusted only because the server
-  listens on `127.0.0.1` and only `cloudflared` reaches it.
+  awaits the next message. Cloudflare's proxy gives up on an answer
+  after 125 s (error 524), so the bot answers each poll within about 50
+  s, with or without a message (inside the helper's 60 s lease, A8),
+  which also stays below Node's own server timeouts (`requestTimeout`,
+  300 s by default from memory, checked in D1). A poll whose helper
+  disconnects is dropped (through the request's abort signal, checked in
+  D1). Node's keep-alive timeout (5 s by default, from memory) must
+  outlast `cloudflared`'s reuse of idle connections, or requests fail
+  now and then with a 502; both are set in D1. Rate limits key on the
+  visitor's address from Cloudflare's header, not the socket's (0008),
+  which can be trusted only because the server listens on `127.0.0.1`
+  and only `cloudflared` reaches it.
 - Pages are tagged template strings, not JSX components. If templates
   grow unwieldy at D2, Hono's JSX with a loader is the step up, as a new
   record superseding this one.

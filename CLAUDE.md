@@ -163,10 +163,10 @@ the workflow, indexed in its `README.md`.
 - TypeScript stays on `~6.0` until typescript-eslint supports 6.1 and up
   (8.x stops below 6.1); wol-character-panel is on 6.0 for the same reason.
 - Adding a runtime dependency is a design decision for the owner, not an
-  implementation detail. Approved so far beyond `discord.js`,
-  `better-sqlite3` and `dotenv`: `hono` and `@hono/node-server`, for the
-  dashboard ([decision 0009](docs/decisions/0009-dashboard-on-hono.md)),
-  added in D1.
+  implementation detail. The owner chose `hono` and `@hono/node-server`
+  for the dashboard on 2026-11-23
+  ([decision 0009](docs/decisions/0009-dashboard-on-hono.md), proposed);
+  they join `package.json` in D1's PR, not before.
 
 ## Workflow
 
