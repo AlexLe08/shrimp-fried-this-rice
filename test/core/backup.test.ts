@@ -67,6 +67,15 @@ describe('saveSnapshot', () => {
 		expect(rowsIn(file).map((row) => row.label)).toEqual(['a', 'b', 'c']);
 	});
 
+	it('removes a partial copy left by a process killed mid-copy', () => {
+		fs.mkdirSync(backups);
+		fs.writeFileSync(path.join(backups, 'daily-2026-01-01T00-00-00.000Z.db.tmp'), 'cut off');
+
+		const file = saveSnapshot(db, backups, 'daily', new Date('2026-11-23T00:00:00.000Z'));
+
+		expect(listBackups()).toEqual([path.basename(file)]);
+	});
+
 	it('leaves no file behind when the copy fails', () => {
 		// SQLite refuses VACUUM inside a transaction.
 		db.exec('BEGIN');
@@ -83,12 +92,28 @@ describe('snapshotBeforeMigration', () => {
 		vi.useFakeTimers({ now: new Date('2026-11-01T00:00:00.000Z'), toFake: ['Date'] });
 		const files: string[] = [];
 		for (let i = 0; i < KEEP_PRE_MIGRATION + 2; i++) {
-			files.push(path.basename(snapshotBeforeMigration(db, backups, i)));
+			files.push(path.basename(snapshotBeforeMigration(db, backups, i)!));
 			vi.advanceTimersByTime(1000);
 		}
 
 		expect(files[0]).toBe('pre-migration-v0-2026-11-01T00-00-00.000Z.db');
 		expect(listBackups()).toEqual(files.slice(2).sort());
+	});
+
+	it('reuses one at the same version from the last 10 minutes, as in a crash loop', () => {
+		vi.useFakeTimers({ now: new Date('2026-11-01T00:00:00.000Z'), toFake: ['Date'] });
+		const first = snapshotBeforeMigration(db, backups, 3);
+
+		vi.advanceTimersByTime(5000);
+		expect(snapshotBeforeMigration(db, backups, 3)).toBeNull();
+		// A reset back to v0 isn't the same snapshot.
+		expect(snapshotBeforeMigration(db, backups, 0)).not.toBeNull();
+
+		vi.advanceTimersByTime(10 * 60 * 1000);
+		const later = snapshotBeforeMigration(db, backups, 3);
+		expect(listBackups().filter((name) => name.startsWith('pre-migration-v3-'))).toEqual(
+			[first!, later!].map((file) => path.basename(file)),
+		);
 	});
 
 	it("doesn't prune daily snapshots", () => {
@@ -133,6 +158,15 @@ describe('dailyBackupCheck', () => {
 
 		await vi.advanceTimersByTimeAsync(HOUR_MS);
 		expect(dailies()).toHaveLength(2);
+	});
+
+	it('takes one when the newest is stamped in the future, after the clock was set back', async () => {
+		saveSnapshot(db, backups, 'daily', new Date('2026-11-25T00:00:00.000Z'));
+		startScheduler([dailyBackupCheck(db, backups)]);
+
+		await vi.advanceTimersByTimeAsync(POLL_MS);
+
+		expect(dailies()).toContain('daily-2026-11-23T12-01-00.000Z.db');
 	});
 
 	it(`keeps the newest ${KEEP_DAILY}`, async () => {

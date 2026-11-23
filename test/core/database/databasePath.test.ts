@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import path from 'node:path';
-import { databasePath } from '../../../src/core/database.ts';
+import { backupDirectory, databasePath } from '../../../src/core/database.ts';
 
 afterEach(() => {
 	vi.unstubAllEnvs();
@@ -12,6 +12,11 @@ describe('databasePath', () => {
 	it('defaults to bot.db in the project root', () => {
 		vi.stubEnv('DB_PATH', undefined);
 		expect(databasePath()).toBe(path.join(import.meta.dirname, '..', '..', '..', 'bot.db'));
+	});
+
+	// Keeps the tests' in-memory database from writing a backups/ folder.
+	it('gives an in-memory database no backup directory', () => {
+		expect(backupDirectory()).toBeNull();
 	});
 
 	it('uses DB_PATH when it is set', () => {
