@@ -23,7 +23,12 @@ Constraints: Node runs `src/` by type stripping, with no build, so no
 JSX (CLAUDE.md). A runtime dependency is the owner's decision. `mcbridge`
 is deliberately dependency-free ([0005](0005-minecraft-bridge-webhook-helper.md)).
 
-Options (versions checked 2026-11-23):
+Options (versions checked 2026-11-23 in each project's `package.json`:
+[hono](https://github.com/honojs/hono/blob/main/package.json) 4.13,
+[@hono/node-server](https://github.com/honojs/node-server/blob/main/package.json)
+2.1; Hono's [CSRF](https://hono.dev/docs/middleware/builtin/csrf),
+[cookie](https://hono.dev/docs/helpers/cookie) and
+[JSX](https://hono.dev/docs/guides/jsx) docs):
 
 | Option | Runtime dependencies | What it brings | What it costs |
 |---|---|---|---|
@@ -51,17 +56,24 @@ helper talks to the bot by long-polling, so `ws` isn't added.
   OAuth2's `state` check, constant-time secret comparison, and rate
   limits. They live in `src/core/` (or a `src/dashboard/` area) as plain
   functions, tested like the rest.
-- The HTTP server starts and stops with the bot: `shutdown.ts` closes it
-  before the database, so no request touches a closed database, and the
-  deploy's restart drops open long polls, which the helper retries.
+- The HTTP server starts and stops with the bot, and `shutdown.ts`
+  closes it before the database, so no request touches a closed
+  database. `server.close()` waits for requests in flight, and a held
+  long poll is one, so shutdown also ends open polls (answering them, or
+  `server.closeAllConnections()`) instead of waiting for each to time
+  out or for systemd to kill the process. That changes CLAUDE.md's
+  shutdown rule and the README's shutdown note when it's built. The
+  helper retries after the deploy's restart.
 - One process is the single point of failure for commands, reminders,
   the dashboard and the relay, as it already is for the first two. A slow
   page could delay the scheduler's loop; pages stay small and read from
   SQLite, which is fast and synchronous.
 - Long-polling holds one open request per paired helper. Caddy's proxy
   has no read or write timeout by default (from a summary of its docs,
-  checked in D1), and the bot answers each poll within a fixed time so
-  nothing in between closes it as idle.
+  checked in D1), and the bot answers each poll within a fixed time,
+  below Node's own server timeouts (`requestTimeout`, 300 s by default
+  from memory, also checked in D1), so nothing in between closes it as
+  idle.
 - Worth revisiting at D2 (editing: forms, validation, more routes), when
   hand-written routing and form handling grow. Hono is the first
   candidate then, as a new record superseding this one.

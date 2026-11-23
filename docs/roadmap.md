@@ -236,9 +236,9 @@ Later item), not a follow-up.
   after a restart) and `online-mode`. Codes in the log read at startup
   are never reported. Nothing passes the option yet. Tested from a
   hand-written fixture; no real `!link` line has been logged yet (A8h).
-- **Dashboard decisions** (2026-11-23, Track D0). Two records, as a
-  tunnel brings its own hostname and certificate, so the three D0 choices
-  are two: [0008](decisions/0008-dashboard-hostname-and-https.md) serves
+- **Dashboard decisions, proposed** (2026-11-23, Track D0; awaiting the
+  owner's Why and acceptance). Two records, as a tunnel brings its own
+  hostname and certificate, so the three D0 choices are two: [0008](decisions/0008-dashboard-hostname-and-https.md) serves
   the dashboard at a free deSEC `dedyn.io` name, through Caddy on the VM
   with Let's Encrypt (Cloudflare's tunnels need a bought domain or are
   for testing only; Tailscale Funnel is in beta with unpublished limits),
@@ -274,9 +274,9 @@ them ahead of items 5 and 6.
    D0 and D1, moved up by the owner on 2026-11-22, with the rest of the
    Minecraft work, ahead of the collection tracker). The hostname and
    HTTPS on free tiers only, Discord login, and a read-only reminders
-   page. D0's choices are decisions 0008 and 0009 (Done above); D1 is
-   next, after the owner's one-time VM setup (the deSEC name, Caddy, and
-   ports 80 and 443). Then A8d to A8i: two-way chat, linking and
+   page. D0's choices are proposed as decisions 0008 and 0009 (Done
+   above). D1 starts once the owner accepts them, and after the owner's
+   one-time VM setup (the deSEC name, Caddy, and ports 80 and 443). Then A8d to A8i: two-way chat, linking and
    pictures.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).

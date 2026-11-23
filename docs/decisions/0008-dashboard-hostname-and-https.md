@@ -20,11 +20,12 @@ D0 listed the hostname, HTTPS, and "proxy or tunnel" as separate
 choices. They're one here: a tunnel brings its own hostname and
 certificate, and a proxy needs a hostname from somewhere else.
 
-Options, checked on 2026-11-23 against each provider's own docs:
+Options, checked on 2026-11-23 against each provider's own docs (Sources,
+below):
 
 | Option | Free, no card | Stable hostname | Inbound ports on the VM | Notes |
 |---|---|---|---|---|
-| **deSEC (`<name>.dedyn.io`) + Caddy on the VM** | Free; sign-up is an email and a password | Yes | 80 and 443 | One `dedyn.io` name per account; no inactivity rule found. A full DNS host with an API, rate limits documented, and ACME DNS-01 documented if ever needed. Who runs it couldn't be confirmed from its site. |
+| **deSEC (`<name>.dedyn.io`) + Caddy on the VM** | Free; sign-up is an email and a password | Yes | 80 and 443 | One `dedyn.io` name per account; no inactivity rule found. A full DNS host with an API, rate limits documented, and ACME DNS-01 documented if ever needed. Who runs it couldn't be confirmed: its legal notice renders in the browser only (to check before signing up). |
 | DuckDNS (`<name>.duckdns.org`) + Caddy | Free; sign-in with Google, GitHub and others | Yes | 80 and 443 | Run by two engineers; terms last updated 2018; no inactivity rule; one TXT value only, no documented ACME client. |
 | No-IP free + Caddy | "No credit card required" | Yes | 80 and 443 | One hostname. Its confirmation rule for free hostnames wasn't on the page read (from memory it's monthly, which would mean a recurring manual step). |
 | Tailscale Funnel (`<machine>.<tailnet>.ts.net`) | Free Personal plan, non-commercial; whether sign-up asks for a card wasn't stated | Yes, unless the machine is renamed; the tailnet part is generated and can't be chosen | None | Beta, with bandwidth limits Tailscale doesn't publish. TLS ends on the VM (the relay can't read it). Long-lived requests aren't documented. Adds `tailscaled` on the VM and a Tailscale account. |
@@ -37,18 +38,22 @@ per 7 days), not one shared by every user of the provider.
 
 Caddy (an OS package with its own systemd service, not an npm
 dependency) gets and renews Let's Encrypt certificates by itself over
-ports 80 and 443, redirects HTTP to HTTPS, and proxies long-lived
-requests with no read or write timeout by default. Let's Encrypt's
-default certificates last 90 days, falling to 100 days from 15 March
-2027 and 47 days from 15 March 2029; automatic renewal makes that
-invisible.
+ports 80 and 443, redirects HTTP to HTTPS, and proxies WebSockets and
+streamed responses. That its proxy has no read or write timeout by
+default is from a summary of its docs, to confirm in D1. Let's Encrypt's
+default certificates last 90 days, and lifetimes are getting shorter
+industry-wide (the CA/Browser Forum's maximum falls to 100 days from
+15 March 2027 and 47 days from 15 March 2029); Caddy renews
+automatically, so that's invisible.
 
 Oracle (checked 2026-11-23): inbound ports are opened in the subnet's
-security list. Oracle warns not to use UFW on its Ubuntu images; that
+security list. Oracle warns not to use UFW on its Ubuntu images. That
 the VM's own `iptables` also blocks 80 and 443 by default is from
-memory, not its docs, and is checked on the VM. An ephemeral public IP stays with the instance when
-it's stopped; it goes only if the instance is recreated. Always Free
-includes 10 TB a month of outbound data.
+memory, not its docs, to check on the VM during setup. An ephemeral
+public IP stays with the instance when it's stopped, and its lifetime is
+tied to the instance's private IP; whether anything short of recreating
+the instance changes it, the docs don't say. Always Free includes 10 TB
+a month of outbound data.
 
 ## Decision
 
@@ -66,12 +71,14 @@ in the OCI security list and the VM's `iptables`, and nothing else.
   the internet, so the bot's HTTP server is never reachable directly, and
   Caddy's TLS and HTTP parsing are a maintained project's, not ours.
 - Setup is by hand, once, on the VM and outside the deploy job: the
-  deSEC account and A record, Caddy's apt repository and a two-line
-  Caddyfile, and the firewall rules. The README's deployment section
-  records each step, so the VM can be rebuilt. The deploy job doesn't
-  touch Caddy.
+  deSEC account and A record, Caddy's apt repository and a short
+  Caddyfile, and the firewall rules. `ORACLE_CLOUD_DEPLOYMENT.md` records
+  each step when it's done, in D1 (its note that no inbound firewall or
+  security list changes are needed becomes wrong then), so the VM can be
+  rebuilt. The deploy job doesn't touch Caddy.
 - A deploy restarts the bot, not Caddy: for those seconds Caddy answers
-  502. Browsers retry, and the helper already backs off on a 5xx (A8).
+  502, and a page loaded then shows an error until reloaded. The helper
+  is designed to back off on a 5xx (A8).
 - If the VM's public IP changes (the instance recreated), the A record
   is updated through deSEC's dynamic DNS API. Until then the dashboard
   and every helper are unreachable. A reserved IP would avoid that; how
@@ -88,3 +95,34 @@ in the OCI security list and the VM's `iptables`, and nothing else.
   limits. Either would supersede this record.
 - Not used: DNS-01 and wildcard certificates (Caddy would need a plugin
   build), and IPv6.
+
+## Sources
+
+Read 2026-11-23.
+
+- deSEC: [domains](https://desec.readthedocs.io/en/latest/dns/domains.html),
+  [account](https://desec.readthedocs.io/en/latest/auth/account.html),
+  [rate limits](https://desec.readthedocs.io/en/latest/rate-limits.html),
+  [Let's Encrypt](https://desec.readthedocs.io/en/latest/integrations/lets-encrypt.html),
+  [dynamic DNS](https://desec.readthedocs.io/en/latest/dyndns/update-api.html)
+- DuckDNS: [FAQ](https://www.duckdns.org/faqs.jsp),
+  [about](https://www.duckdns.org/about.jsp),
+  [terms](https://www.duckdns.org/tac.jsp),
+  [API](https://www.duckdns.org/spec.jsp)
+- No-IP: [free plan](https://www.noip.com/free)
+- Tailscale: [Funnel](https://tailscale.com/kb/1223/funnel),
+  [HTTPS](https://tailscale.com/kb/1153/enabling-https),
+  [pricing](https://tailscale.com/pricing)
+- Cloudflare: [Tunnel, get started](https://developers.cloudflare.com/tunnel/get-started/),
+  [routing](https://developers.cloudflare.com/tunnel/routing/),
+  [Zero Trust setup](https://developers.cloudflare.com/cloudflare-one/setup/),
+  [quick tunnels](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/)
+- Let's Encrypt: [rate limits](https://letsencrypt.org/docs/rate-limits/),
+  [profiles](https://letsencrypt.org/docs/profiles/);
+  [Public Suffix List](https://publicsuffix.org/list/public_suffix_list.dat)
+- Caddy: [automatic HTTPS](https://caddyserver.com/docs/automatic-https),
+  [install](https://caddyserver.com/docs/install),
+  [`reverse_proxy`](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)
+- Oracle: [Always Free](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm),
+  [public IPs](https://docs.oracle.com/en-us/iaas/Content/Network/Tasks/managingpublicIPs.htm),
+  [compute best practices](https://docs.oracle.com/en-us/iaas/Content/Compute/References/bestpracticescompute.htm)

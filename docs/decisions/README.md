@@ -11,6 +11,9 @@ later change can tell a deliberate choice from an accident.
 - A record isn't rewritten once accepted. To change a decision, write a
   new record and set the old one's status to `Superseded by NNNN`, or
   `superseded in part by NNNN (what changed)` when the rest still stands.
+- A record the owner hasn't decided yet has the status
+  `Proposed · date`. It can be edited or withdrawn until the owner writes
+  the Why and sets it to `Accepted · date`; until then it isn't in force.
 - The **Why** is the owner's. Claude drafts Context and Consequences from
   the history and leaves the Why as `TODO(Alex)`.
 
