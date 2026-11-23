@@ -148,6 +148,7 @@ Key production-specific details, for future reference:
 - **Secrets:** `.env` is created directly on the VM (never committed, never pulled from git) with the production bot token and client ID — using the separate **production** Discord Application, never the local-dev one.
 - **Native module:** `better-sqlite3` 13 ships a prebuilt `linux-arm64` binary, so installing it on the VM compiles nothing. npm still runs its `node-gyp` step, which needs `python3`; `build-essential` is the fallback for a version or platform without a prebuilt binary (see [`ORACLE_CLOUD_DEPLOYMENT.md`](ORACLE_CLOUD_DEPLOYMENT.md), section 6).
 - **Schema migrations:** run by `core/database.ts` when the bot starts, so the deploy's restart applies any new ones to `bot.db`. A migration that fails rolls back and the bot exits, which the deploy's login check reports; systemd then restarts it every 5 seconds, failing the same way, and no reminders send until a fix is deployed.
+- **Backups on the VM:** `core/backup.ts` saves snapshots of `bot.db` in `backups/` beside it (a folder only the bot's user can open, untouched by deploys like `bot.db` itself), each a complete SQLite file written with `VACUUM INTO` and renamed into place once finished. One is saved before pending migrations are applied (`pre-migration-v<version>-<time>.db`, the newest 5 kept); if it can't be saved, the bot exits without migrating. A scheduled check saves one a day (`daily-<time>.db`, the newest 7 kept), timed from the newest one's name, so restarts don't reset it; after a failure it tries again an hour later. These don't survive losing the VM's disk; a copy off the VM is still to come ([roadmap](docs/roadmap.md)).
 - **npm install-scripts:** `better-sqlite3`'s native build step (which only builds when no prebuilt binary matches) is explicitly approved via the `allowScripts` field committed in `package.json` — required for npm v12+'s install-script security gating.
 - **Graceful shutdown:** `systemctl restart`/`stop` send `SIGTERM`, which `src/core/shutdown.ts` handles by stopping the scheduler (and waiting for any send already under way), destroying the Discord client, and closing the database connection before the process exits — rather than the process being killed mid-operation. `Ctrl+C` during local `npm run dev` sends `SIGINT`, handled identically.
 - **Service management:** the bot runs under a systemd unit (`discordbotshrimp.service`). Common commands:
@@ -190,6 +191,7 @@ src/
   deploy-commands.ts      # registers slash commands globally with Discord's API
   core/                   # bot plumbing and Discord helpers any area may use
     database.ts           # opens SQLite (bot.db in the project root), creates the tables and runs schema migrations for every area
+    backup.ts             # snapshots of the database in backups/: before migrating, and a daily scheduled check
     loadCommands.ts       # finds every area's commands/ and events/ files; the one command list for index.ts and deploy-commands.ts
     shutdown.ts           # graceful SIGTERM/SIGINT handling — stops the scheduler, destroys the client, closes the database
     scheduler.ts          # polling loop — runs a list of named checks every 60 s, one at a time each, and waits for them on shutdown
@@ -250,10 +252,11 @@ test/
   core/
     database/
       closeDatabase.test.ts         # isolated in its own file — closing the DB connection is irreversible within a test file
-      migrations.test.ts            # migrations on a database built like production's before them, and on a new one
+      migrations.test.ts            # migrations on a database built like production's before them, and on a new one; the snapshot taken first
       databasePath.test.ts          # the default database path is bot.db in the project root
     loadCommands.test.ts            # which command and event files are found, and the commands they load
     shutdown.test.ts                # gracefulShutdown orchestration tests (mocked scheduler + database)
+    backup.test.ts                  # snapshots and pruning on a real file; the daily check through the scheduler with fake timers
     scheduler.test.ts               # the polling loop with fake checks: every poll, a throwing check, the overlap guard, stopping
     eventListener.test.ts           # rejected and throwing handlers are logged
     customEmoji.test.ts             # which custom emoji are warned about, per server, channel permission and DM
