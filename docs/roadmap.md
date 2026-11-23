@@ -249,6 +249,27 @@ Later item), not a follow-up.
   Hono (the owner's choice of dependency), the helper long-polling.
   Facts checked against each provider's docs that day; what couldn't be
   is marked in the records.
+- **Snapshots of `bot.db` on the VM** (2026-11-23, first part of Next up
+  item 1). `src/core/backup.ts` writes complete copies with `VACUUM INTO`
+  to `backups/` beside the database (created `0700`), through a `.tmp`
+  file renamed once finished, as SQLite's docs warn a cut-off one can be
+  corrupt. One before pending migrations (newest 5 kept; if it fails the
+  bot exits unmigrated, so the deploy's login check reports it; one at
+  the same version from the last 10 minutes is reused, so a migration
+  failing in systemd's 5 s restart loop doesn't push the older ones out),
+  none for a new database or `:memory:`, and a daily scheduled check
+  (newest 7 kept) timed from the newest snapshot's name, retrying an hour
+  after a failure. Checked: SQLite fsyncs the output when the source's
+  `synchronous` is NORMAL or FULL
+  ([`lang_vacuum.html`](https://www.sqlite.org/lang_vacuum.html), read
+  2026-11-23; the bot's is NORMAL, from a probe on `better-sqlite3`'s
+  SQLite 3.53.4), and a snapshot is in rollback-journal mode, which
+  `database.ts` switches to WAL when one is restored as `bot.db`. The
+  folder isn't fsynced after the rename, so a power loss right after one
+  could lose that snapshot (not the earlier ones). From review, not
+  changed here: `deploycommands` imports `database.ts` too, so on a
+  deploy with a migration it races the restarted bot to migrate (as
+  before this) and to snapshot. Not yet run on the VM.
 
 ## Next up
 
@@ -266,15 +287,9 @@ them ahead of items 6 and 7.
    the VM's disk, and soon it holds bridges' webhook tokens and keys and
    players' links as well as every server's reminders. Losing the VM, a
    bad migration or a bug that deletes rows would lose all of it, and
-   every server would have to set everything up again.
-   - On the VM: `core/database.ts` saves a snapshot before applying
-     pending migrations, and a scheduled check saves one daily, keeping
-     the last few. The database opens and migrates synchronously at
-     import, so the snapshot is synchronous too (`VACUUM INTO`, not
-     `better-sqlite3`'s `db.backup()`, which returns a promise), and
-     skipped for the tests' `:memory:` database. That covers a bad
-     migration and lost rows, and a decision 0003 reset up to the last
-     daily snapshot.
+   every server would have to set everything up again. Snapshots on the
+   VM are done (Done above), covering a bad migration, lost rows, and a
+   decision 0003 reset up to the last daily snapshot. Left:
    - Off the VM: an encrypted copy, as the file will hold secrets. Where
      (Oracle's Always Free Object Storage, from memory) and how it's
      encrypted are checked and decided first, likely as a decision
@@ -344,6 +359,12 @@ runtime dependency is the owner's decision.
   deployed without deleting the database, or any drift, makes the bot
   exit and the deploy's login check fail, instead of the first query
   failing later while the bot looks healthy (decisions 0002 and 0003).
+- `npm run deploycommands` opens `bot.db` (the command files import
+  storage, so `core/database.ts`), and the deploy runs it right after
+  restarting the bot: on a deploy with a migration, both race to migrate
+  and to snapshot first, and the loser fails (a duplicate column, or
+  busy). Registering commands shouldn't need the database (from review
+  of the VM snapshots, 2026-11-23).
 - `__resetForTests` clears every table SQLite lists (`sqlite_master`,
   leaving out its internal `sqlite_%` tables) instead of a hand-kept
   list, so a new table can't be missed and leak state between tests

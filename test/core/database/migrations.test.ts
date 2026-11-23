@@ -125,6 +125,38 @@ describe('schema migrations', () => {
 		expect(reminderColumns).not.toContain('embed');
 	});
 
+	it('saves the database as it was before migrating, beside it in backups/', async () => {
+		createPreMigrationDatabase();
+
+		(await openStorage()).closeDatabase();
+
+		const backups = path.join(dir, 'backups');
+		const [snapshot, ...others] = fs.readdirSync(backups);
+		expect(others).toEqual([]);
+		expect(snapshot).toMatch(/^pre-migration-v0-.+\.db$/);
+		const copy = new Database(path.join(backups, snapshot!), { readonly: true });
+		expect(copy.pragma('user_version', { simple: true })).toBe(0);
+		expect(copy.prepare('SELECT message FROM guild_reminders').all()).toEqual([{ message: 'drink' }]);
+		copy.close();
+	});
+
+	it("doesn't migrate when the snapshot can't be saved", async () => {
+		createPreMigrationDatabase();
+		// A file where the folder should be.
+		fs.writeFileSync(path.join(dir, 'backups'), '');
+
+		await expect(openStorage()).rejects.toThrow();
+
+		expect(inspect().version).toBe(0);
+	});
+
+	it('saves no snapshot for a new database, or one already up to date', async () => {
+		(await openStorage()).closeDatabase();
+		(await openStorage()).closeDatabase();
+
+		expect(fs.existsSync(path.join(dir, 'backups'))).toBe(false);
+	});
+
 	it('does nothing on a database that is already up to date', async () => {
 		createPreMigrationDatabase();
 		(await openStorage()).closeDatabase();

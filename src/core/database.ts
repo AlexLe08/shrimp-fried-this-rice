@@ -1,5 +1,7 @@
 import Database from 'better-sqlite3';
+import fs from 'node:fs';
 import path from 'node:path';
+import { snapshotBeforeMigration } from './backup.ts';
 
 // From the project root, not this file's folder: a default that moved with
 // this file would open a new, empty database without any error (the tests use
@@ -8,7 +10,17 @@ export function databasePath(): string {
 	return process.env['DB_PATH'] ?? path.join(import.meta.dirname, '..', '..', 'bot.db');
 }
 
-export const db = new Database(databasePath());
+const dbPath = databasePath();
+// Checked before opening, which creates the file: a new database has nothing
+// to save before its first migrations.
+const existed = dbPath !== ':memory:' && dbPath !== '' && fs.existsSync(dbPath);
+
+/** Where snapshots of the database go (src/core/backup.ts); null for an in-memory or temporary database. */
+export function backupDirectory(): string | null {
+	return dbPath === ':memory:' || dbPath === '' ? null : path.join(path.dirname(dbPath), 'backups');
+}
+
+export const db = new Database(dbPath);
 
 // WAL: the scheduler reads while commands write.
 db.pragma('journal_mode = WAL');
@@ -93,6 +105,10 @@ const MIGRATIONS = [
 
 const schemaVersion = db.pragma('user_version', { simple: true }) as number;
 if (schemaVersion < MIGRATIONS.length) {
+	// Throws when the snapshot can't be saved, so the bot exits unmigrated
+	// (the deploy's login check reports it) rather than migrating without one.
+	const backups = backupDirectory();
+	if (existed && backups) snapshotBeforeMigration(db, backups, schemaVersion);
 	// One transaction: a migration that fails partway leaves the database, and
 	// its version, as they were.
 	db.transaction(() => {
