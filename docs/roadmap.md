@@ -236,6 +236,19 @@ Later item), not a follow-up.
   after a restart) and `online-mode`. Codes in the log read at startup
   are never reported. Nothing passes the option yet. Tested from a
   hand-written fixture; no real `!link` line has been logged yet (A8h).
+- **Dashboard decisions** (2026-11-23, Track D0; accepted by the owner
+  that day). Two records, as a tunnel brings its own hostname and
+  certificate, so the three D0 choices are two:
+  [0008](decisions/0008-dashboard-hostname-and-https.md) serves the
+  dashboard at `shrimp-fried-rice.alexle.dev`, on the owner's own domain
+  (bought at Porkbun, the one exception to free tiers only, DNS on
+  Cloudflare's free plan), through a Cloudflare Tunnel with no inbound
+  port on the VM (Caddy on the same name is the fallback; free names
+  were weighed first, and deSEC's has suspended sign-ups), and
+  [0009](decisions/0009-dashboard-on-hono.md) runs it in the bot on
+  Hono (the owner's choice of dependency), the helper long-polling.
+  Facts checked against each provider's docs that day; what couldn't be
+  is marked in the records.
 
 ## Next up
 
@@ -263,9 +276,11 @@ them ahead of items 5 and 6.
    ([Track D](plans/minecraft-ff14-features.md#track-d-web-dashboard)
    D0 and D1, moved up by the owner on 2026-11-22, with the rest of the
    Minecraft work, ahead of the collection tracker). The hostname and
-   HTTPS on free tiers only, Discord login, and a read-only reminders
-   page, each D0 choice a decision record first. Then A8d to A8i: two-way
-   chat, linking and pictures.
+   HTTPS, Discord login, and a read-only reminders page. D0 is done:
+   decisions 0008 and 0009 (Done above). The domain is on Cloudflare and
+   the tunnel exists (2026-11-23, asking for no payment method); D1 adds
+   its route and installs `cloudflared` on the VM. Then A8d to A8i: two-way chat,
+   linking and pictures.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the

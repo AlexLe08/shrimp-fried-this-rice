@@ -152,7 +152,10 @@ the workflow, indexed in its `README.md`.
   double every reminder (README's warning). Don't `ssh` to the VM or
   restart the service: production changes only through a merged PR.
 - Free tiers only (Oracle Cloud Always Free, GitHub Actions). Never
-  configure or suggest anything that needs a payment method.
+  configure or suggest anything that needs a payment method. The one
+  exception is registering and renewing the owner's domain,
+  `alexle.dev`, at Porkbun
+  ([decision 0008](docs/decisions/0008-dashboard-hostname-and-https.md)).
 - CI's job id is `test` (`.github/workflows/ci.yml`); the `main` ruleset
   requires that check by name, so don't rename it. Don't add `paths:`
   filters to its triggers.
@@ -160,7 +163,10 @@ the workflow, indexed in its `README.md`.
 - TypeScript stays on `~6.0` until typescript-eslint supports 6.1 and up
   (8.x stops below 6.1); wol-character-panel is on 6.0 for the same reason.
 - Adding a runtime dependency is a design decision for the owner, not an
-  implementation detail.
+  implementation detail. The owner chose `hono` and `@hono/node-server`
+  for the dashboard on 2026-11-23
+  ([decision 0009](docs/decisions/0009-dashboard-on-hono.md));
+  they join `package.json` in D1's PR, not before.
 
 ## Workflow
 
