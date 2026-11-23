@@ -273,7 +273,10 @@ Later item), not a follow-up.
 - **`bot.db` readable only by the bot's user** (2026-11-23, second part
   of Next up item 1). `core/database.ts` sets `bot.db` to `0600` on
   every start (creating a new one that way) and any `-wal` and `-shm`
-  left over; snapshots are `0600` before they're renamed into place. Done
+  left over; snapshots are `0600` before they're renamed into place, and
+  saving one sets earlier ones (the umask's mode, inside the `0700`
+  folder) the same way, so the first daily one after the deploy fixes
+  them. Done
   in code rather than with `UMask=0077` in the systemd unit, as planned:
   the unit lives only on the VM, outside the deploy, and a probe on
   `better-sqlite3`'s SQLite 3.53.4 showed SQLite gives `-wal` and `-shm`

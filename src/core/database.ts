@@ -30,7 +30,14 @@ export function backupDirectory(): string | null {
 function restrictToOwner(file: string, isNew: boolean): void {
 	if (file === ':memory:' || file === '') return;
 	try {
-		if (isNew) fs.writeFileSync(file, '', { mode: 0o600, flag: 'wx' });
+		// EEXIST: deploycommands, which imports this too, created it first.
+		if (isNew) {
+			try {
+				fs.writeFileSync(file, '', { mode: 0o600, flag: 'wx' });
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+			}
+		}
 		for (const name of [file, `${file}-wal`, `${file}-shm`]) {
 			if (fs.existsSync(name)) fs.chmodSync(name, 0o600);
 		}
