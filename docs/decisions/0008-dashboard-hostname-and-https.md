@@ -1,6 +1,6 @@
 # 0008: The dashboard is served at `shrimp-fried-rice.alexle.dev`, through a Cloudflare Tunnel
 
-Status: Proposed · 2026-11-23
+Status: Accepted · 2026-11-23
 
 ## Context
 

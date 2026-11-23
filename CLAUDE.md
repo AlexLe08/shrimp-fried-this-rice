@@ -165,7 +165,7 @@ the workflow, indexed in its `README.md`.
 - Adding a runtime dependency is a design decision for the owner, not an
   implementation detail. The owner chose `hono` and `@hono/node-server`
   for the dashboard on 2026-11-23
-  ([decision 0009](docs/decisions/0009-dashboard-on-hono.md), proposed);
+  ([decision 0009](docs/decisions/0009-dashboard-on-hono.md));
   they join `package.json` in D1's PR, not before.
 
 ## Workflow

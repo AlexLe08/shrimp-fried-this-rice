@@ -1,6 +1,6 @@
 # 0009: The dashboard runs in the bot on Hono
 
-Status: Proposed · 2026-11-23
+Status: Accepted · 2026-11-23
 
 ## Context
 
@@ -60,7 +60,7 @@ approves for the dashboard (CLAUDE.md).
 
 **Why:**
 
-Hono is a familiar name in development and given its ridiculously fast and lightweight footprint, It seemed the most interesting and best way to handle this project. Personally I wanted a name that was familiar with recruiters and companies that I could put in my resume as something I have experience in. Also considered node:http but ultimately it would have given more work to do at this time. Its certainly something I will use in another project.
+Hono is a familiar name in development and given its ridiculously fast and lightweight footprint, it seemed the most interesting and best way to handle this project. Personally I wanted a name that was familiar with recruiters and companies that I could put in my resume as something I have experience in. Also considered node:http but ultimately it would have given more work to do at this time. It's certainly something I will use in another project.
 
 ## Consequences
 
