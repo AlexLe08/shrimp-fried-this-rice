@@ -29,3 +29,5 @@ and Design notes sections; the history behind them is in
 | [0005](0005-minecraft-bridge-webhook-helper.md) | The Minecraft bridge is a separate, dependency-free helper beside the server, posting through a webhook | Accepted · 2026-11-21; superseded in part by 0006 (Discord to Minecraft chat) and 0007 (players linking their Discord account) |
 | [0006](0006-discord-to-minecraft-chat.md) | Discord to Minecraft chat goes through the bot (the helper connects out to its endpoint) and is set up in the dashboard | Accepted · 2026-11-22 |
 | [0007](0007-players-choose-their-picture-from-discord.md) | Players in the Discord server choose their picture in the dashboard, after linking their account by a code typed in game | Accepted · 2026-11-22 |
+| [0008](0008-dashboard-hostname-and-https.md) | The dashboard is served at a free deSEC name (`dedyn.io`), through Caddy on the VM with Let's Encrypt | Proposed · 2026-11-23 |
+| [0009](0009-dashboard-on-node-http.md) | The dashboard runs in the bot on `node:http`, with no web framework; the helper long-polls | Proposed · 2026-11-23 |
