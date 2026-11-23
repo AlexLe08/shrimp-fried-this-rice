@@ -1,6 +1,6 @@
 # 0010: The bot catches up on bridge chat it missed while restarting
 
-Status: Proposed · 2026-11-23
+Status: Accepted · 2026-11-23
 
 ## Context
 
