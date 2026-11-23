@@ -1,6 +1,6 @@
 # 0006: Discord to Minecraft chat goes through the bot, set up in the dashboard
 
-Status: Accepted · 2026-11-22; superseded in part by [0008](0008-dashboard-hostname-and-https.md) (reached through a Cloudflare Tunnel with no inbound port; the helper's traffic is encrypted end to end across it)
+Status: Accepted · 2026-11-22; superseded in part by [0008](0008-dashboard-hostname-and-https.md) (reached through a Cloudflare Tunnel with no inbound port; the helper's traffic is encrypted end to end across it) and by [0010](0010-catch-up-after-bot-restarts.md) (chat missed while the bot restarts is caught up)
 
 ## Context
 
