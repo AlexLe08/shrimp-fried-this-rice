@@ -349,8 +349,6 @@ runtime dependency is the owner's decision.
   leaving out its internal `sqlite_%` tables) instead of a hand-kept
   list, so a new table can't be missed and leak state between tests
   (decision 0004).
-- The old `reminders.db` and its `-wal`/`-shm` files on the VM, left
-  from the rename (decision 0004), deleted by the owner by hand.
 - An alert from `mcbridge` when the server has started but no line is
   recognised for a long while, so a Minecraft update that changes the
   log's format doesn't silently stop the bridge (decision 0005).
