@@ -255,13 +255,30 @@ Later item), not a follow-up.
 Feature work, in this order unless the owner says otherwise. Schema
 changes are cheapest now, while the bot is pre-release (decision 0003).
 
-Items 1 to 4 are designed in
+Items 2 to 5 are designed in
 [`plans/minecraft-ff14-features.md`](plans/minecraft-ff14-features.md),
 which has their PR order (its "Suggested pull request order"), the inputs
 to ask the owner for, and which facts are still unverified. The owner put
-them ahead of items 5 and 6.
+them ahead of items 6 and 7.
 
-1. **Minecraft bridge, what's left** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
+1. **Back up `bot.db`** (from reviewing decisions 0001 to 0009 for
+   serious consequences, 2026-11-23). It has no backup today: one file on
+   the VM's disk, and soon it holds bridges' webhook tokens and keys and
+   players' links as well as every server's reminders. Losing the VM, a
+   bad migration or a bug that deletes rows would lose all of it, and
+   every server would have to set everything up again.
+   - On the VM: `core/database.ts` saves a snapshot with SQLite's online
+     backup (`db.backup()` in `better-sqlite3`) before applying pending
+     migrations, and a scheduled check saves one daily, keeping the last
+     few. That covers a bad migration and lost rows, and makes a
+     decision 0003 reset reversible.
+   - Off the VM: an encrypted copy, as the file will hold secrets. Where
+     (Oracle's Always Free Object Storage, from memory) and how it's
+     encrypted are checked and decided first, likely as a decision record.
+   - `bot.db` and its backups readable only by the bot's service user
+     (`chmod 600`), and a restore procedure in
+     `ORACLE_CLOUD_DEPLOYMENT.md`, tried once.
+2. **Minecraft bridge, what's left** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
    The first version, crash reports and player avatars are done and tested
    end to end (Done above). Left: Discord to Minecraft chat, designed in
    [A8](plans/minecraft-ff14-features.md#discord-to-minecraft-chat-a8)
@@ -271,8 +288,8 @@ them ahead of items 5 and 6.
    code typed in game. That replaces choosing in game (`!avatar`), the
    owner's call (2026-11-21). Its helper-side parts A8a to A8c (the RCON
    client, the `tellraw` builder and `server.properties` reader, and the
-   `!link` line) are done; the rest follows item 2.
-2. **Dashboard foundation, then two-way Minecraft chat**
+   `!link` line) are done; the rest follows item 3.
+3. **Dashboard foundation, then two-way Minecraft chat**
    ([Track D](plans/minecraft-ff14-features.md#track-d-web-dashboard)
    D0 and D1, moved up by the owner on 2026-11-22, with the rest of the
    Minecraft work, ahead of the collection tracker). The hostname and
@@ -282,21 +299,21 @@ them ahead of items 5 and 6.
    (2026-11-23, asking for no payment method); D1 adds its route and
    installs `cloudflared` on the VM. Then A8d to A8i: two-way chat,
    linking and pictures.
-3. **Collection tracker (`/collection`, `/collectionadmin`)**
+4. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the
    group's spreadsheet.
-4. **Lodestone news and scheduled events**
+5. **Lodestone news and scheduled events**
    ([Track C](plans/minecraft-ff14-features.md#track-c-lodestone-news-and-scheduled-events)),
    then the **role check-in** after onboarding
    ([Track E, E2](plans/minecraft-ff14-features.md#e-role-check-in-after-choosing-a-role)),
    which needs the Server Members Intent switched on first.
-5. **File or audio attachments on reminders** (bundled sounds or user
+6. **File or audio attachments on reminders** (bundled sounds or user
    uploads). Open questions first: where uploads live (the VM's disk, or
    Discord's own CDN by re-posting the attachment URL, which expires),
    size limits, and the free tier. Likely a design note or decision record
    before code.
-6. **Rework `/remindme`** (brainstorm in its own session first). One
+7. **Rework `/remindme`** (brainstorm in its own session first). One
    command does everything through optional options: view (no options),
    update (`enabled`, `interval`, `message`, `embed`), snooze, and `reset`,
    with rules about which combine. Options to weigh include subcommands
@@ -312,6 +329,26 @@ them ahead of items 5 and 6.
 New tooling waits for a real bug or real friction (CLAUDE.md), and a
 runtime dependency is the owner's decision.
 
+- End the pre-release phase (decision 0003) before the first bridge is
+  paired in a server the owner doesn't run: a reset would then delete
+  other people's webhooks, keys and links. The owner's call; from
+  reviewing the decisions' consequences (2026-11-23).
+- A startup schema check: after migrations, query each table once (or
+  compare its columns with the row interfaces), so a decision 0003 reset
+  deployed without deleting the database, or any drift, makes the bot
+  exit and the deploy's login check fail, instead of the first query
+  failing later while the bot looks healthy (decisions 0002 and 0003).
+- `__resetForTests` clears every table SQLite lists (`sqlite_master`)
+  instead of a hand-kept list, so a new table can't be missed and leak
+  state between tests (decision 0004).
+- The old `reminders.db` and its `-wal`/`-shm` files on the VM, left
+  from the rename (decision 0004), deleted by the owner by hand.
+- An alert from `mcbridge` when the server has started but no line is
+  recognised for a long while, so a Minecraft update that changes the
+  log's format doesn't silently stop the bridge (decision 0005).
+- An ESLint rule letting only `storage.ts` files import `db`, if an area
+  is ever found querying another's tables (decision 0004; new tooling,
+  so only for a real case).
 - Tidy the schema while pre-release, when a feature touches it:
   `guild_settings` has no row until `/reminder master` is used, which is
   why the due query needs the `LEFT JOIN` with `NULL` handling; and
