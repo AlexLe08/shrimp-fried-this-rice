@@ -34,7 +34,7 @@ below):
 
 | Option | Cost | Inbound ports on the VM | Notes |
 |---|---|---|---|
-| **Cloudflare Tunnel on the owner's domain** | The domain ($8.75 the first year, $12.87 a year after, at Porkbun); Cloudflare's free plan | None: `cloudflared` on the VM connects out | Tunnel is "available on all plans"; it needs a domain on Cloudflare. Whether creating one asks for payment details isn't stated (Zero Trust onboarding does, even for its free plan), so it's checked in a browser. TLS ends at Cloudflare's edge, which decrypts requests to apply its firewall and caching. |
+| **Cloudflare Tunnel on the owner's domain** | The domain ($8.75 the first year, $12.87 a year after, at Porkbun); Cloudflare's free plan | None: `cloudflared` on the VM connects out | Tunnel is "available on all plans"; it needs a domain on Cloudflare. Creating one asked for no payment method (the owner, in the dashboard, 2026-11-23), though Zero Trust onboarding asks for one even for its free plan. TLS ends at Cloudflare's edge, which decrypts requests to apply its firewall and caching. |
 | Caddy on the VM, the owner's domain pointing at the VM's IP | The domain | 80 and 443 | Caddy gets Let's Encrypt certificates itself. Only the VM sees requests decrypted. The fallback (Consequences). |
 | DuckDNS (`<name>.duckdns.org`) + Caddy | Free | 80 and 443 | Open for sign-ups. Run by two engineers; terms from 2018. Proposed in an earlier draft. |
 | deSEC (`<name>.dedyn.io`) + Caddy | Free | 80 and 443 | Ruled out: `dedyn.io` registration is "suspended until further notice" after a wave of abusive sign-ups (the banner on desec.io, which the owner saw; its pages render in the browser only, so fetching them showed nothing). |
@@ -57,9 +57,10 @@ on Cloudflare's free plan. The dashboard and the helper's endpoint are
 served at `https://shrimp-fried-rice.alexle.dev` through a Cloudflare
 Tunnel: `cloudflared` runs on the VM as a systemd service, connects out
 to Cloudflare, and passes requests to the bot on `127.0.0.1`. No inbound
-port is opened on the VM. If creating the tunnel asks for a payment
-method, Caddy on the same name is used instead (the fallback, below),
-as CLAUDE.md allows nothing else that needs one.
+port is opened on the VM. Creating the tunnel asked for no payment
+method; if Cloudflare ever requires one, Caddy on the same name replaces
+it (the fallback, below), as CLAUDE.md allows nothing else that needs
+one.
 
 **Why:** TODO(Alex)
 
@@ -76,8 +77,10 @@ as CLAUDE.md allows nothing else that needs one.
   becomes "superseded in part by [0008](0008-dashboard-hostname-and-https.md)
   (reached through a Cloudflare Tunnel with no inbound port; chat also
   passes through Cloudflare's edge, decrypted)", in the index too.
-- Setup is by hand, once, outside the deploy job: moving the domain's
-  nameservers from Porkbun to Cloudflare, creating the tunnel and its
+- Setup is by hand, once, outside the deploy job. Done by the owner on
+  2026-11-23: the domain added to Cloudflare (Porkbun's four parking
+  records deleted) and its nameservers moved from Porkbun, now Active,
+  and the tunnel created, with nothing connected to it. Left for D1: its
   route in Cloudflare's dashboard, and installing `cloudflared` with the
   tunnel's token, a secret on the VM like `.env`.
   `ORACLE_CLOUD_DEPLOYMENT.md` records each step in D1. The deploy job

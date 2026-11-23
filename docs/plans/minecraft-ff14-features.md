@@ -49,7 +49,7 @@ Ask for each before the step that needs it.
 3. **Discord webhook URL(s)** for the Minecraft channel(s), created by the owner in Server Settings → Integrations → Webhooks. These are secrets: they live only in the helper's config file, which A5 adds to `.gitignore` (`mcbridge*.json`), like `.env`.
 4. **For Lodestone news**: which region's Lodestone to follow (NA, EU, FR, DE, JP), which channel gets the posts, and which data center the group plays on (used to filter maintenance events). All are set at runtime with commands. The bot also needs the **Create Events** permission added to its role in the server.
 5. **For membership follow-ups**: the **Server Members Intent** switched on in the Discord Developer Portal for both the production and the dev application (Bot tab). This must be done **before** the code that requests it is merged; see Track E. Channels, roles and day counts are set at runtime with commands.
-6. **For the dashboard, when Track D starts**: the D0 decisions, including how the site gets its hostname and HTTPS (see Track D). Proposed in decisions 0008 and 0009, for the owner to accept or change. The domain, `alexle.dev`, is bought (2026-11-23); its nameservers move to Cloudflare and the tunnel is set up by hand in D1.
+6. **For the dashboard, when Track D starts**: the D0 decisions, including how the site gets its hostname and HTTPS (see Track D). Proposed in decisions 0008 and 0009, for the owner to accept or change. The domain, `alexle.dev`, is bought, on Cloudflare, and has a tunnel (2026-11-23); the tunnel's route and `cloudflared` on the VM are set up by hand in D1.
 
 ---
 

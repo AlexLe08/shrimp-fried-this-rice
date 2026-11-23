@@ -278,10 +278,10 @@ them ahead of items 5 and 6.
    Minecraft work, ahead of the collection tracker). The hostname and
    HTTPS, Discord login, and a read-only reminders page. D0's choices are
    proposed as decisions 0008 and 0009 (Done above). D1 starts once the
-   owner accepts them, and after the owner's one-time setup: the
-   domain's nameservers to Cloudflare, checking that creating the tunnel
-   asks for no payment method (else Caddy, per 0008), then the tunnel and
-   `cloudflared`. Then A8d to A8i: two-way chat, linking and pictures.
+   owner accepts them. The domain is on Cloudflare and the tunnel exists
+   (2026-11-23, asking for no payment method); D1 adds its route and
+   installs `cloudflared` on the VM. Then A8d to A8i: two-way chat,
+   linking and pictures.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the
