@@ -245,10 +245,10 @@ Later item), not a follow-up.
   Cloudflare's free plan), through a Cloudflare Tunnel with no inbound
   port on the VM (Caddy on the same name is the fallback; free names
   were weighed first, and deSEC's has suspended sign-ups), and
-  [0009](decisions/0009-dashboard-on-node-http.md) runs it in the bot on
-  `node:http` with no framework, the helper long-polling (Hono the
-  candidate to revisit at D2). Facts checked against each provider's
-  docs that day; what couldn't be is marked in the records.
+  [0009](decisions/0009-dashboard-on-hono.md) runs it in the bot on
+  Hono (the owner's choice of dependency), the helper long-polling.
+  Facts checked against each provider's docs that day; what couldn't be
+  is marked in the records.
 
 ## Next up
 

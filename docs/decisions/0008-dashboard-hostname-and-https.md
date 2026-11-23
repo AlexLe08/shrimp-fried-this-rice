@@ -62,7 +62,9 @@ method; if Cloudflare ever requires one, Caddy on the same name replaces
 it (the fallback, below), as CLAUDE.md allows nothing else that needs
 one.
 
-**Why:** TODO(Alex)
+**Why:**
+
+A domain is something I'm sure a developer needs to go through getting at least once in their professional or hobby life. Despite the always free rule, I believe this is one of the acceptable exceptions to make for something that is commo nto deal with in the developer world. This alos simplifies alot of the project development process for a yearly cost I'm willing to foot for the forseeable future. This also allows me to utilize and obtain CLoudflare experience as a professional with little exposure to it.
 
 ## Consequences
 
@@ -96,7 +98,7 @@ one.
   D1). Cloudflare's bot-blocking features must not challenge `mcbridge`,
   which isn't a browser (checked when A8 is built).
 - Long polls must be answered well within Cloudflare's 125 s
-  ([0009](0009-dashboard-on-node-http.md)).
+  ([0009](0009-dashboard-on-hono.md)).
 - `alexle.dev` also hosts the owner's portfolio and other projects, each
   on its own name. Anything on another name under it can set cookies for
   the whole domain, so the dashboard's cookies are host-only (0009). The
