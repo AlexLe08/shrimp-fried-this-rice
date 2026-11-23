@@ -151,8 +151,12 @@ the workflow, indexed in its `README.md`.
   separate local-dev application's token; two processes on one token
   double every reminder (README's warning). Don't `ssh` to the VM or
   restart the service: production changes only through a merged PR.
-- Free tiers only (Oracle Cloud Always Free, GitHub Actions). Never
-  configure or suggest anything that needs a payment method.
+- Free tiers only (Oracle Cloud Always Free, GitHub Actions, Cloudflare's
+  free plan). Never configure or suggest anything that needs a payment
+  method. The one exception is the owner's domain, `alexle.dev`, which
+  the owner pays for at Porkbun; the dashboard is
+  `shrimp-fried-rice.alexle.dev`
+  ([decision 0008](docs/decisions/0008-dashboard-hostname-and-https.md)).
 - CI's job id is `test` (`.github/workflows/ci.yml`); the `main` ruleset
   requires that check by name, so don't rename it. Don't add `paths:`
   filters to its triggers.

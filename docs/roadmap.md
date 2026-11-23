@@ -240,10 +240,11 @@ Later item), not a follow-up.
   owner's Why and acceptance). Two records, as a tunnel brings its own
   hostname and certificate, so the three D0 choices are two:
   [0008](decisions/0008-dashboard-hostname-and-https.md) serves the
-  dashboard at a free DuckDNS `duckdns.org` name (deSEC's `dedyn.io` has
-  suspended sign-ups), through Caddy on the VM with Let's Encrypt
-  (Cloudflare's tunnels need a bought domain or are for testing only;
-  Tailscale Funnel is in beta with unpublished limits), and
+  dashboard at `shrimp-fried-rice.alexle.dev`, on the owner's own domain
+  (bought at Porkbun, the one exception to free tiers only, DNS on
+  Cloudflare's free plan), through a Cloudflare Tunnel with no inbound
+  port on the VM (Caddy on the same name is the fallback; free names
+  were weighed first, and deSEC's has suspended sign-ups), and
   [0009](decisions/0009-dashboard-on-node-http.md) runs it in the bot on
   `node:http` with no framework, the helper long-polling (Hono the
   candidate to revisit at D2). Facts checked against each provider's
@@ -275,11 +276,10 @@ them ahead of items 5 and 6.
    ([Track D](plans/minecraft-ff14-features.md#track-d-web-dashboard)
    D0 and D1, moved up by the owner on 2026-11-22, with the rest of the
    Minecraft work, ahead of the collection tracker). The hostname and
-   HTTPS on free tiers only, Discord login, and a read-only reminders
-   page. D0's
-   choices are proposed as decisions 0008 and 0009 (Done above). D1
-   starts once the owner accepts them, and after the owner's one-time VM
-   setup (the DuckDNS name, Caddy, and ports 80 and 443). Then A8d to
+   HTTPS, Discord login, and a read-only reminders page. D0's choices are
+   proposed as decisions 0008 and 0009 (Done above). D1 starts once the
+   owner accepts them, and after the owner's one-time setup (the domain's
+   nameservers to Cloudflare, the tunnel and `cloudflared`). Then A8d to
    A8i: two-way chat, linking and pictures.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).

@@ -49,7 +49,7 @@ Ask for each before the step that needs it.
 3. **Discord webhook URL(s)** for the Minecraft channel(s), created by the owner in Server Settings → Integrations → Webhooks. These are secrets: they live only in the helper's config file, which A5 adds to `.gitignore` (`mcbridge*.json`), like `.env`.
 4. **For Lodestone news**: which region's Lodestone to follow (NA, EU, FR, DE, JP), which channel gets the posts, and which data center the group plays on (used to filter maintenance events). All are set at runtime with commands. The bot also needs the **Create Events** permission added to its role in the server.
 5. **For membership follow-ups**: the **Server Members Intent** switched on in the Discord Developer Portal for both the production and the dev application (Bot tab). This must be done **before** the code that requests it is merged; see Track E. Channels, roles and day counts are set at runtime with commands.
-6. **For the dashboard, when Track D starts**: the D0 decisions, including how the site gets HTTPS for free (see Track D). Proposed in decisions 0008 and 0009, for the owner to accept or change; then the `duckdns.org` label to register.
+6. **For the dashboard, when Track D starts**: the D0 decisions, including how the site gets HTTPS for free (see Track D). Proposed in decisions 0008 and 0009, for the owner to accept or change. The domain, `alexle.dev`, is bought (2026-11-23); its nameservers move to Cloudflare and the tunnel is set up by hand in D1.
 
 ---
 
@@ -374,7 +374,7 @@ What the dashboard hands over:
   "serverName": "Survival",
   "logPath": "",                                   // the one value filled in on the host (or by init)
   "webhooks": { "chat": "https://discord.com/api/webhooks/…", "alerts": "https://discord.com/api/webhooks/…" },
-  "bot": { "url": "https://<the dashboard's hostname>/minecraft", "secret": "…" }
+  "bot": { "url": "https://shrimp-fried-rice.alexle.dev/minecraft", "secret": "…" }
 }
 ```
 
@@ -383,7 +383,7 @@ Optional, as today: `crashReportsDir`, `ignorePatterns`, `avatars` (starting val
 #### Privacy
 
 - Posting in a bridge's channel is how a member opts in to their name and messages showing in game, announced once by the bot and in the channel's topic.
-- Chat passes through the VM in memory only: never stored, never logged. The console logs counts and errors, not text.
+- Chat passes through the VM in memory only: never stored, never logged. The console logs counts and errors, not text. On its way it also passes through Cloudflare's edge, which decrypts HTTPS before the tunnel carries it to the VM ([decision 0008](../decisions/0008-dashboard-hostname-and-https.md)).
 - Linking ties a Discord account to a Minecraft player, which 0005's reasoning avoided. Here only the player can create it, by acting on both sides. Unlinking, or the bot leaving the server, deletes it. It's stored in `bot.db` on the VM (decision 0007).
 
 #### Can be built now (before the dashboard)
@@ -798,13 +798,13 @@ One rule, in the conventions below: **command files stay thin.** Validation, per
 | Where it runs | Inside the bot process | It shares the one database connection and the live Discord client, which it needs for channel lists, refreshing the reminder status embed and creating events. |
 | Login | Discord OAuth2 (`identify`, `guilds`) | No passwords to store. Needs the application's client secret and a session secret in the VM's `.env`. |
 | Who can change what | The same rules as the commands | Manage Server for settings (or whatever Integrations grants); members edit only their own collection entries. Enforced on the server for every write. |
-| HTTPS and hostname | A free `<name>.duckdns.org` name from DuckDNS, with Caddy on the VM getting Let's Encrypt certificates ([decision 0008](../decisions/0008-dashboard-hostname-and-https.md), proposed) | Free only (CLAUDE.md): no bought domain, nothing that needs a payment method. Checked 2026-11-23: deSEC's `dedyn.io` has suspended registration, Cloudflare's named tunnels need a domain on Cloudflare and payment details, quick tunnels are for testing only ([Cloudflare: Quick Tunnels](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/), first checked 2026-11-20), and Tailscale Funnel is in beta with unpublished bandwidth limits. The record compares them all. The Discord OAuth2 redirect URL needs the stable hostname. |
+| HTTPS and hostname | `https://shrimp-fried-rice.alexle.dev`, on the owner's domain (bought at Porkbun, DNS on Cloudflare's free plan), through a Cloudflare Tunnel: no inbound port on the VM ([decision 0008](../decisions/0008-dashboard-hostname-and-https.md), proposed) | The domain is the one exception to free tiers only (CLAUDE.md). Checked 2026-11-23: Cloudflare's quick tunnels are for testing only ([Cloudflare: Quick Tunnels](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/), first checked 2026-11-20), deSEC's `dedyn.io` has suspended registration, and Tailscale Funnel is in beta with unpublished bandwidth limits. The record compares them all, with Caddy on the same name as the fallback. The Discord OAuth2 redirect URL needs the stable hostname. |
 | Pages | Rendered on the server, little JavaScript | Fits the project's no-build-step model. |
 | Libraries | None: `node:http`, `fetch` and `node:crypto` ([decision 0009](../decisions/0009-dashboard-on-node-http.md), proposed) | A web framework, a session store or an OAuth library is a runtime dependency (CLAUDE.md), the owner's decision. The record compares Hono and Fastify or Express, and names D2 as the point to revisit. |
 
 ### Suggested order when it starts
 
-- **D0. Decisions**, each a decision record: the hostname and HTTPS route (free only), proxy or tunnel, web framework or none. Proposed 2026-11-23 as two records, since a tunnel brings its own hostname and certificate: [0008](../decisions/0008-dashboard-hostname-and-https.md) (DuckDNS and Caddy) and [0009](../decisions/0009-dashboard-on-node-http.md) (`node:http` in the bot, long-polling for the helper).
+- **D0. Decisions**, each a decision record: the hostname and HTTPS route (free only), proxy or tunnel, web framework or none. Proposed 2026-11-23 as two records, since a tunnel brings its own hostname and certificate: [0008](../decisions/0008-dashboard-hostname-and-https.md) (`shrimp-fried-rice.alexle.dev` through a Cloudflare Tunnel) and [0009](../decisions/0009-dashboard-on-node-http.md) (`node:http` in the bot, long-polling for the helper).
 - **D1. Read-only site**: login, server picker, and pages that only display. With D1 now ahead of Track B, the first page is a server's reminders (they exist today), and the Minecraft bridge's pages follow in A8f. The collection grid (members by items) joins when Track B lands; it restores the spreadsheet view the group is used to.
 - **D2. Editing**: reminders, Lodestone subscriptions and modes, collection catalog and entries.
 - **D3. Minecraft**: two-way chat and linking ([A8](#discord-to-minecraft-chat-a8), A8d to A8i): the helper's endpoint, pairing, bridge settings, My Minecraft accounts. The bridge then reports to the bot, which gives the status and recent events page.

@@ -1,6 +1,6 @@
 # 0006: Discord to Minecraft chat goes through the bot, set up in the dashboard
 
-Status: Accepted · 2026-11-22
+Status: Accepted · 2026-11-22; superseded in part by 0008 (chat also passes through Cloudflare's edge, decrypted)
 
 ## Context
 

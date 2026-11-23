@@ -10,8 +10,9 @@ plan leaned towards running it inside the bot process, which shares the
 one database connection ([0004](0004-feature-storage-modules.md)) and the
 live Discord client (channel lists, the reminder status embed, the
 bridge's channel). A second process would need its own way to reach
-both. Caddy sits in front ([0008](0008-dashboard-hostname-and-https.md)),
-so the server speaks plain HTTP on `127.0.0.1`.
+both. A Cloudflare Tunnel sits in front
+([0008](0008-dashboard-hostname-and-https.md)): `cloudflared` on the VM
+connects to the server over plain HTTP on `127.0.0.1`.
 
 What D1 needs: Discord OAuth2 (`identify`, `guilds`), sessions,
 protection against cross-site requests, rate limiting, HTML escaping,
@@ -39,7 +40,7 @@ Options (versions checked 2026-11-23 in each project's `package.json`:
 ## Decision
 
 The dashboard and the helper's endpoint run in the bot process, on
-Node's `node:http`, listening on `127.0.0.1` behind Caddy. No web
+Node's `node:http`, listening on `127.0.0.1` behind the Cloudflare Tunnel. No web
 framework: OAuth2 uses `fetch`, sessions and secrets use `node:crypto`,
 and pages are server-rendered strings through one escaping helper. The
 helper talks to the bot by long-polling, so `ws` isn't added.
@@ -52,7 +53,9 @@ helper talks to the bot by long-polling, so `ws` isn't added.
   deploy's `npm ci`.
 - The security-relevant pieces are ours and need their own tests: HTML
   escaping, session cookies (`HttpOnly`, `Secure`, `SameSite=Lax`, a
-  random id or an HMAC), rejecting cross-site form posts by `Origin`,
+  random id or an HMAC, and named with the `__Host-` prefix so browsers
+  accept them only from this exact hostname: other names under
+  `alexle.dev` host the owner's other projects), rejecting cross-site form posts by `Origin`,
   OAuth2's `state` check, constant-time secret comparison, and rate
   limits. They live in `src/core/` (or a `src/dashboard/` area) as plain
   functions, tested like the rest.
@@ -68,12 +71,12 @@ helper talks to the bot by long-polling, so `ws` isn't added.
   the dashboard and the relay, as it already is for the first two. A slow
   page could delay the scheduler's loop; pages stay small and read from
   SQLite, which is fast and synchronous.
-- Long-polling holds one open request per paired helper. Caddy's proxy
-  has no read or write timeout by default (from a summary of its docs,
-  checked in D1), and the bot answers each poll within a fixed time,
-  below Node's own server timeouts (`requestTimeout`, 300 s by default
-  from memory, also checked in D1), so nothing in between closes it as
-  idle.
+- Long-polling holds one open request per paired helper. Cloudflare's
+  proxy gives up on an answer after 125 s (error 524), so the bot answers
+  each poll within about 60 s, with or without a message, which also
+  stays below Node's own server timeouts (`requestTimeout`, 300 s by
+  default from memory, checked in D1). Rate limits key on the visitor's
+  address from Cloudflare's header, not the socket's (0008).
 - Worth revisiting at D2 (editing: forms, validation, more routes), when
   hand-written routing and form handling grow. Hono is the first
   candidate then, as a new record superseding this one.
