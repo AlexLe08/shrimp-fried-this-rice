@@ -58,7 +58,9 @@ OAuth2 uses `fetch`. Sessions use Hono's cookie helpers and
 isn't added. These two packages are the runtime dependencies the owner
 approves for the dashboard (CLAUDE.md).
 
-**Why:** TODO(Alex)
+**Why:**
+
+Hono is a familiar name in development and given its ridiculously fast and lightweight footprint, It seemed the most interesting and best way to handle this project. Personally I wanted a name that was familiar with recruiters and companies that I could put in my resume as something I have experience in. Also considered node:http but ultimately it would have given more work to do at this time. Its certainly something I will use in another project.
 
 ## Consequences
 
@@ -71,9 +73,9 @@ approves for the dashboard (CLAUDE.md).
 - Routing, cookie signing, escaping and the forged-post check come from
   Hono, tested by its users, not written here. What's still ours, and
   tested: the OAuth2 flow and its `state` check, sessions (in
-  `bot.db`, or a signed cookie; decided in D1), constant-time secret
-  comparison for the helper, the rate limiter, and which Discord servers
-  a member may see.
+  `bot.db`, or a signed cookie; decided in D1), the helper's encrypted
+  messages (below), the rate limiter, and which Discord servers a member
+  may see (below).
 - Other names under `alexle.dev` host the owner's other projects, and
   count as the same site as the dashboard. So session cookies are
   `HttpOnly`, `Secure`, `SameSite=Lax` and named with the `__Host-`
@@ -89,6 +91,29 @@ approves for the dashboard (CLAUDE.md).
   let its form post through. The middleware covers the browser pages
   only: `mcbridge` isn't a browser and sends neither header, so the
   helper's endpoint takes JSON and its own secret instead.
+- Authorization is deny-by-default, as one missed check on one route
+  would show a member another server's reminders or bridge settings,
+  the dashboard's likeliest real security bug. Every route under a
+  server's path goes through one middleware that checks the member is
+  in that server (with the bot) and holds the permission the page needs,
+  before any handler runs. A route outside it must be marked public
+  explicitly. Tests call every route logged out and as a member of a
+  different server, and a test fails if a route is neither guarded nor
+  marked public (listing the app's routes; how, checked in D1).
+- The helper's traffic is encrypted end to end, so Cloudflare, which
+  decrypts HTTPS at its edge (0008), never sees relayed chat or the
+  bridge's secret. Each request and response body is sealed with
+  AES-256-GCM from `node:crypto` (no dependency on either end), under a
+  key derived from the pairing secret with HKDF. GCM authenticates as
+  well as encrypts, so one mechanism proves the request came from the
+  paired helper and hides its content; the secret itself never crosses
+  the wire. Each sealed body carries a timestamp and a random nonce, and
+  the bot refuses one outside a 5-minute window or seen before in it, so
+  a captured request can't be replayed. The bridge's id travels in the
+  clear, bound into the seal (GCM's additional data) so it can't be
+  swapped. Cloudflare still sees that a helper connects, when, how much,
+  and from which address. HTTPS stays on underneath. Details are worked
+  out in A8d (A8 in the plan).
 - Handlers stay thin: they call the same plain functions the slash
   commands call (Track D's convention), so Hono stays at the edge and
   could be swapped without touching the logic.

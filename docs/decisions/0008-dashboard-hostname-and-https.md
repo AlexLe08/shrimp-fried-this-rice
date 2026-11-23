@@ -72,13 +72,16 @@ A domain is something I'm sure a developer needs to go through getting at least 
   Cloudflare's DDoS protection sits in front. Nothing on the VM handles
   certificates.
 - Requests are decrypted at Cloudflare's edge before the tunnel carries
-  them to the VM: page views, login cookies, relayed Minecraft chat and
-  the helper's secret. Caddy instead would keep it to the VM. 0006 said
-  chat passes through the VM in memory only, and that the VM gains its
-  first inbound endpoint; when this record is accepted, 0006's status
-  becomes "superseded in part by [0008](0008-dashboard-hostname-and-https.md)
-  (reached through a Cloudflare Tunnel with no inbound port; chat also
-  passes through Cloudflare's edge, decrypted)", in the index too.
+  them to the VM: the dashboard's pages and login cookies. Caddy instead
+  would keep them to the VM. The helper's traffic is encrypted end to
+  end on top of HTTPS ([0009](0009-dashboard-on-hono.md)), so relayed
+  chat and the bridge's secret stay unreadable at the edge; Cloudflare
+  sees only that a helper connects, when and how much. 0006 said the VM
+  gains its first inbound endpoint; when this record is accepted, 0006's
+  status becomes "superseded in part by
+  [0008](0008-dashboard-hostname-and-https.md) (reached through a
+  Cloudflare Tunnel with no inbound port; the helper's traffic is
+  encrypted end to end across it)", in the index too.
 - Setup is by hand, once, outside the deploy job. Done by the owner on
   2026-11-23: the domain added to Cloudflare (Porkbun's four parking
   records deleted) and its nameservers moved from Porkbun, now Active,

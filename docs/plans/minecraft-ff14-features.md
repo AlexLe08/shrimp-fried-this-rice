@@ -277,14 +277,14 @@ What this costs, accepted by the owner:
 
 #### The helper's connection to the bot
 
-- **Pairing**: in the dashboard, "Add Minecraft server" makes the bridge's webhooks (the bot has Manage Webhooks) and a random 32-byte secret. Then it offers a ready-made `mcbridge.json`: the endpoint, the secret, the webhooks and the server's name, with `logPath` left to fill in. The secret is shown once and stored only as a hash in `bot.db`. "Regenerate" in the dashboard revokes it.
+- **Pairing**: in the dashboard, "Add Minecraft server" makes the bridge's webhooks (the bot has Manage Webhooks) and a random 32-byte secret. Then it offers a ready-made `mcbridge.json`: the endpoint, the secret, the webhooks and the server's name, with `logPath` left to fill in. The secret is shown once. `bot.db` keeps the keys derived from it (below), not the secret itself, as checking and decrypting the helper's messages needs them: they're as sensitive as the webhook tokens already stored there. "Regenerate" in the dashboard revokes it.
 - **Transport**: the helper connects out over HTTPS, so the Minecraft host opens no port. Long-polling on the bot's Hono server: the helper keeps one request open, and the bot answers it when a message arrives, within about 50 s. A WebSocket would need the `ws` package as well ([decision 0009](../decisions/0009-dashboard-on-hono.md), proposed).
 - **Bot to helper**: chat to relay, the bridge's settings (prefix, colour, server name, pictures), linked players' pictures, and link results. **Helper to bot**: server up or down (from the log), `!link` lines, and a player joining (so the bot can look up a linked player's Discord picture).
 - **Messages while the helper is away**: the bot holds a chat message for up to 30 s, so one that arrives between two polls, or while the helper reconnects, isn't lost. After that, or while the server is down, it's dropped. While **the bot** is down or restarting for a deploy, it receives nothing, and Discord doesn't replay missed messages, so those are simply not relayed.
 - **Settings while the VM is away**: the helper keeps the bridge's last settings (server name, prefix, colour, default and per-player pictures) in a cache file beside the config, so Minecraft to Discord posts keep their name and pictures while the bot is down. Linked players' pictures are **not** cached: links stay on the VM only (0007), so while the bot is down a linked player gets the server's default. The dashboard's server name wins over the config's `serverName`, which is only the first value and the fallback before the first connection.
 - **One helper per bridge**: connecting gives the helper a session id, a lease that lapses after 60 s without a poll (counted from the end of the last one). A new connection with the same secret takes the lease over, and the old session's next request is answered 409, after which that helper stops relaying until it's restarted, with one alert ("another mcbridge took over this bridge"). So a helper restarted after a crash takes over at once, and two copies can't both relay (`CASESTUDY.md` §2 again): the older one stops.
 - **Retries**: on a network error or a 5xx, the helper backs off (1 s, doubling to 60 s), and it honours a 429's `retry_after`. A 401 or 403 means the secret was regenerated or the bridge removed, so it stops calling the bot until restarted, with one alert, instead of polling in a loop.
-- **Endpoint safety**: secrets are compared in constant time, and each bridge's requests are rate-limited. It shares the dashboard's HTTPS and has no login session of its own: the secret is the only credential.
+- **Endpoint safety**: every request and response body is sealed with AES-256-GCM (`node:crypto` on both ends, so `mcbridge` stays dependency-free) under a key derived from the secret with HKDF ([decision 0009](../decisions/0009-dashboard-on-hono.md)). That proves a request came from the paired helper and hides it from Cloudflare's edge, which decrypts HTTPS (decision 0008); the secret itself never crosses the wire. A sealed body carries a timestamp and a random nonce: the bot refuses one outside a 5-minute window or already seen in it (replay), and answers a helper whose clock is off with its own time, so the helper can correct for it. The bridge's id is sent in the clear and bound into the seal. Each bridge's requests are rate-limited before anything is decrypted. It shares the dashboard's HTTPS and has no login session of its own: the secret is the only credential.
 
 #### Writing into Minecraft: options
 
@@ -359,7 +359,7 @@ A display name proves nothing (anyone can set their nickname to `Steve`), so the
 
 A new migration, additive. Before it's written, the tables are worked out in the PR that adds them. Roughly:
 
-- `minecraft_bridges`: guild, chat and alerts channels, webhook ids and tokens, secret hash, server name, prefix, colour, default picture, allowed role, announced channel.
+- `minecraft_bridges`: guild, chat and alerts channels, webhook ids and tokens, keys derived from the secret, server name, prefix, colour, default picture, allowed role, announced channel.
 - `minecraft_bridge_pictures`: bridge, player name, picture.
 - `minecraft_links`: bridge, Discord user, player name, UUID, chosen picture.
 
@@ -383,7 +383,7 @@ Optional, as today: `crashReportsDir`, `ignorePatterns`, `avatars` (starting val
 #### Privacy
 
 - Posting in a bridge's channel is how a member opts in to their name and messages showing in game, announced once by the bot and in the channel's topic.
-- Chat passes through the VM in memory only: never stored, never logged. The console logs counts and errors, not text. On its way it also passes through Cloudflare's edge, which decrypts HTTPS before the tunnel carries it to the VM ([decision 0008](../decisions/0008-dashboard-hostname-and-https.md)).
+- Chat passes through the VM in memory only: never stored, never logged. The console logs counts and errors, not text. On its way it crosses Cloudflare's edge, which decrypts HTTPS before the tunnel carries it to the VM ([decision 0008](../decisions/0008-dashboard-hostname-and-https.md)), but the helper's messages are encrypted end to end on top ([decision 0009](../decisions/0009-dashboard-on-hono.md)), so Cloudflare sees only that a helper connects, when and how much.
 - Linking ties a Discord account to a Minecraft player, which 0005's reasoning avoided. Here only the player can create it, by acting on both sides. Unlinking, or the bot leaving the server, deletes it. It's stored in `bot.db` on the VM (decision 0007).
 
 #### Can be built now (before the dashboard)
