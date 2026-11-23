@@ -262,21 +262,28 @@ to ask the owner for, and which facts are still unverified. The owner put
 them ahead of items 6 and 7.
 
 1. **Back up `bot.db`** (from reviewing decisions 0001 to 0009 for
-   serious consequences, 2026-11-23). It has no backup today: one file on
+   serious consequences; put first by the owner, 2026-11-23). It has no backup today: one file on
    the VM's disk, and soon it holds bridges' webhook tokens and keys and
    players' links as well as every server's reminders. Losing the VM, a
    bad migration or a bug that deletes rows would lose all of it, and
    every server would have to set everything up again.
-   - On the VM: `core/database.ts` saves a snapshot with SQLite's online
-     backup (`db.backup()` in `better-sqlite3`) before applying pending
-     migrations, and a scheduled check saves one daily, keeping the last
-     few. That covers a bad migration and lost rows, and makes a
-     decision 0003 reset reversible.
+   - On the VM: `core/database.ts` saves a snapshot before applying
+     pending migrations, and a scheduled check saves one daily, keeping
+     the last few. The database opens and migrates synchronously at
+     import, so the snapshot is synchronous too (`VACUUM INTO`, not
+     `better-sqlite3`'s `db.backup()`, which returns a promise), and
+     skipped for the tests' `:memory:` database. That covers a bad
+     migration and lost rows, and a decision 0003 reset up to the last
+     daily snapshot.
    - Off the VM: an encrypted copy, as the file will hold secrets. Where
      (Oracle's Always Free Object Storage, from memory) and how it's
-     encrypted are checked and decided first, likely as a decision record.
-   - `bot.db` and its backups readable only by the bot's service user
-     (`chmod 600`), and a restore procedure in
+     encrypted are checked and decided first, likely as a decision
+     record: it probably needs a tool or a runtime dependency, the
+     owner's decision.
+   - `bot.db`, its `-wal` and `-shm` files and the snapshots readable
+     only by the bot's service user: `UMask=0077` in the systemd unit,
+     so files created later stay that way, and a one-off `chmod 600` for
+     those already there. And a restore procedure in
      `ORACLE_CLOUD_DEPLOYMENT.md`, tried once.
 2. **Minecraft bridge, what's left** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
    The first version, crash reports and player avatars are done and tested
@@ -338,9 +345,10 @@ runtime dependency is the owner's decision.
   deployed without deleting the database, or any drift, makes the bot
   exit and the deploy's login check fail, instead of the first query
   failing later while the bot looks healthy (decisions 0002 and 0003).
-- `__resetForTests` clears every table SQLite lists (`sqlite_master`)
-  instead of a hand-kept list, so a new table can't be missed and leak
-  state between tests (decision 0004).
+- `__resetForTests` clears every table SQLite lists (`sqlite_master`,
+  leaving out its internal `sqlite_%` tables) instead of a hand-kept
+  list, so a new table can't be missed and leak state between tests
+  (decision 0004).
 - The old `reminders.db` and its `-wal`/`-shm` files on the VM, left
   from the rename (decision 0004), deleted by the owner by hand.
 - An alert from `mcbridge` when the server has started but no line is
