@@ -371,8 +371,8 @@ Later item), not a follow-up.
   section 13, for the owner). Checked against Discord's OAuth2 docs
   (2026-11-24): the token exchange is a form post with HTTP Basic client
   credentials, and Discord recommends `state`. Set up by the owner on
-  2026-11-24 (section 13), and logging in through Discord worked on
-  the live dashboard. The first try showed Discord's "Invalid OAuth2
+  2026-11-24 (section 13), and logging in through Discord and logging
+  out both worked on the live dashboard. The first try showed Discord's "Invalid OAuth2
   redirect_uri" although the bot sent the right one: the redirect wasn't
   yet saved on the production application. Section 13 now says so.
   Whether a browser keeps a `Secure` cookie on `http://127.0.0.1` for
