@@ -90,7 +90,11 @@ the workflow, indexed in its `README.md`.
   any area may use), `reminders/` and `ffxiv/` (later `minecraft/`),
   each holding its own commands, events, embeds and `storage.ts`.
   `dashboard/` holds the web dashboard, served on `127.0.0.1` behind
-  `cloudflared` (decisions 0008 and 0009).
+  `cloudflared` (decisions 0008 and 0009). Every route it serves is
+  listed in `ROUTE_ACCESS` (`src/dashboard/app.ts`) as public, signed-in
+  or server, which a test checks; a page about one server goes under
+  `/servers/:guildId`, where the guard checks Manage Server before its
+  handler runs.
   `src/index.ts` and `src/deploy-commands.ts` stay at the top of `src/`:
   the VM's systemd unit starts `./src/index.ts`, so moving it would leave
   the bot down after the deploy.
