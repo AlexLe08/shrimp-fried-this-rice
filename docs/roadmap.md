@@ -409,8 +409,9 @@ Later item), not a follow-up.
   unchanged). Channel names come from the bot's cache (no Discord call);
   one it can't see shows by its ID. Times are worked out on the server,
   as the CSP allows no scripts, with the exact UTC time as a tooltip.
-  No new route, so `ROUTE_ACCESS` and the guard are unchanged. Not yet
-  tried on the live dashboard.
+  No new route, so `ROUTE_ACCESS` and the guard are unchanged. Tried by
+  the owner on the live dashboard on 2026-11-24 after the deploy: a
+  reminder created in Discord showed on the server's page.
 
 ## Next up
 
