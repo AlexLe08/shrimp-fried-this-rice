@@ -416,7 +416,7 @@ sudo systemctl restart cloudflared
 
 ## 13. Dashboard login: one-time setup
 
-The dashboard's login is Discord OAuth2 (how it behaves is in the README's Production Deployment). It needs section 12 done first, and stays off until both `.env` values below are set.
+The dashboard's login is Discord OAuth2 (how it behaves is in the README's Production Deployment). It needs section 12 done first, and stays off until both `.env` values below are set. These steps were followed on 2026-11-24.
 
 1. **The redirect:** in the [Developer Portal](https://discord.com/developers/applications), the **production** application → OAuth2 → Redirects → Add Redirect: `https://shrimp-fried-rice.alexle.dev/auth/callback`, then Save Changes. Discord sends a login back only to a URL listed there.
 2. **The client secret:** on the same page, Client Secret → Reset Secret, and copy it (it's shown once). It's a secret like the bot's token: with it and the client ID, anyone can complete logins as the application.
@@ -434,6 +434,8 @@ The dashboard's login is Discord OAuth2 (how it behaves is in the README's Produ
 
    `DASHBOARD_URL` is the address a browser uses, with no path. If the log says `Dashboard login is off: …`, one value is missing or malformed.
 4. **Check:** open `https://shrimp-fried-rice.alexle.dev`, choose **Log in with Discord**, authorize, and the page names you. **Log out** returns it to the login link.
+
+   If Discord's page says **Invalid OAuth2 redirect_uri**, the redirect in step 1 doesn't exactly match what the bot sends, or isn't on this application. The address bar on Discord's page shows both: `client_id` must be the Application ID of the application you edited, and `redirect_uri` (decoded) must be listed there exactly, with no trailing `/`, and saved. That was the cause on 2026-11-24: the redirect hadn't been saved on the production application yet.
 
 **Replacing the secret** (it leaked, or was reset): reset it as in step 2, put the new one in `.env` and restart the bot. Sessions already started stay signed in; they don't depend on the secret.
 
