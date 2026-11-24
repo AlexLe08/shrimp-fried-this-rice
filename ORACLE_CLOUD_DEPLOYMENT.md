@@ -120,7 +120,7 @@ DISCORD_TOKEN=your-production-bot-token-here
 DISCORD_CLIENT_ID=your-production-application-client-id
 ```
 
-Two more, `BACKUP_UPLOAD_URL` and `BACKUP_AGE_RECIPIENT`, turn on encrypted copies of `bot.db` off the VM; [section 10](#10-off-vm-backups-one-time-setup) sets them up. `DASHBOARD_PORT` turns on the dashboard; [section 12](#12-the-dashboard-cloudflare-tunnel-one-time-setup) sets it up.
+Two more, `BACKUP_UPLOAD_URL` and `BACKUP_AGE_RECIPIENT`, turn on encrypted copies of `bot.db` off the VM; [section 10](#10-off-vm-backups-one-time-setup) sets them up. `DASHBOARD_PORT` turns on the dashboard; [section 12](#12-the-dashboard-cloudflare-tunnel-one-time-setup) sets it up. `DISCORD_CLIENT_SECRET` and `DASHBOARD_URL` turn on its login; [section 13](#13-dashboard-login-one-time-setup) sets them up.
 
 Save with **Ctrl+O**, **Enter**, then exit with **Ctrl+X**.
 
@@ -410,6 +410,37 @@ The dashboard is served at `https://shrimp-fried-rice.alexle.dev` through a Clou
 ```bash
 sudo apt-get update && sudo apt-get install --only-upgrade cloudflared
 sudo systemctl restart cloudflared
+```
+
+---
+
+## 13. Dashboard login: one-time setup
+
+The dashboard's login is Discord OAuth2 (how it behaves is in the README's Production Deployment). It needs section 12 done first, and stays off until both `.env` values below are set.
+
+1. **The redirect:** in the [Developer Portal](https://discord.com/developers/applications), the **production** application → OAuth2 → Redirects → Add Redirect: `https://shrimp-fried-rice.alexle.dev/auth/callback`, then Save Changes. Discord sends a login back only to a URL listed there.
+2. **The client secret:** on the same page, Client Secret → Reset Secret, and copy it (it's shown once). It's a secret like the bot's token: with it and the client ID, anyone can complete logins as the application.
+3. **On the VM,** add both to `.env` and restart the bot:
+
+   ```env
+   DISCORD_CLIENT_SECRET=...
+   DASHBOARD_URL=https://shrimp-fried-rice.alexle.dev
+   ```
+
+   ```bash
+   sudo systemctl restart discordbotshrimp
+   journalctl -u discordbotshrimp -n 20   # no "Dashboard login is off: …" line
+   ```
+
+   `DASHBOARD_URL` is the address a browser uses, with no path. If the log says `Dashboard login is off: …`, one value is missing or malformed.
+4. **Check:** open `https://shrimp-fried-rice.alexle.dev`, choose **Log in with Discord**, authorize, and the page names you. **Log out** returns it to the login link.
+
+**Replacing the secret** (it leaked, or was reset): reset it as in step 2, put the new one in `.env` and restart the bot. Sessions already started stay signed in; they don't depend on the secret.
+
+**Signing everyone out** (after a leak, say): run this in the project folder on the VM. It deletes every session, so every browser's cookie stops working:
+
+```bash
+node -e "const db = require('better-sqlite3')('bot.db', { fileMustExist: true }); console.log(db.prepare('DELETE FROM dashboard_sessions').run().changes, 'sessions ended'); db.close();"
 ```
 
 ---

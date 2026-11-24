@@ -348,7 +348,31 @@ Later item), not a follow-up.
   keeps only their SHA-256, so a snapshot or off-VM copy can't sign
   anyone in. A session lasts 7 days from login, a user keeps at most 10,
   and expired ones are deleted when anyone logs in (until then they sign
-  no one in). Nothing uses them yet: Discord login is the next part.
+  no one in). Discord login uses them (below).
+- **Dashboard login with Discord** (2026-11-24, third part of D1).
+  `/login`, `/auth/callback` and `POST /logout`, and a home page that
+  says who is signed in. OAuth2 with `identify` only; the `state` is
+  kept in a 10-minute `__Host-` cookie and compared in constant time, so
+  a callback from a login another browser started is refused. Discord's
+  token is used once, for `/users/@me`, then revoked. The session cookie
+  is `__Host-session` (`HttpOnly`, `Secure`, `SameSite=Lax`), and a new
+  login ends the browser's earlier session. Hono's CSRF check, given the
+  exact public origin and `Sec-Fetch-Site: same-origin`, guards form
+  posts; Hono's security headers on every response, with
+  `Referrer-Policy: same-origin` (its default, `no-referrer`, makes
+  browsers send `Origin: null` on the dashboard's own form posts, from
+  review), a CSP allowing nothing but form posts to the dashboard, and
+  `Cache-Control: no-store`. Logins are capped at 30 a minute for the
+  whole dashboard, and stop until Discord's `Retry-After` after a 429:
+  anyone can start one, and Discord blocks an IP after 10,000 refused
+  requests in 10 minutes (its rate limit docs, 2026-11-24), which would
+  cut the bot off too. Off without
+  `DISCORD_CLIENT_SECRET` and `DASHBOARD_URL` (`ORACLE_CLOUD_DEPLOYMENT.md`
+  section 13, for the owner). Checked against Discord's OAuth2 docs
+  (2026-11-24): the token exchange is a form post with HTTP Basic client
+  credentials, and Discord recommends `state`. Not yet tried against
+  Discord: tested with a fake Discord only. Whether a browser keeps a
+  `Secure` cookie on `http://127.0.0.1` for local login isn't checked.
 
 ## Next up
 
@@ -379,9 +403,13 @@ them ahead of items 5 and 6.
    HTTPS, Discord login, and a read-only reminders page. D0 is done:
    decisions 0008 and 0009 (Done above). The domain is on Cloudflare and
    the tunnel exists (2026-11-23, asking for no payment method). D1's web
-   server is done and reachable through the tunnel (Done above). Left:
-   login (sessions in `bot.db`, the owner's call on 2026-11-24), the
-   server picker and the reminders page. Then A8d to A8i:
+   server is done and reachable through the tunnel, and login with
+   Discord is done (Done above). Left: the server picker, guarded per
+   server (decision 0009's deny-by-default middleware, with the test
+   that fails for a route neither guarded nor marked public, arriving
+   with the first guarded route), the reminders page, and rate limiting
+   per visitor (keyed on Cloudflare's client-IP header; logins already
+   have a cap for the whole dashboard). Then A8d to A8i:
    two-way chat, linking and pictures.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
