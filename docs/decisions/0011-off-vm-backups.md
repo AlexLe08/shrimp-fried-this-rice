@@ -65,14 +65,22 @@ policy deletes copies older than 60 days.
   `@noble`/`@scure` packages, in the implementing PR. It's at 0.x.
   Its format is age v1, so if it's ever dropped, copies still decrypt
   with the `age` CLI and the bot could switch to the CLI.
-- Someone who takes over the VM gets the PAR's URL and the public key:
-  they can upload junk under new names (costing storage, capped by the
-  free 20 GB and the 60-day lifecycle) but can't list, read (listing is
-  denied; whether a write PAR can read an object by name wasn't
-  confirmed, and the copies are encrypted either way), delete, or
-  overwrite a copy younger than 30 days. Whether a write-only PAR may
+- Someone who takes over the VM gets the PAR's URL and the public key.
+  They can't list or delete copies, or overwrite one younger than 30
+  days. Whether a write PAR can read an object by name wasn't confirmed;
+  the copies are encrypted either way. Whether a write-only PAR may
   overwrite an object at all isn't stated in the docs; the retention
-  rule blocks it regardless, and every copy has a new name.
+  rule blocks it regardless.
+- They can upload junk under new names until the free 20 GB is full,
+  after which real copies fail to upload. The junk is under the same
+  30-day retention rule, so the owner gets rid of it by deleting the PAR,
+  removing the rule, deleting the junk and adding the rule back: another
+  reason the rule stays unlocked.
+- Each upload attempt uses a new object name (the snapshot's time plus
+  the attempt's), as the retention rule refuses a second `PUT` to a name
+  for 30 days: a retry after a timeout whose upload had in fact reached
+  Oracle would otherwise fail for that whole time. A lost response can
+  leave two copies of one snapshot, which costs nothing that matters.
 - The retention rule stays unlocked: locking is irreversible ("not even
   a tenancy administrator or Oracle Support can delete a locked rule"),
   which would make the 30 days permanent. Lifecycle can't delete objects
@@ -90,13 +98,19 @@ policy deletes copies older than 60 days.
   bot's token. It stops working if the user who made it is deleted or
   loses permission; it's renewed by making a new one and replacing the
   URL. `ORACLE_CLOUD_DEPLOYMENT.md` records the steps.
-- A failed upload (Oracle down, a revoked PAR) is logged and retried
-  later, like a failed daily snapshot, and never stops the bot. Nobody
+- A failed upload (Oracle down, a revoked PAR) is logged and never stops
+  the bot. It's retried at most hourly, like a failed daily snapshot, but
+  tracked on its own: the daily check skips once that day's snapshot
+  exists, so the upload keeps its own record of the newest snapshot it
+  has sent, kept across restarts (a marker file beside the snapshots, for
+  instance), and sends the newest one not yet sent. The upload is the
+  first network call in a scheduled check, so it takes the check's abort
+  signal: shutdown stops it rather than waiting on a slow Oracle. Nobody
   reads the journal unprompted, so a PAR that stopped working could go
   unnoticed until a restore: alerting on failed backups is a later
   question, not part of this.
 - One upload a day is about 30 requests a month of the 50,000, and the
-  copies (60 at most) are a tiny part of the 20 GB. A local dev bot
+  copies (about 60) are a tiny part of the 20 GB. A local dev bot
   without the two `.env` values skips uploading.
 - Worth revisiting: if Oracle's Always Free Object Storage changes, if
   the database outgrows uploading whole copies, or if a copy outside
