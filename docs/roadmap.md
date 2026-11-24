@@ -462,7 +462,9 @@ Later item), not a follow-up.
   pairing secret, its two keys (HKDF-SHA256, one per direction),
   sealing and opening with AES-256-GCM, checking an envelope before
   anything is looked up, and a replay guard (a 5-minute window either
-  side, each nonce once). Worked out here: the IV doubles as the nonce;
+  side, each nonce once, and nothing sealed before the bot started, so
+  a request captured before a deploy can't be replayed after it, though
+  nonces live only in memory). Worked out here: the IV doubles as the nonce;
   the tag also covers the route and, for a response, the request it
   answers, so a captured reply can't answer a later request; the time
   is checked apart from opening, so the bot can answer a skewed clock
@@ -506,8 +508,8 @@ them ahead of items 5 and 6.
    page and rate limits, all tried on the live dashboard. Left: A8d to
    A8i, two-way chat, linking and pictures. A8d's storage and the
    sealing of the helper's messages are done (Done above); next,
-   pairing and the long-poll route, which must make a request replayed
-   just after a restart harmless (the plan's "Endpoint safety").
+   pairing and the long-poll route, with a limit on a request body's
+   size before its envelope is read (the plan's "Endpoint safety").
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the

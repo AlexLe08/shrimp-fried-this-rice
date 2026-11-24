@@ -1,3 +1,4 @@
+import { createCipheriv, randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
 	deriveKeys,
@@ -178,6 +179,34 @@ describe('seal and open', () => {
 		it('a box shorter than a tag', () => {
 			expect(open(keys, 'request', POLL, { ...sealed, box: 'AAAA' })).toEqual({ ok: false, reason: 'malformed' });
 		});
+
+		// Only a bug on the sending end seals these, so they're sealed by hand
+		// here, with the additional data written out separately from seal.ts:
+		// a change to its layout fails this too.
+		function sealRaw(plaintext: string): Envelope {
+			const iv = randomBytes(12);
+			const cipher = createCipheriv('aes-256-gcm', keys.request, iv, { authTagLength: 16 });
+			const ivText = iv.toString('base64url');
+			cipher.setAAD(Buffer.from(JSON.stringify(['mcbridge', 1, 'request', BRIDGE, 'poll', null, ivText])));
+			const box = Buffer.concat([cipher.update(plaintext), cipher.final(), cipher.getAuthTag()]);
+			return { v: 1, bridge: BRIDGE, iv: ivText, box: box.toString('base64url') };
+		}
+
+		it('opens a hand-sealed body, so the additional data is as written here', () => {
+			expect(open(keys, 'request', POLL, sealRaw(`{"t":${NOW},"m":"hi"}`))).toMatchObject({ ok: true, message: 'hi' });
+		});
+
+		it.each([
+			['plaintext that is not JSON', 'not json'],
+			['a body that is not an object', `[${NOW}]`],
+			['a body of null', 'null'],
+			['no time', '{"m":"hi"}'],
+			['a time that is not a whole number', `{"t":${NOW}.5}`],
+			['a time that is not a number', `{"t":"${NOW}"}`],
+			['a time past safe integers', '{"t":9007199254740993}'],
+		])('%s, even under a valid tag', (_, plaintext) => {
+			expect(open(keys, 'request', POLL, sealRaw(plaintext))).toEqual({ ok: false, reason: 'malformed' });
+		});
 	});
 });
 
@@ -207,15 +236,21 @@ describe('parseEnvelope', () => {
 });
 
 describe('ReplayGuard', () => {
+	it('refuses as stale anything sealed before it was made, so a restart lets no capture back in', () => {
+		const guard = new ReplayGuard(NOW);
+		expect(guard.check('before', NOW - 1, NOW + 1000)).toBe('stale');
+		expect(guard.check('at start', NOW, NOW + 1000)).toBe('ok');
+	});
+
 	it('accepts a nonce once, then refuses it as replayed', () => {
-		const guard = new ReplayGuard();
+		const guard = new ReplayGuard(0);
 		expect(guard.check('a', NOW, NOW)).toBe('ok');
 		expect(guard.check('a', NOW, NOW + 1000)).toBe('replayed');
 		expect(guard.check('b', NOW, NOW + 1000)).toBe('ok');
 	});
 
 	it('accepts a time up to 5 minutes either side, and refuses one further', () => {
-		const guard = new ReplayGuard();
+		const guard = new ReplayGuard(0);
 		expect(guard.check('past', NOW - MAX_CLOCK_SKEW_MS, NOW)).toBe('ok');
 		expect(guard.check('future', NOW + MAX_CLOCK_SKEW_MS, NOW)).toBe('ok');
 		expect(guard.check('too old', NOW - MAX_CLOCK_SKEW_MS - 1, NOW)).toBe('stale');
@@ -223,13 +258,13 @@ describe('ReplayGuard', () => {
 	});
 
 	it('refuses a replay as stale once the window has passed, after forgetting its nonce', () => {
-		const guard = new ReplayGuard();
+		const guard = new ReplayGuard(0);
 		guard.check('a', NOW, NOW);
 		expect(guard.check('a', NOW, NOW + MAX_CLOCK_SKEW_MS + 1)).toBe('stale');
 	});
 
 	it('forgets nonces that would be stale anyway, at most once a minute', () => {
-		const guard = new ReplayGuard();
+		const guard = new ReplayGuard(0);
 		guard.check('old', NOW, NOW);
 		guard.check('ahead', NOW + MAX_CLOCK_SKEW_MS, NOW);
 		expect(guard.__sizeForTests()).toBe(2);

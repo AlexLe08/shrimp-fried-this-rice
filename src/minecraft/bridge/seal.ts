@@ -160,16 +160,30 @@ function decodeBase64url(text: string): Buffer | undefined {
  * Refuses a message whose time is more than MAX_CLOCK_SKEW_MS from the
  * receiver's clock, or whose nonce was already seen in that window, so a
  * captured request can't be sent again. A nonce is remembered only until its
- * message would be refused as stale anyway. Memory only: after a restart, a
- * request captured in the 5 minutes before it opens once more, so the
- * endpoint's routes must make that harmless (the plan's A8d).
+ * message would be refused as stale anyway.
+ *
+ * Nonces are kept in memory only, so a restart (every deploy) forgets them.
+ * So a message sealed before the guard was made is stale too: a request
+ * captured before a restart can't be replayed after it. A helper that sealed
+ * one just before gets the bot's time in the sealed answer and seals again.
+ *
+ * If the clock steps back (an NTP correction), a nonce already forgotten can
+ * fall inside the window again and be accepted once more. Rare, and holding
+ * the clock at the latest time seen would instead refuse every request after
+ * a wrong step forward, so it's accepted.
  */
 export class ReplayGuard {
 	#seen = new Map<string, number>();
 	#nextPruneAt = 0;
+	readonly #notBefore: number;
+
+	/** `startedAt`: when this process started, so nothing sealed before it opens. */
+	constructor(startedAt: number) {
+		this.#notBefore = startedAt;
+	}
 
 	check(nonce: string, sentAt: number, now: number): 'ok' | 'stale' | 'replayed' {
-		if (Math.abs(now - sentAt) > MAX_CLOCK_SKEW_MS) return 'stale';
+		if (sentAt < this.#notBefore || Math.abs(now - sentAt) > MAX_CLOCK_SKEW_MS) return 'stale';
 		this.#prune(now);
 		if (this.#seen.has(nonce)) return 'replayed';
 		this.#seen.set(nonce, sentAt);
