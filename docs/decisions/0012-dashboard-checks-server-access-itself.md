@@ -37,7 +37,9 @@ have Manage Server there and aren't in timeout. The same check backs the
 server list and the guard on every `/servers/:guildId` route. Login stays
 `identify` only.
 
-**Why:** TODO(Alex)
+**Why:** 
+
+responsive and accurate. Will look into the alternativem ethods if this bot were to grow in scale and use.
 
 ## Consequences
 
@@ -51,15 +53,24 @@ server list and the guard on every `/servers/:guildId` route. Login stays
 - Each check is a Discord call in the request queue that reminder sends
   and command replies share, and any signed-in visitor can cause them.
   So each answer is reused for 30 seconds, and a check under way is
-  shared (#71, from review). A per-visitor rate limit on signed-in pages
-  is still to come in D1. Unknown Member (404) doesn't count towards
+  shared (#71, from review). The cache is per user, so one person
+  reloading costs nothing more, but each new Discord account that logs
+  in adds one call per server every 30 seconds: the rate limit still to
+  come in D1 counts per signed-in user as well as per visitor. Unknown Member (404) doesn't count towards
   Discord's limit on refused requests (401, 403 and 429; its rate limit
   docs, read 2026-11-24).
+- A lost permission takes up to 30 seconds to apply. Harmless while the
+  pages only show; once D2 lets them change things, a change checks
+  access fresh, skipping the cache.
 - The server list costs one call per server the bot is in. That's fine
   for a few servers, and would need revisiting if the bot were in many:
   the `guilds` scope, or the Server Members intent with a kept cache.
 - discord.js's `permissions` ignore a timeout, so the check asks for it
   separately. A server's own command permission overrides (Server
-  Settings → Integrations) aren't consulted: Manage Server decides.
+  Settings → Integrations) aren't consulted: Manage Server decides. That
+  isn't a privilege gain (someone with Manage Server can change those
+  overrides), but moderators given `/reminder` without Manage Server
+  can't use the dashboard. Whether to follow the overrides instead is
+  decided before D2.
 - Any failure counts as no access, a Discord outage included, so a
   manager sees "Not found" for their own server while Discord is down.

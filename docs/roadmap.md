@@ -433,9 +433,11 @@ them ahead of items 5 and 6.
    server is done and reachable through the tunnel, and login with
    Discord, and the server list guarded per server, are done (Done
    above). Left: the reminders page, and rate limiting per visitor
-   (keyed on Cloudflare's client-IP header; logins already have a cap
-   for the whole dashboard, and each server page asks Discord once per
-   server). Then A8d to A8i:
+   (keyed on Cloudflare's client-IP header) and per signed-in user:
+   logins already have a cap for the whole dashboard, and access
+   answers are cached per user for 30 s, but each new Discord account
+   that logs in adds one call per server every 30 s to the request
+   queue reminders share (decision 0012). Then A8d to A8i:
    two-way chat, linking and pictures.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
@@ -517,7 +519,14 @@ runtime dependency is the owner's decision.
   and collections), after the tracks in Next up:
   [Track D](plans/minecraft-ff14-features.md#track-d-web-dashboard)
   says why it waits and what it needs (its libraries being the owner's
-  decision).
+  decision). Before D2, from reviewing decision 0012's consequences
+  (2026-11-24): anything that changes data checks access with Discord
+  fresh, skipping the 30 s cache, so a demoted moderator can't edit in
+  that window; and decide whether the dashboard should follow a
+  server's command permissions (Server Settings → Integrations) rather
+  than Manage Server alone, so moderators given `/reminder` without
+  Manage Server can use it too (readable through Discord's API with
+  the bot's token).
 - Custom emoji limited to certain roles: the warning doesn't check
   whether the bot has one of the emoji's roles, so such an emoji can still
   show as text unwarned.
