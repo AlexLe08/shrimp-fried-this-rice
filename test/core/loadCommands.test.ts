@@ -15,6 +15,7 @@ describe('findAreaModules', () => {
 		expect(relativeToSrc(findAreaModules('events'))).toEqual([
 			'core/events/interactionCreate.ts',
 			'core/events/ready.ts',
+			'minecraft/events/guildDelete.ts',
 		]);
 	});
 

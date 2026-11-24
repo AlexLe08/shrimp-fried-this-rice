@@ -140,6 +140,63 @@ const MIGRATIONS = [
 		created_at INTEGER NOT NULL,
 		expires_at INTEGER NOT NULL
 	);`,
+	// Two-way Minecraft chat (src/minecraft/storage.ts; decisions 0006, 0007
+	// and 0010). A bridge's id is random, not a row number: the helper sends it
+	// in the clear and requests are rate-limited per bridge before decrypting,
+	// so a guessable id would let anyone use up another bridge's limit.
+	// request_key and response_key are the AES-256 keys derived from the
+	// pairing secret, one per direction so a sealed reply can't be sent back
+	// as a request; the secret itself is never stored. They and the webhook
+	// tokens are secrets. default_picture NULL means the helper's config
+	// decides. announced_channel_id is where the opt-in announcement was
+	// posted: nothing is relayed from a channel until it matches.
+	// last_relayed_message_id is a message id, never its text. Names are
+	// Minecraft names; name_key is the name lowercased, as Minecraft names
+	// don't depend on case. No foreign keys: SQLite enforces them only per
+	// connection with a pragma that's off, so storage.ts deletes a bridge's
+	// rows together. Times are epoch ms.
+	`CREATE TABLE minecraft_guild_settings (
+		guild_id TEXT PRIMARY KEY,
+		allowed_role_id TEXT
+	);
+	CREATE TABLE minecraft_bridges (
+		id TEXT PRIMARY KEY,
+		guild_id TEXT NOT NULL,
+		chat_channel_id TEXT NOT NULL,
+		chat_webhook_id TEXT NOT NULL,
+		chat_webhook_token TEXT NOT NULL,
+		alerts_channel_id TEXT NOT NULL,
+		alerts_webhook_id TEXT NOT NULL,
+		alerts_webhook_token TEXT NOT NULL,
+		request_key BLOB NOT NULL,
+		response_key BLOB NOT NULL,
+		server_name TEXT NOT NULL,
+		prefix TEXT NOT NULL DEFAULT '[Discord]',
+		colour TEXT NOT NULL DEFAULT '#5865F2',
+		default_picture TEXT,
+		announced_channel_id TEXT,
+		last_relayed_message_id TEXT,
+		created_at INTEGER NOT NULL
+	);
+	CREATE INDEX minecraft_bridges_guild ON minecraft_bridges (guild_id);
+	CREATE TABLE minecraft_bridge_pictures (
+		bridge_id TEXT NOT NULL,
+		name TEXT NOT NULL,
+		name_key TEXT NOT NULL,
+		picture TEXT NOT NULL,
+		PRIMARY KEY (bridge_id, name_key)
+	);
+	CREATE TABLE minecraft_links (
+		bridge_id TEXT NOT NULL,
+		name TEXT NOT NULL,
+		name_key TEXT NOT NULL,
+		user_id TEXT NOT NULL,
+		uuid TEXT NOT NULL,
+		picture TEXT NOT NULL DEFAULT 'default',
+		linked_at INTEGER NOT NULL,
+		PRIMARY KEY (bridge_id, name_key)
+	);
+	CREATE INDEX minecraft_links_user ON minecraft_links (user_id);`,
 ];
 
 const schemaVersion = db.pragma('user_version', { simple: true }) as number;
@@ -172,5 +229,9 @@ export function __resetForTests(): void {
 	DELETE FROM recruit_settings;
 	DELETE FROM recruits;
 	DELETE FROM dashboard_sessions;
+	DELETE FROM minecraft_guild_settings;
+	DELETE FROM minecraft_bridges;
+	DELETE FROM minecraft_bridge_pictures;
+	DELETE FROM minecraft_links;
 	`);
 }
