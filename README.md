@@ -236,6 +236,8 @@ src/
   dashboard/              # the web dashboard (decisions 0008 and 0009)
     app.ts                # the Hono app and its routes (/health so far)
     server.ts             # serves it on 127.0.0.1 at DASHBOARD_PORT, and stops it on shutdown
+    storage.ts            # login sessions' queries, row type and limits (7 days from login, 10 per user)
+    sessions.ts           # session tokens: 32 random bytes in the cookie, only their SHA-256 in bot.db (not used by a route yet)
   minecraft/
     bridge/               # mcbridge, a helper that runs beside a Minecraft server (setup: docs/MINECRAFT_BRIDGE.md; the bot never loads it)
       formats.ts          # the log line prefix of each server flavor (vanilla so far)
@@ -304,6 +306,8 @@ test/
   dashboard/
     app.test.ts                     # the app's routes, through app.request
     server.test.ts                  # DASHBOARD_PORT, serving on 127.0.0.1, the keep-alive timeout, a port already taken, and stopping
+    storage.test.ts                 # sessions: expiry, deleting, clearing expired ones, the per-user cap
+    sessions.test.ts                # tokens: random, stored only hashed, malformed or unknown ones refused, ending one
   minecraft/
     bridge/
       fixtures/                     # vanilla 26.3 logs from the owner's server (player names replaced), and a hand-written error log, `!link` log and crash report
