@@ -301,9 +301,11 @@ Later item), not a follow-up.
   fake-timer polls; a bucket PAR's URL ends in `/o/` and an upload is a
   `PUT` with the name appended (Oracle's docs, 2026-11-24; the success
   status isn't stated, so any 2xx counts). The console setup is
-  `ORACLE_CLOUD_DEPLOYMENT.md`'s section 10, for the owner. Not yet run
-  against a real bucket or on the VM; the stale-upload DM not tried in
-  Discord.
+  `ORACLE_CLOUD_DEPLOYMENT.md`'s section 10, for the owner. Set up and
+  deployed 2026-11-24 (#62): the first copy reached the bucket, and the
+  owner downloaded it and decrypted it with the age key into a working
+  database. The console paths in section 10 were corrected from that
+  walk-through. The stale-upload DM is not yet tried in Discord.
 
 ## Next up
 
@@ -324,10 +326,7 @@ them ahead of items 6 and 7.
    every server would have to set everything up again. Snapshots on the
    VM are done (Done above), covering a bad migration, lost rows, and a
    decision 0003 reset up to the last daily snapshot. Left:
-   - Off the VM: built (Done above). Next: the owner follows
-     `ORACLE_CLOUD_DEPLOYMENT.md`'s section 10 (age key pair, bucket,
-     retention and lifecycle rules, the write-only URL, the two `.env`
-     values) and checks that the first copy decrypts.
+   - Off the VM: done and set up (Done above).
    - A restore procedure in `ORACLE_CLOUD_DEPLOYMENT.md`, tried once.
      (`bot.db` and the snapshots are now owner-only: Done above.)
 2. **Minecraft bridge, what's left** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
