@@ -36,3 +36,4 @@ and Design notes sections; the history behind them is in
 | [0009](0009-dashboard-on-hono.md) | The dashboard runs in the bot on Hono (`hono`, `@hono/node-server`), pages through its `html` helper; the helper long-polls | Accepted · 2026-11-23 |
 | [0010](0010-catch-up-after-bot-restarts.md) | The bot catches up on bridge chat it missed while restarting, from the channel's recent history | Accepted · 2026-11-23 |
 | [0011](0011-off-vm-backups.md) | Encrypted copies of `bot.db` (age, to the owner's public key, with `age-encryption`) go daily to Oracle Object Storage through a write-only URL | Accepted · 2026-11-24 |
+| [0012](0012-dashboard-checks-server-access-itself.md) | The dashboard asks Discord, through the bot, which servers a user may manage (Manage Server, not in timeout), instead of the `guilds` scope at login | Accepted · 2026-11-24 |

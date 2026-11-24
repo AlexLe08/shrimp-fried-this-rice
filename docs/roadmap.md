@@ -380,7 +380,8 @@ Later item), not a follow-up.
 - **Dashboard server list, guarded per server** (2026-11-24, fourth
   part of D1). `/servers` lists the servers the bot is in where the
   user has Manage Server, and `/servers/<id>` shows one (its name, until
-  the reminders page). The owner's call that day: the bot checks for
+  the reminders page). The owner's call that day ([decision
+  0012](decisions/0012-dashboard-checks-server-access-itself.md)): the bot checks for
   itself rather than asking for the `guilds` scope at login, so
   permissions are current on every page, not as they were at login.
   `dashboard/access.ts` asks Discord with `members.fetch({ force: true })`:
