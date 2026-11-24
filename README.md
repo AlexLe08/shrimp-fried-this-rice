@@ -109,7 +109,7 @@ Slash commands are registered **globally** (via `deploycommands`), so they're av
 
 ## Testing
 
-Tests are written with [Vitest](https://vitest.dev) and cover the entire codebase — persistence (`core/database.ts`, `reminders/storage.ts` and `ffxiv/recruit/storage.ts`), the scheduler with its due-reminder checks and the recruit follow-up check, the status embed builder, both event handlers, and every command file.
+Tests are written with [Vitest](https://vitest.dev) and cover the entire codebase — persistence (`core/database.ts`, `reminders/storage.ts`, `ffxiv/recruit/storage.ts` and `minecraft/storage.ts`), the scheduler with its due-reminder checks and the recruit follow-up check, the status embed builder, both event handlers, and every command file.
 
 ```bash
 npm test              # run once and exit
@@ -246,6 +246,9 @@ src/
     storage.ts            # login sessions' queries, row type and limits (7 days from login, 10 per user)
     sessions.ts           # session tokens: 32 random bytes in the cookie, only their SHA-256 in bot.db
   minecraft/
+    storage.ts            # two-way chat's queries and row types (not used yet): bridges with their webhooks and derived keys, pictures, links, who may manage them
+    events/
+      guildDelete.ts      # deletes a server's bridges, pictures, links and settings when the bot leaves it (not on an outage)
     bridge/               # mcbridge, a helper that runs beside a Minecraft server (setup: docs/MINECRAFT_BRIDGE.md; the bot never loads it)
       formats.ts          # the log line prefix of each server flavor (vanilla so far)
       parseLine.ts        # log lines to entries, with stack trace lines attached to the entry they follow
@@ -322,6 +325,9 @@ test/
     storage.test.ts                 # sessions: expiry, deleting, clearing expired ones, the per-user cap
     sessions.test.ts                # tokens: random, stored only hashed, malformed or unknown ones refused, ending one
   minecraft/
+    storage.test.ts                 # bridges (random ids, settings, regenerating), the last relayed id moving forward only, pictures, links (replacing, who may change them), deleting
+    events/
+      guildDelete.test.ts           # leaving a server deletes its Minecraft data and no other server's
     bridge/
       fixtures/                     # vanilla 26.3 logs from the owner's server (player names replaced), and a hand-written error log, `!link` log and crash report
       parseLine.test.ts             # line prefixes, stack traces, and the fixtures read as entries

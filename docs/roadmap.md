@@ -434,6 +434,28 @@ Later item), not a follow-up.
   one machine got a 429 while another network still loaded, and
   requests sending forged `CF-Connecting-IP` values were still limited
   by the real address.
+- **Minecraft bridge storage** (2026-11-24, first part of A8d). One
+  additive migration (version 5) and `src/minecraft/storage.ts`: bridges
+  (channels, webhooks, the keys derived from the pairing secret, server
+  name, prefix, colour, default picture, the announced channel and the
+  last relayed message id), pictures set by a bridge's managers, links,
+  and who may manage bridges. Worked out from the plan's rough tables:
+  a bridge's id is 128 random bits rather than a row number, as it
+  travels in the clear and keys the per-bridge rate limit, so a stranger
+  can't guess one and use up its limit; two keys are kept, one per
+  direction, so a sealed reply can't be sent back as a request; the
+  allowed role is per server, not per bridge, as adding the first
+  bridge already needs it; and no foreign keys (SQLite enforces them
+  only with a per-connection pragma that's off), so storage deletes a
+  bridge's rows together in one transaction. The last relayed id only
+  moves forward, compared as a snowflake. Linking a name again keeps
+  its picture only for the same member and account. `GuildDelete`
+  (`src/minecraft/events/guildDelete.ts`) deletes a server's bridges,
+  pictures, links and settings; checked in discord.js 14.27's source
+  that a server lost to an outage emits `GuildUnavailable` instead, so
+  an outage wipes nothing. Nothing else uses the tables yet. A server
+  the bot is removed from while it's offline (a deploy's seconds) keeps
+  its rows, as `GuildDelete` never comes; see Later.
 
 ## Next up
 
@@ -467,7 +489,9 @@ them ahead of items 5 and 6.
    done (Done above): the web server through the tunnel, login with
    Discord, the server list guarded per server, the read-only reminders
    page and rate limits, all tried on the live dashboard. Left: A8d to
-   A8i, two-way chat, linking and pictures.
+   A8i, two-way chat, linking and pictures. A8d's storage is done (Done
+   above); next, sealing the helper's messages (HKDF and AES-256-GCM),
+   pairing, and the long-poll route.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the
@@ -520,6 +544,12 @@ runtime dependency is the owner's decision.
 - An alert from `mcbridge` when the server has started but no line is
   recognised for a long while, so a Minecraft update that changes the
   log's format doesn't silently stop the bridge (decision 0005).
+- Minecraft data for servers the bot was removed from while offline:
+  `GuildDelete` never arrives for them (a deploy's seconds, or an
+  outage), so their bridges, links and keys stay in `bot.db`. When the
+  bot is ready, it could delete the rows of servers not in its guild
+  cache, once it's checked that every server it's in is in the cache
+  then, unavailable ones included (from A8d's storage PR, 2026-11-24).
 - An ESLint rule letting only `storage.ts` files import `db`, if an area
   is ever found querying another's tables (decision 0004; new tooling,
   so only for a real case).

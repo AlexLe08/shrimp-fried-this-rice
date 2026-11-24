@@ -357,11 +357,14 @@ A display name proves nothing (anyone can set their nickname to `Steve`), so the
 
 #### Storage (`src/minecraft/storage.ts`, decision 0004)
 
-A new migration, additive. Before it's written, the tables are worked out in the PR that adds them. Roughly:
+Migration 4 (to version 5), additive, worked out in the PR that added it (A8d's first part; the column comments are in `core/database.ts`):
 
-- `minecraft_bridges`: guild, chat and alerts channels, webhook ids and tokens, keys derived from the secret, server name, prefix, colour, default picture, allowed role, announced channel, last relayed message id (for catching up after a restart).
+- `minecraft_guild_settings`: guild, allowed role. Per server rather than per bridge, as "Add a Minecraft server" already needs it before the first bridge exists.
+- `minecraft_bridges`: a random 128-bit id (sent in the clear and keying the per-bridge rate limit, so it mustn't be guessable), guild, chat and alerts channels, webhook ids and tokens, two keys derived from the secret (one per direction, so a sealed reply can't be sent back as a request), server name, prefix, colour, default picture (null: the config's), announced channel, last relayed message id (for catching up after a restart; it only moves forward).
 - `minecraft_bridge_pictures`: bridge, player name, picture.
-- `minecraft_links`: bridge, Discord user, player name, UUID, chosen picture.
+- `minecraft_links`: bridge, player name (one link per name), Discord user, UUID, chosen picture. Linking a name again keeps its picture only for the same member and account.
+
+No foreign keys: SQLite enforces them only with a per-connection pragma, off here, so `storage.ts` deletes a bridge's rows together in one transaction.
 
 When the bot leaves a server (`GuildDelete`), that server's bridges, pictures and links are deleted and its secrets stop working. A bridge whose channel is deleted, or whose webhook is deleted by hand, shows as broken in the dashboard until its channels are picked again. The new tables go into `__resetForTests` in `core/database.ts`. Webhook tokens in `bot.db` are secrets, like the token in `.env`. If a second Minecraft feature with its own tables arrives (`/minecraft status` needs none), storage splits into one file per feature, as decision 0004 says.
 
