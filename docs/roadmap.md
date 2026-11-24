@@ -396,7 +396,9 @@ Later item), not a follow-up.
   signed-in or server, and a test fails for one served but not listed
   (decision 0009's deny-by-default check), then tries every non-public
   route signed out and every server route as another server's manager.
-  Not yet tried against Discord.
+  Tried by the owner on the live dashboard on 2026-11-24 after the
+  deploy: the list showed the servers where they have Manage Server, as
+  expected.
 
 ## Next up
 
