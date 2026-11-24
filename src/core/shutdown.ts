@@ -1,6 +1,7 @@
 import type { Client } from 'discord.js';
 import { stopScheduler } from './scheduler.ts';
 import { closeDatabase } from './database.ts';
+import { stopDashboard } from '../dashboard/server.ts';
 
 let isShuttingDown = false;
 
@@ -10,6 +11,9 @@ export async function shutdown(client: Client, signal: string): Promise<void> {
 	isShuttingDown = true;
 
 	console.log(`\nReceived ${signal}, shutting down gracefully...`);
+
+	// First, so no request reaches a destroyed client or a closed database.
+	await stopDashboard();
 
 	// Waits for a send already under way, which still needs the client to
 	// finish and the database to record it; otherwise the reminder is sent
