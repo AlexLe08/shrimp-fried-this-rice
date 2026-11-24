@@ -54,9 +54,14 @@ export function saveSnapshot(db: Database.Database, dir: string, prefix: string,
 	// matches a later name, so it would stay for good.
 	for (const name of fs.readdirSync(dir)) {
 		if (name.endsWith('.db.tmp')) fs.rmSync(path.join(dir, name), { force: true });
+		// Ones saved before snapshots were made 0600 have the umask's mode.
+		else if (name.endsWith('.db')) fs.chmodSync(path.join(dir, name), 0o600);
 	}
 	try {
 		db.prepare('VACUUM INTO ?').run(partial);
+		// VACUUM INTO creates the copy by the umask (usually 0644), not the
+		// database's mode; the folder's 0700 covers it only while it stays there.
+		fs.chmodSync(partial, 0o600);
 		fs.renameSync(partial, file);
 	} catch (error) {
 		fs.rmSync(partial, { force: true });

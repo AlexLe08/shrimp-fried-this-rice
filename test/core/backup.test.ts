@@ -59,6 +59,24 @@ describe('saveSnapshot', () => {
 		if (process.platform !== 'win32') expect(fs.statSync(backups).mode & 0o777).toBe(0o700);
 	});
 
+	it('makes the copy readable only by its owner', () => {
+		const file = saveSnapshot(db, backups, 'daily', new Date());
+
+		if (process.platform !== 'win32') expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+	});
+
+	// Ones saved before snapshots were made 0600 have the umask's mode.
+	it('makes earlier snapshots in the folder readable only by their owner', () => {
+		fs.mkdirSync(backups);
+		const earlier = path.join(backups, 'daily-2026-01-01T00-00-00.000Z.db');
+		fs.writeFileSync(earlier, '');
+		fs.chmodSync(earlier, 0o644);
+
+		saveSnapshot(db, backups, 'daily', new Date('2026-11-23T00:00:00.000Z'));
+
+		if (process.platform !== 'win32') expect(fs.statSync(earlier).mode & 0o777).toBe(0o600);
+	});
+
 	it('includes writes still only in the WAL file', () => {
 		db.exec(`INSERT INTO things VALUES ('c')`);
 

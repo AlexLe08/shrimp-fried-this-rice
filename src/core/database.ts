@@ -20,6 +20,34 @@ export function backupDirectory(): string | null {
 	return dbPath === ':memory:' || dbPath === '' ? null : path.join(path.dirname(dbPath), 'backups');
 }
 
+// Owner-only (0600), as the database will hold webhook tokens and keys. SQLite
+// gives its -wal and -shm files the database's own mode whatever the umask
+// (checked on better-sqlite3's SQLite 3.53.4), so setting the database's
+// mode covers them once reopened; ones left by a process that didn't close
+// cleanly are set here too. Logged rather than thrown: reminders matter more
+// than this, and a file the bot can't chmod (not its owner) it couldn't
+// have created either.
+function restrictToOwner(file: string, isNew: boolean): void {
+	if (file === ':memory:' || file === '') return;
+	try {
+		// EEXIST: deploycommands, which imports this too, created it first.
+		if (isNew) {
+			try {
+				fs.writeFileSync(file, '', { mode: 0o600, flag: 'wx' });
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+			}
+		}
+		for (const name of [file, `${file}-wal`, `${file}-shm`]) {
+			if (fs.existsSync(name)) fs.chmodSync(name, 0o600);
+		}
+	} catch (error) {
+		console.error(`Couldn't make ${file} readable only by its owner:`, error);
+	}
+}
+
+restrictToOwner(dbPath, !existed);
+
 export const db = new Database(dbPath);
 
 // WAL: the scheduler reads while commands write.
