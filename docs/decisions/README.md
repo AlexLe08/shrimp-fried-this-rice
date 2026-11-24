@@ -35,3 +35,4 @@ and Design notes sections; the history behind them is in
 | [0008](0008-dashboard-hostname-and-https.md) | The dashboard is served at `shrimp-fried-rice.alexle.dev` (the owner's domain, DNS on Cloudflare) through a Cloudflare Tunnel | Accepted · 2026-11-23 |
 | [0009](0009-dashboard-on-hono.md) | The dashboard runs in the bot on Hono (`hono`, `@hono/node-server`), pages through its `html` helper; the helper long-polls | Accepted · 2026-11-23 |
 | [0010](0010-catch-up-after-bot-restarts.md) | The bot catches up on bridge chat it missed while restarting, from the channel's recent history | Accepted · 2026-11-23 |
+| [0011](0011-off-vm-backups.md) | Encrypted copies of `bot.db` (age, to the owner's public key, with `age-encryption`) go daily to Oracle Object Storage through a write-only URL | Proposed · 2026-11-23 |
