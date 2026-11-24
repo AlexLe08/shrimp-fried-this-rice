@@ -49,18 +49,29 @@ through a write-only PAR. The PAR's URL and the age recipient are set in
 `.env`; the age identity that decrypts is kept by the owner, off the VM.
 The bucket has a time-bound retention rule, left unlocked, so a copy
 can't be overwritten or deleted for its first 30 days, and a lifecycle
-policy deletes copies older than 60 days.
+policy deletes copies older than 60 days. When the newest copy uploaded
+is more than 48 hours old, the bot DMs the owner, once a day until a
+copy goes up again.
 
-**Why:** TODO(Alex)
+**Why:**
+
+Since an Oracle account already exists it felt appropriate to continue using it when the VM is already tied to it.
 
 ## Consequences
 
 - Covers losing the VM, its boot volume, or every snapshot on it, up to
   the last daily copy. Doesn't cover losing the Oracle account itself
   (an account Oracle closes, or a region-wide loss of Object Storage):
-  the copies are in the same tenancy. If that becomes a worry, a second
-  copy to B2 would be a new record, once someone has checked in a
-  browser that B2's free 10 GB asks for no card.
+  the copies are in the same tenancy. The owner pulls a copy to their
+  own machine about once a month (it's encrypted, so it can sit
+  anywhere), which covers that case up to a month back. If that becomes
+  a bigger worry, a second copy to B2 would be a new record, once
+  someone has checked in a browser that B2's free 10 GB asks for no card.
+- Oracle's Always Free page says "idle Always Free compute instances may
+  be reclaimed": under 20% CPU (95th percentile), network and, for
+  Ampere, memory over 7 days. The bot likely counts as idle by that
+  measure. Reclaiming takes the VM, not Object Storage, so this backup
+  is what a rebuild would start from.
 - Adds a runtime dependency, `age-encryption`, and its five
   `@noble`/`@scure` packages, in the implementing PR. It's at 0.x.
   Its format is age v1, so if it's ever dropped, copies still decrypt
@@ -86,11 +97,18 @@ policy deletes copies older than 60 days.
   which would make the 30 days permanent. Lifecycle can't delete objects
   under retention, so its 60 days must stay longer than the rule's 30.
   Versioning can't be on with a retention rule, and isn't needed.
-- Losing the age identity makes every copy useless. The owner keeps it
-  in their password manager (or another place off the VM), and the
-  restore procedure in `ORACLE_CLOUD_DEPLOYMENT.md` (Next up item 1's
-  other part) decrypts a real copy once, so a lost or wrong key shows
-  up then, not during an outage.
+- Losing the age identity makes every copy useless, and nothing
+  recovers it. The owner keeps it in two places off the VM: their
+  password manager and an offline copy (printed, or on a USB stick).
+  The restore procedure in `ORACLE_CLOUD_DEPLOYMENT.md` (Next up item
+  1's other part) decrypts a real copy, so a lost or wrong key shows up
+  then, not during an outage. It's tried once when written and again
+  after a large schema change or every few months, as a procedure that
+  worked once can go stale.
+- Whoever signs in to the Oracle console can delete the VM, the bucket
+  and the unlocked retention rule: everything at once. Two-factor
+  sign-in on the Oracle account is part of the setup, as 0008 asks for
+  Porkbun and Cloudflare.
 - Setup is by hand, once, by the owner in Oracle's console: the bucket
   (private), the retention rule, the lifecycle policy and the policy
   that lets Object Storage run it, and the PAR. The PAR's URL is shown
@@ -105,10 +123,17 @@ policy deletes copies older than 60 days.
   has sent, kept across restarts (a marker file beside the snapshots, for
   instance), and sends the newest one not yet sent. The upload is the
   first network call in a scheduled check, so it takes the check's abort
-  signal: shutdown stops it rather than waiting on a slow Oracle. Nobody
-  reads the journal unprompted, so a PAR that stopped working could go
-  unnoticed until a restore: alerting on failed backups is a later
-  question, not part of this.
+  signal: shutdown stops it rather than waiting on a slow Oracle.
+- Uploads that stop without anyone noticing (an expired or revoked PAR,
+  a full bucket) are the worst case: the lifecycle policy keeps deleting
+  copies on schedule, so 60 days later none are left off the VM, which
+  keeps only 7 daily snapshots. Nobody reads the journal unprompted, so
+  the bot DMs the owner when the newest copy uploaded is more than 48
+  hours old, once a day until one goes up again: about 58 days' warning.
+  The bot can ask Discord for its application's owner (from memory;
+  checked when built), so no new `.env` value is needed unless that
+  fails; a DM that can't be delivered (no shared server, DMs closed) is
+  logged.
 - One upload a day is about 30 requests a month of the 50,000, and the
   copies (about 60) are a tiny part of the 20 GB. A local dev bot
   without the two `.env` values skips uploading.

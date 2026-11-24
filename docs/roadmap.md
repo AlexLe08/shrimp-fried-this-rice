@@ -308,7 +308,8 @@ them ahead of items 6 and 7.
      (2026-11-23): daily, encrypted with age to the owner's public key
      through the `age-encryption` package (a runtime dependency, the
      owner's decision), uploaded to Oracle's Always Free Object Storage
-     through a write-only pre-authenticated URL. Built once the owner
+     through a write-only pre-authenticated URL, with a DM to the owner
+     when the newest copy is over 48 hours old. Built once the owner
      accepts it and sets up the bucket.
    - A restore procedure in `ORACLE_CLOUD_DEPLOYMENT.md`, tried once.
      (`bot.db` and the snapshots are now owner-only: Done above.)
