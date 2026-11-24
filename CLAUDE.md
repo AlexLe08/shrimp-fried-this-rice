@@ -166,7 +166,10 @@ the workflow, indexed in its `README.md`.
   implementation detail. The owner chose `hono` and `@hono/node-server`
   for the dashboard on 2026-11-23
   ([decision 0009](docs/decisions/0009-dashboard-on-hono.md));
-  they join `package.json` in D1's PR, not before.
+  they join `package.json` in D1's PR, not before. The owner chose
+  `age-encryption` for encrypting the off-VM copies of `bot.db` on
+  2026-11-24 ([decision 0011](docs/decisions/0011-off-vm-backups.md));
+  it joins `package.json` in the PR that builds them, not before.
 
 ## Workflow
 
