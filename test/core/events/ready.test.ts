@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const reminderChecks = [{ name: 'Guild reminder', run: vi.fn() }];
 const recruitCheck = { name: 'Recruit follow-up', run: vi.fn() };
 const backupCheck = { name: 'Daily backup', run: vi.fn() };
+const offsiteCheck = { name: 'Off-VM backup', run: vi.fn() };
+const notifyOwner = vi.fn();
 
 vi.mock('../../../src/core/scheduler.ts', () => ({
 	startScheduler: vi.fn(),
@@ -21,6 +23,11 @@ vi.mock('../../../src/core/database.ts', () => ({
 vi.mock('../../../src/core/backup.ts', () => ({
 	dailyBackupCheck: vi.fn(() => backupCheck),
 }));
+// Off unless .env has both values, as on a local dev bot.
+vi.mock('../../../src/core/offsiteBackup.ts', () => ({
+	offsiteBackupCheckFromEnv: vi.fn((): unknown => null),
+	ownerNotifier: vi.fn(() => notifyOwner),
+}));
 
 import readyEvent from '../../../src/core/events/ready.ts';
 import { startScheduler } from '../../../src/core/scheduler.ts';
@@ -28,6 +35,7 @@ import { dueReminderChecks } from '../../../src/reminders/dueReminders.ts';
 import { recruitFollowUpCheck } from '../../../src/ffxiv/recruit/followUps.ts';
 import { backupDirectory, db } from '../../../src/core/database.ts';
 import { dailyBackupCheck } from '../../../src/core/backup.ts';
+import { offsiteBackupCheckFromEnv, ownerNotifier } from '../../../src/core/offsiteBackup.ts';
 
 describe('ready event', () => {
 	beforeEach(() => {
@@ -45,6 +53,7 @@ describe('ready event', () => {
 		expect(recruitFollowUpCheck).toHaveBeenCalledWith(client);
 		expect(startScheduler).toHaveBeenCalledWith([...reminderChecks, recruitCheck]);
 		expect(dailyBackupCheck).not.toHaveBeenCalled();
+		expect(offsiteBackupCheckFromEnv).not.toHaveBeenCalled();
 		consoleSpy.mockRestore();
 	});
 
@@ -56,6 +65,20 @@ describe('ready event', () => {
 
 		expect(dailyBackupCheck).toHaveBeenCalledWith(db, '/srv/bot/backups');
 		expect(startScheduler).toHaveBeenCalledWith([...reminderChecks, recruitCheck, backupCheck]);
+		consoleSpy.mockRestore();
+	});
+
+	it('adds the off-VM backup check after the daily one when .env sets it up, DMing the owner', () => {
+		vi.mocked(backupDirectory).mockReturnValueOnce('/srv/bot/backups');
+		vi.mocked(offsiteBackupCheckFromEnv).mockReturnValueOnce(offsiteCheck);
+		const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+		const client = { user: { tag: 'TestBot#0000' } };
+
+		readyEvent.execute(client as never);
+
+		expect(ownerNotifier).toHaveBeenCalledWith(client);
+		expect(offsiteBackupCheckFromEnv).toHaveBeenCalledWith(process.env, '/srv/bot/backups', notifyOwner);
+		expect(startScheduler).toHaveBeenCalledWith([...reminderChecks, recruitCheck, backupCheck, offsiteCheck]);
 		consoleSpy.mockRestore();
 	});
 
