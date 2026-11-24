@@ -6,6 +6,16 @@ import { secureHeaders } from 'hono/secure-headers';
 import { DiscordRateLimitedError, authorizeUrl, discordUserFromCode, type AuthConfig, type Fetch } from './auth.ts';
 import { serverAccess, type DashboardClient, type ManagedServer } from './access.ts';
 import { createLoginGate } from './loginGate.ts';
+import {
+	MINUTE_MS,
+	USER_REQUESTS_PER_MINUTE,
+	VISITOR_LOGIN_WINDOW_MS,
+	VISITOR_LOGINS_PER_WINDOW,
+	VISITOR_REQUESTS_PER_MINUTE,
+	UNKNOWN_VISITOR,
+	createRateLimiter,
+	visitorKey,
+} from './rateLimit.ts';
 import { homePage, messagePage, serverPage, serversPage } from './pages.ts';
 import { endSession, sessionFromToken, startSession } from './sessions.ts';
 import { SESSION_LIFETIME_MS, type DashboardSession } from './storage.ts';
@@ -61,6 +71,14 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 	const access = options.client ? serverAccess(options.client, now) : null;
 	const app = new Hono<Env>();
 	const loginGate = createLoginGate(now);
+	const visitorRequests = createRateLimiter(VISITOR_REQUESTS_PER_MINUTE, MINUTE_MS, now);
+	const visitorLogins = createRateLimiter(VISITOR_LOGINS_PER_WINDOW, VISITOR_LOGIN_WINDOW_MS, now);
+	const userRequests = createRateLimiter(USER_REQUESTS_PER_MINUTE, MINUTE_MS, now);
+
+	const tooMany = (c: Context, waitMs: number, message: string) => {
+		c.header('Retry-After', String(Math.ceil(waitMs / 1000)));
+		return c.html(messagePage('Too many requests', message), 429);
+	};
 
 	app.use(
 		secureHeaders({
@@ -76,6 +94,26 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 	app.use(async (c, next) => {
 		await next();
 		c.header('Cache-Control', 'no-store');
+	});
+	// Without a usable address every visitor shares one count, which would
+	// look like the dashboard turning everyone away, so say so once.
+	let warnedNoAddress = false;
+	const visitorOf = (c: Context) => {
+		const key = visitorKey(c.req.header('cf-connecting-ip'));
+		if (key === UNKNOWN_VISITOR && !warnedNoAddress) {
+			warnedNoAddress = true;
+			console.warn(
+				'Dashboard: a request came without a usable CF-Connecting-IP; all such requests share one rate limit.',
+			);
+		}
+		return key;
+	};
+	// /health is left out: it touches neither Discord nor the database.
+	app.use(async (c, next) => {
+		if (c.req.path === '/health') return next();
+		const wait = visitorRequests.take(visitorOf(c));
+		if (wait > 0) return tooMany(c, wait, 'Too many requests from your network. Please try again in a minute.');
+		return next();
 	});
 	// Form posts only from the dashboard's own pages. Either check lets one
 	// through: an Origin of the exact public origin (behind the tunnel the
@@ -115,6 +153,9 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 			return c.html(messagePage('Login expired', 'That login link has expired or is invalid. Please try again.'), 400);
 		}
 
+		// Before the dashboard-wide gate, so one visitor can't use up everyone's logins.
+		const wait = visitorLogins.take(visitorOf(c));
+		if (wait > 0) return tooMany(c, wait, 'Too many logins from your network. Please try again in a few minutes.');
 		if (!loginGate.tryTake()) {
 			return c.html(messagePage('Too many logins', 'Too many logins right now. Please try again in a minute.'), 429);
 		}
@@ -140,6 +181,9 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 	const requireSession: MiddlewareHandler<Env> = async (c, next) => {
 		const session = sessionFromToken(getCookie(c, SESSION_COOKIE, 'host'), now());
 		if (!session) return c.redirect('/', 302);
+		// Per account, whichever sessions and addresses it uses: its pages may ask Discord about its servers.
+		const wait = userRequests.take(session.user_id);
+		if (wait > 0) return tooMany(c, wait, 'Too many requests from your account. Please try again in a minute.');
 		c.set('session', session);
 		return next();
 	};

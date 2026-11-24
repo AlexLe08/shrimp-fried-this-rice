@@ -4,6 +4,12 @@ import type { AuthConfig, Fetch } from '../../src/dashboard/auth.ts';
 import { sessionFromToken, startSession } from '../../src/dashboard/sessions.ts';
 import { __resetForTests } from '../../src/core/database.ts';
 import { LOGINS_PER_MINUTE } from '../../src/dashboard/loginGate.ts';
+import {
+	USER_REQUESTS_PER_MINUTE,
+	VISITOR_LOGIN_WINDOW_MS,
+	VISITOR_LOGINS_PER_WINDOW,
+	VISITOR_REQUESTS_PER_MINUTE,
+} from '../../src/dashboard/rateLimit.ts';
 
 const ORIGIN = 'https://dash.example';
 const auth: AuthConfig = { clientId: 'client-1', clientSecret: 'secret-1', origin: ORIGIN };
@@ -11,6 +17,8 @@ const NOW = 1_000_000;
 
 beforeEach(() => {
 	__resetForTests();
+	// Most requests here come without CF-Connecting-IP, which the app warns of once.
+	vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
 afterEach(() => {
@@ -209,17 +217,21 @@ describe('/auth/callback', () => {
 	it(`refuses logins beyond ${LOGINS_PER_MINUTE} a minute without asking Discord`, async () => {
 		const fetchFn = fakeDiscord();
 		const app = loginApp(fetchFn);
+		// Each from its own visitor, so the per-visitor limit doesn't stop them first.
+		const from = (i: number, cookie: string) => ({ Cookie: cookie, 'CF-Connecting-IP': `198.51.100.${i}` });
 		for (let i = 0; i < LOGINS_PER_MINUTE; i++) {
 			const { state, cookie } = await beginLogin(app);
-			await app.request(`/auth/callback?code=code-1&state=${state}`, { headers: { Cookie: cookie } });
+			await app.request(`/auth/callback?code=code-1&state=${state}`, { headers: from(i, cookie) });
 		}
 		fetchFn.mockClear();
 		const { state, cookie } = await beginLogin(app);
 
-		const response = await app.request(`/auth/callback?code=code-1&state=${state}`, { headers: { Cookie: cookie } });
+		const response = await app.request(`/auth/callback?code=code-1&state=${state}`, {
+			headers: from(LOGINS_PER_MINUTE, cookie),
+		});
 
 		expect(response.status).toBe(429);
-		expect(await response.text()).toContain('Too many logins');
+		expect(await response.text()).toContain('Too many logins right now');
 		expect(fetchFn).not.toHaveBeenCalled();
 	});
 
@@ -310,5 +322,102 @@ describe('/logout', () => {
 
 		expect(response.status).toBe(403);
 		expect(sessionFromToken(token, NOW)).toBeDefined();
+	});
+});
+
+describe('rate limits', () => {
+	const visitor = (ip: string) => ({ 'CF-Connecting-IP': ip });
+
+	it(`refuses a visitor's requests beyond ${VISITOR_REQUESTS_PER_MINUTE} a minute, with Retry-After`, async () => {
+		let time = NOW;
+		const app = createApp({ auth, now: () => time });
+		for (let i = 0; i < VISITOR_REQUESTS_PER_MINUTE; i++) {
+			expect((await app.request('/', { headers: visitor('203.0.113.7') })).status).toBe(200);
+		}
+		time += 20_000;
+
+		const response = await app.request('/', { headers: visitor('203.0.113.7') });
+
+		expect(response.status).toBe(429);
+		expect(response.headers.get('retry-after')).toBe('40');
+		expect(response.headers.get('content-security-policy')).toContain("default-src 'none'");
+		expect(await response.text()).toContain('Too many requests from your network');
+		expect((await app.request('/', { headers: visitor('198.51.100.1') })).status).toBe(200);
+		time += 40_000;
+		expect((await app.request('/', { headers: visitor('203.0.113.7') })).status).toBe(200);
+	});
+
+	it('counts every address in an IPv6 /64 as one visitor', async () => {
+		const app = createApp({ auth, now: () => NOW });
+		for (let i = 0; i < VISITOR_REQUESTS_PER_MINUTE; i++) {
+			await app.request('/', { headers: visitor(`2001:db8:1:2::${i.toString(16)}`) });
+		}
+
+		expect((await app.request('/', { headers: visitor('2001:db8:1:2::ffff') })).status).toBe(429);
+		expect((await app.request('/', { headers: visitor('2001:db8:1:3::1') })).status).toBe(200);
+	});
+
+	it('warns once when requests come without a usable CF-Connecting-IP, and not for ones with it', async () => {
+		const warn = vi.mocked(console.warn);
+		const app = createApp({ auth, now: () => NOW });
+		await app.request('/', { headers: visitor('203.0.113.7') });
+		expect(warn).not.toHaveBeenCalled();
+
+		await app.request('/');
+		await app.request('/', { headers: visitor('not-an-ip') });
+
+		expect(warn).toHaveBeenCalledTimes(1);
+		expect(warn.mock.calls[0]![0]).toContain('CF-Connecting-IP');
+	});
+
+	it('counts requests without a usable address as one visitor', async () => {
+		const app = createApp({ auth, now: () => NOW });
+		for (let i = 0; i < VISITOR_REQUESTS_PER_MINUTE; i++) await app.request('/');
+
+		expect((await app.request('/', { headers: visitor('garbage') })).status).toBe(429);
+	});
+
+	it('leaves /health out of the visitor limit', async () => {
+		const app = createApp({ auth, now: () => NOW });
+		for (let i = 0; i < VISITOR_REQUESTS_PER_MINUTE; i++) await app.request('/', { headers: visitor('203.0.113.7') });
+
+		expect((await app.request('/health', { headers: visitor('203.0.113.7') })).status).toBe(200);
+	});
+
+	it(`refuses a visitor's logins beyond ${VISITOR_LOGINS_PER_WINDOW} in ${VISITOR_LOGIN_WINDOW_MS / 60_000} minutes without asking Discord`, async () => {
+		let time = NOW;
+		const fetchFn = fakeDiscord();
+		const app = createApp({ auth, fetch: fetchFn, now: () => time });
+		const callback = async (ip: string) => {
+			const { state, cookie } = await beginLogin(app);
+			return app.request(`/auth/callback?code=code-1&state=${state}`, { headers: { Cookie: cookie, ...visitor(ip) } });
+		};
+		for (let i = 0; i < VISITOR_LOGINS_PER_WINDOW; i++) expect((await callback('203.0.113.7')).status).toBe(302);
+		fetchFn.mockClear();
+
+		const response = await callback('203.0.113.7');
+
+		expect(response.status).toBe(429);
+		expect(await response.text()).toContain('Too many logins from your network');
+		expect(fetchFn).not.toHaveBeenCalled();
+		expect((await callback('198.51.100.1')).status).toBe(302);
+		time += VISITOR_LOGIN_WINDOW_MS;
+		expect((await callback('203.0.113.7')).status).toBe(302);
+	});
+
+	it(`refuses an account's signed-in pages beyond ${USER_REQUESTS_PER_MINUTE} a minute, whatever session or address`, async () => {
+		const app = createApp({ auth, now: () => NOW });
+		const session = () => `__Host-session=${startSession({ id: 'u1', username: 'Alex' }, NOW).token}`;
+		for (let i = 0; i < USER_REQUESTS_PER_MINUTE; i++) {
+			const response = await app.request('/servers', { headers: { Cookie: session(), ...visitor(`198.51.100.${i}`) } });
+			expect(response.status).toBe(200);
+		}
+
+		const response = await app.request('/servers', { headers: { Cookie: session(), ...visitor('203.0.113.7') } });
+
+		expect(response.status).toBe(429);
+		expect(await response.text()).toContain('Too many requests from your account');
+		const otherUser = `__Host-session=${startSession({ id: 'u2', username: 'Sam' }, NOW).token}`;
+		expect((await app.request('/servers', { headers: { Cookie: otherUser } })).status).toBe(200);
 	});
 });

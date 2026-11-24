@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ROUTE_ACCESS, createApp } from '../../src/dashboard/app.ts';
 import type { AuthConfig } from '../../src/dashboard/auth.ts';
 import { startSession } from '../../src/dashboard/sessions.ts';
@@ -17,6 +17,12 @@ const NOW = 1_000_000;
 
 beforeEach(() => {
 	__resetForTests();
+	// Requests here come without CF-Connecting-IP, which the app warns of once.
+	vi.spyOn(console, 'warn').mockImplementation(() => {});
+});
+
+afterEach(() => {
+	vi.restoreAllMocks();
 });
 
 function signedIn(userId = 'u1'): { Cookie: string } {
