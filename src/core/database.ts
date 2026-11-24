@@ -129,6 +129,17 @@ const MIGRATIONS = [
 		resolved_at INTEGER
 	);
 	CREATE UNIQUE INDEX recruits_open_name ON recruits (guild_id, name_key) WHERE status IN ('pending', 'reminded');`,
+	// Dashboard logins (src/dashboard/storage.ts). id_hash is the SHA-256 of
+	// the session cookie's token, never the token itself, so a copy of the
+	// database can't be used to sign in. username is the Discord name at login,
+	// for display only. Times are epoch ms.
+	`CREATE TABLE dashboard_sessions (
+		id_hash TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL,
+		username TEXT NOT NULL,
+		created_at INTEGER NOT NULL,
+		expires_at INTEGER NOT NULL
+	);`,
 ];
 
 const schemaVersion = db.pragma('user_version', { simple: true }) as number;
@@ -160,5 +171,6 @@ export function __resetForTests(): void {
 	DELETE FROM guild_status_messages;
 	DELETE FROM recruit_settings;
 	DELETE FROM recruits;
+	DELETE FROM dashboard_sessions;
 	`);
 }

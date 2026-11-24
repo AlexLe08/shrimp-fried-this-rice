@@ -340,6 +340,15 @@ Later item), not a follow-up.
   the route are `ORACLE_CLOUD_DEPLOYMENT.md` section 12, which the owner
   followed on the VM on 2026-11-24: `/health` answered `ok` on the VM and
   through `https://shrimp-fried-rice.alexle.dev`.
+- **Dashboard login sessions** (2026-11-24, second part of D1). Stored
+  in `bot.db`, the owner's call that day over a signed cookie (decision
+  0009 left it to D1): a session can be ended on the server, and a
+  cookie that's no longer wanted stops working. Migration 3 adds
+  `dashboard_sessions`. The cookie will hold 32 random bytes; the table
+  keeps only their SHA-256, so a snapshot or off-VM copy can't sign
+  anyone in. A session lasts 7 days from login, a user keeps at most 10,
+  and expired ones are deleted when anyone logs in (until then they sign
+  no one in). Nothing uses them yet: Discord login is the next part.
 
 ## Next up
 
