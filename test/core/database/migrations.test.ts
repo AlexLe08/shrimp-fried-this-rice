@@ -228,6 +228,7 @@ describe('schema migrations', () => {
 			CREATE TABLE recruits (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, name TEXT NOT NULL,
 				name_key TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', added_by TEXT NOT NULL, added_at INTEGER NOT NULL,
 				due_at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending', resolved_by TEXT, resolved_at INTEGER);
+			CREATE UNIQUE INDEX recruits_open_name ON recruits (guild_id, name_key) WHERE status IN ('pending', 'reminded');
 		`);
 		db.pragma('user_version = 3');
 		db.close();

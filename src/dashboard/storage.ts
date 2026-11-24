@@ -20,7 +20,8 @@ export const MAX_SESSIONS_PER_USER = 10;
 /**
  * Saves a new session. In the same transaction, deletes every expired
  * session and the user's oldest beyond MAX_SESSIONS_PER_USER, so the table
- * holds only live sessions, a bounded number per user.
+ * holds a bounded number per user. Expired rows stay until someone logs in;
+ * getSession ignores them, so they sign no one in.
  */
 export const createSession = db.transaction((session: DashboardSession): void => {
 	db.prepare('DELETE FROM dashboard_sessions WHERE expires_at <= ?').run(session.created_at);

@@ -62,4 +62,17 @@ describe('dashboard session storage', () => {
 		expect(kept).not.toContain('s01');
 		expect(kept).toContain(`s${MAX_SESSIONS_PER_USER + 1}`);
 	});
+
+	it('keeps the later of two sessions created in the same millisecond when the cap is reached', () => {
+		for (let i = 0; i < MAX_SESSIONS_PER_USER; i++) {
+			createSession(session({ id_hash: `s${String(i).padStart(2, '0')}`, created_at: 1000 }));
+		}
+
+		createSession(session({ id_hash: 'latest', created_at: 1000 }));
+
+		const kept = hashes();
+		expect(kept).toHaveLength(MAX_SESSIONS_PER_USER);
+		expect(kept).toContain('latest');
+		expect(kept).not.toContain('s00');
+	});
 });
