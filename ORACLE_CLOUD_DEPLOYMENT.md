@@ -302,9 +302,9 @@ A restore puts the database back as it was when the copy was made. Whatever chan
 
 | What happened | Restore |
 |---|---|
-| A migration ran and damaged data | The newest `backups/pre-migration-v<N>-….db`, where `<N>` is the version before that migration. The bot runs every migration from `<N>` again on start, so the code on `main` must not repeat the damage first. Changing a merged migration is decided with the owner (CLAUDE.md). A migration that *failed* needs no restore: it rolls back, and the bot exits until a fix is deployed. |
-| Rows lost or wrong (a bug, a mistaken command) | The newest `backups/daily-….db` from before it. |
-| The VM or its disk is gone, or `backups/` is unusable | The newest off-VM copy, after rebuilding the VM (sections 2 to 7, then section 10's step 8 for the backups' `.env` values). |
+| A migration ran and damaged data | The newest `backups/pre-migration-v<N>-….db`, where `<N>` is the version the database was at before the deploy that ran it (one snapshot covers every migration that start applied). The bot runs every migration from `<N>` again on start, so the code on `main` must not repeat the damage first. Changing a merged migration is decided with the owner (CLAUDE.md). A migration that *failed* needs no restore: it rolls back, and the bot exits until a fix is deployed. |
+| Rows lost or wrong (a bug, a mistaken command) | The newest `backups/daily-….db` from before it. The VM keeps only the newest 7, so damage older than that needs an off-VM copy (kept 30 to 60 days). |
+| The VM or its disk is gone, or `backups/` is unusable | The newest off-VM copy, after rebuilding the VM (sections 2 to 7) without the backups' `.env` values yet. The rebuilt bot's first daily snapshot is of an empty database: with the values set, that's what would be uploaded, and the daily check would then wait a day from it. So delete `backups/daily-*.db` when the bot is stopped (step 2 below), and add the values after the restore: section 10's step 7 for a new upload URL (the old one was only in the lost `.env`, unless you kept it), then step 8. |
 
 Names hold the copy's time in UTC (`daily-2026-11-24T03-00-00.000Z.db`); `ls -l ~/shrimp-fried-this-rice/backups` lists them. Off-VM copies are named `daily-<snapshot time>.sent-<upload time>.db.age`.
 
@@ -330,10 +330,10 @@ In `~/shrimp-fried-this-rice`. Don't approve a deploy until you're done: it woul
 1. **Check the copy** before stopping anything:
 
    ```bash
-   node -e "const db = new (require('better-sqlite3'))(process.argv[1], { readonly: true, fileMustExist: true }); console.log('integrity:', db.pragma('integrity_check', { simple: true }), '| schema version:', db.pragma('user_version', { simple: true })); for (const { name } of db.prepare(\"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name\").all()) console.log(name, db.prepare('SELECT count(*) AS n FROM \"' + name + '\"').get().n)" backups/<copy>.db
+   node -e "const db = new (require('better-sqlite3'))(process.argv[1], { readonly: true, fileMustExist: true }); console.log('integrity:', db.pragma('integrity_check', { simple: true }), '| schema version:', db.pragma('user_version', { simple: true })); for (const { name } of db.prepare(\"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name\").all()) console.log(name, db.prepare('SELECT count(*) AS n FROM \"' + name + '\"').get().n)" backups/COPY.db
    ```
 
-   It prints `integrity: ok`, the schema version and each table's row count, through the project's own `better-sqlite3` (the VM may have no `sqlite3` command). Anything but `ok` means an older copy.
+   It prints `integrity: ok`, the schema version and each table's row count, through the project's own `better-sqlite3` (the VM may have no `sqlite3` command). Replace `COPY` with the copy's name, here and in step 4. Anything but `ok` means an older copy. Run it on `bot.db` too and compare the schema versions: the live one is the code's. A lower version is fine (the bot migrates it on start). A higher one means the copy is from before a [decision 0003](docs/decisions/0003-pre-release-schema-resets.md) reset or from newer code since reverted: the bot would run on tables its code doesn't match, so don't restore it without a plan agreed with the owner.
 2. **Stop the bot:** `sudo systemctl stop discordbotshrimp`. Unlike a crash, a stop isn't restarted by `Restart=on-failure`.
 3. **Set the current database aside, all its files together:**
 
@@ -343,8 +343,8 @@ In `~/shrimp-fried-this-rice`. Don't approve a deploy until you're done: it woul
    mv bot.db* "$aside"/
    ```
 
-   `bot.db-wal` can hold most of the database (after a crash, everything since SQLite last copied it into `bot.db`), so `bot.db` without it isn't the whole database. A `-wal` left beside the restored file is replayed into it when it's opened. Tried locally on 2026-11-24: the restored copy came up with the old database's rows instead of its own, and the integrity check still said `ok`. Nothing prunes this folder, so delete it once the restored bot has run well for a while.
-4. **Copy the chosen copy in:** `cp backups/<copy>.db bot.db`. Copy it rather than move it, so the snapshot stays where it was.
+   `bot.db-wal` can hold most of the database (after a crash, everything since SQLite last copied it into `bot.db`), so `bot.db` without it isn't the whole database. A `-wal` left beside the restored file is replayed into it when it's opened. Tried locally on 2026-11-24: the restored copy came up with the old database's rows instead of its own, and the integrity check still said `ok`. Nothing prunes this folder, or a `backups/restore.db` copied from your machine, so delete both once the restored bot has run well for a while (`restore.db` is the database unencrypted).
+4. **Copy the chosen copy in:** `cp backups/COPY.db bot.db`. Copy it rather than move it, so the snapshot stays where it was.
 5. **Start it and watch:** `sudo systemctl start discordbotshrimp`, then `journalctl -u discordbotshrimp -f` until `Ready! Logged in as`. On start the bot makes the file owner-only and switches it to WAL. If its schema version is older than the code's, the bot saves a pre-migration snapshot and migrates it. A copy newer than the code is opened as is.
 6. **Check in Discord:** `/reminder list` in a server you're in, and the `/reminder status` embed.
 
