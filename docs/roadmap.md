@@ -306,6 +306,19 @@ Later item), not a follow-up.
   owner downloaded it and decrypted it with the age key into a working
   database. The console paths in section 10 were corrected from that
   walk-through. The stale-upload DM is not yet tried in Discord.
+- **Restore procedure for `bot.db`** (2026-11-24, last part of Next up
+  item 1). `ORACLE_CLOUD_DEPLOYMENT.md` section 11: which copy to restore
+  (a pre-migration snapshot, a daily one, or an off-VM copy after
+  rebuilding the VM), getting an off-VM copy onto the VM, a check of a copy
+  through the project's own `better-sqlite3` (the VM may have no `sqlite3`),
+  and the steps: stop, set `bot.db` aside with its `-wal` and `-shm`, copy
+  in, start. Tried locally on throwaway databases first, which shaped
+  that step: after a crash `bot.db` alone held 4 KB and its `-wal` the
+  rest, and a `-wal` left beside a restored file was replayed into it, so
+  the restore came up with the old rows and `integrity_check` still said
+  `ok`. A drill restores a `VACUUM INTO` copy made right after stopping
+  the bot, so trying it loses nothing (checked locally: it includes what's
+  still in the `-wal`). Not yet tried on the VM.
 
 ## Next up
 
@@ -327,7 +340,9 @@ them ahead of items 6 and 7.
    VM are done (Done above), covering a bad migration, lost rows, and a
    decision 0003 reset up to the last daily snapshot. Left:
    - Off the VM: done and set up (Done above).
-   - A restore procedure in `ORACLE_CLOUD_DEPLOYMENT.md`, tried once.
+   - The restore procedure is written (Done above). Left: its drill
+     (`ORACLE_CLOUD_DEPLOYMENT.md` section 11, "Trying it"), once on the
+     VM by the owner, then the date recorded here.
      (`bot.db` and the snapshots are now owner-only: Done above.)
 2. **Minecraft bridge, what's left** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
    The first version, crash reports and player avatars are done and tested

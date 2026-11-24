@@ -294,6 +294,76 @@ The bot uploads each daily snapshot of `bot.db`, encrypted to your age public ke
 
 ---
 
+## 11. Restoring `bot.db`
+
+A restore puts the database back as it was when the copy was made. Whatever changed since is lost: reminders created or edited, server settings, `/recruit` entries. Reminders and follow-ups sent since may go out once more when the bot starts, because their last send goes back too. So pick the newest copy from before the damage.
+
+### Which copy
+
+| What happened | Restore |
+|---|---|
+| A migration ran and damaged data | The newest `backups/pre-migration-v<N>-….db`, where `<N>` is the version the database was at before the deploy that ran it (one snapshot covers every migration that start applied). The bot runs every migration from `<N>` again on start, so the code on `main` must not repeat the damage first. Changing a merged migration is decided with the owner (CLAUDE.md). A migration that *failed* needs no restore: it rolls back, and the bot exits until a fix is deployed. |
+| Rows lost or wrong (a bug, a mistaken command) | The newest `backups/daily-….db` from before it. The VM keeps only the newest 7, so damage older than that needs an off-VM copy (kept 30 to 60 days). |
+| The VM or its disk is gone, or `backups/` is unusable | The newest off-VM copy, after rebuilding the VM (sections 2 to 7) without the backups' `.env` values yet. The rebuilt bot's first daily snapshot is of an empty database: with the values set, that's what would be uploaded, and the daily check would then wait a day from it. So delete `backups/daily-*.db` when the bot is stopped (step 2 below), and add the values after the restore: section 10's step 7 for a new upload URL (the old one was only in the lost `.env`, unless you kept it), then step 8. |
+
+Names hold the copy's time in UTC (`daily-2026-11-24T03-00-00.000Z.db`); `ls -l ~/shrimp-fried-this-rice/backups` lists them. Off-VM copies are named `daily-<snapshot time>.sent-<upload time>.db.age`.
+
+### Getting an off-VM copy onto the VM
+
+Skip this for a copy already in `backups/`. On your machine:
+
+1. Download the object from the bucket (the bucket → Objects) in the console.
+2. Decrypt it: `age -d -i shrimp-backups.key -o restore.db daily-….db.age`
+3. Copy it to the VM (the first command creates `backups/` on a rebuilt VM, owner-only like the bot makes it):
+
+   ```bash
+   ssh -i ~/Downloads/your-key-filename.key ubuntu@YOUR_PUBLIC_IP 'mkdir -m 700 -p ~/shrimp-fried-this-rice/backups'
+   scp -i ~/Downloads/your-key-filename.key restore.db ubuntu@YOUR_PUBLIC_IP:~/shrimp-fried-this-rice/backups/
+   ```
+
+4. Delete `restore.db` from your machine: it's the database unencrypted.
+
+### On the VM
+
+In `~/shrimp-fried-this-rice`. Don't approve a deploy until you're done: it would restart the bot partway through.
+
+1. **Check the copy** before stopping anything:
+
+   ```bash
+   node -e "const db = new (require('better-sqlite3'))(process.argv[1], { readonly: true, fileMustExist: true }); console.log('integrity:', db.pragma('integrity_check', { simple: true }), '| schema version:', db.pragma('user_version', { simple: true })); for (const { name } of db.prepare(\"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name\").all()) console.log(name, db.prepare('SELECT count(*) AS n FROM \"' + name + '\"').get().n)" backups/COPY.db
+   ```
+
+   It prints `integrity: ok`, the schema version and each table's row count, through the project's own `better-sqlite3` (the VM may have no `sqlite3` command). Replace `COPY` with the copy's name, here and in step 4. Anything but `ok` means an older copy. Run it on `bot.db` too and compare the schema versions: the live one is the code's. A lower version is fine (the bot migrates it on start). A higher one means the copy is from before a [decision 0003](docs/decisions/0003-pre-release-schema-resets.md) reset or from newer code since reverted: the bot would run on tables its code doesn't match, so don't restore it without a plan agreed with the owner.
+2. **Stop the bot:** `sudo systemctl stop discordbotshrimp`. Unlike a crash, a stop isn't restarted by `Restart=on-failure`.
+3. **Set the current database aside, all its files together:**
+
+   ```bash
+   aside=backups/before-restore-$(date -u +%Y-%m-%dT%H-%M-%SZ)
+   mkdir -m 700 "$aside"
+   mv bot.db* "$aside"/
+   ```
+
+   `bot.db-wal` can hold most of the database (after a crash, everything since SQLite last copied it into `bot.db`), so `bot.db` without it isn't the whole database. A `-wal` left beside the restored file is replayed into it when it's opened. Tried locally on 2026-11-24: the restored copy came up with the old database's rows instead of its own, and the integrity check still said `ok`. Nothing prunes this folder, or a `backups/restore.db` copied from your machine, so delete both once the restored bot has run well for a while (`restore.db` is the database unencrypted).
+4. **Copy the chosen copy in:** `cp backups/COPY.db bot.db`. Copy it rather than move it, so the snapshot stays where it was.
+5. **Start it and watch:** `sudo systemctl start discordbotshrimp`, then `journalctl -u discordbotshrimp -f` until `Ready! Logged in as`. On start the bot makes the file owner-only and switches it to WAL. If its schema version is older than the code's, the bot saves a pre-migration snapshot and migrates it. A copy newer than the code is opened as is.
+6. **Check in Discord:** `/reminder list` in a server you're in, and the `/reminder status` embed.
+
+### Trying it (a drill)
+
+[Decision 0011](docs/decisions/0011-off-vm-backups.md) asks for this to be tried once, and again after a large schema change or every few months, since a procedure that worked once can go stale. To try it without losing anything, restore a copy made right after the bot stops:
+
+1. On your machine, take the newest off-VM copy through steps 1, 2 and 4 of "Getting an off-VM copy onto the VM", checking it with `sqlite3 restore.db 'PRAGMA integrity_check; PRAGMA user_version;'` before deleting it. This tries the key and the bucket without changing the VM.
+2. On the VM, stop the bot (step 2), then copy its database as it is now:
+
+   ```bash
+   node -e "require('better-sqlite3')('bot.db', { readonly: true, fileMustExist: true }).exec(\"VACUUM INTO 'backups/drill.db'\")"
+   ```
+
+   (`VACUUM INTO` includes what's still in `bot.db-wal`.) Then follow steps 1, 3, 4, 5 and 6 with `backups/drill.db`. The bot is down for a minute or two, and reminders due in that time send when it starts.
+3. Delete `backups/drill.db` and the `before-restore-…` folder, and record the date in `docs/roadmap.md`.
+
+---
+
 ## Quick reference: common commands
 
 | Task | Command |
@@ -303,4 +373,5 @@ The bot uploads each daily snapshot of `bot.db`, encrypted to your age public ke
 | View live logs | `journalctl -u discordbotshrimp -f` |
 | Re-register slash commands | `npm run deploycommands` |
 | Full deploy | merge a PR to `main`, then approve the `production` deployment |
+| Restore `bot.db` from a copy | section 11 |
 | SSH into the VM | `ssh -i ~/Downloads/your-key-filename.key ubuntu@YOUR_PUBLIC_IP` |
