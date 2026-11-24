@@ -456,6 +456,21 @@ Later item), not a follow-up.
   an outage wipes nothing. Nothing else uses the tables yet. A server
   the bot is removed from while it's offline (a deploy's seconds) keeps
   its rows, as `GuildDelete` never comes; see Later.
+- **Sealing the Minecraft helper's messages** (2026-11-24, second part of
+  A8d). `src/minecraft/bridge/seal.ts`, for both the bot and `mcbridge`
+  (only `node:crypto`, so the helper stays dependency-free): a new
+  pairing secret, its two keys (HKDF-SHA256, one per direction),
+  sealing and opening with AES-256-GCM, checking an envelope before
+  anything is looked up, and a replay guard (a 5-minute window either
+  side, each nonce once). Worked out here: the IV doubles as the nonce;
+  the tag also covers the route and, for a response, the request it
+  answers, so a captured reply can't answer a later request; the time
+  is checked apart from opening, so the bot can answer a skewed clock
+  sealed; and the decipher sets the tag length, as Node otherwise
+  accepts a truncated tag (DEP0182, checked in Node 24's docs). The
+  derived keys and a sealed body are pinned by tests, so a change that
+  would lock out running helpers fails. Not wired up yet: nothing calls
+  it until the routes.
 
 ## Next up
 
@@ -489,9 +504,10 @@ them ahead of items 5 and 6.
    done (Done above): the web server through the tunnel, login with
    Discord, the server list guarded per server, the read-only reminders
    page and rate limits, all tried on the live dashboard. Left: A8d to
-   A8i, two-way chat, linking and pictures. A8d's storage is done (Done
-   above); next, sealing the helper's messages (HKDF and AES-256-GCM),
-   pairing, and the long-poll route.
+   A8i, two-way chat, linking and pictures. A8d's storage and the
+   sealing of the helper's messages are done (Done above); next,
+   pairing and the long-poll route, which must make a request replayed
+   just after a restart harmless (the plan's "Endpoint safety").
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the

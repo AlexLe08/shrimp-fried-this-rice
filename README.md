@@ -263,6 +263,7 @@ src/
       rcon.ts             # RCON client for two-way chat (not wired up yet): login, one command at a time with a timeout, reconnecting with backoff, off after a wrong password
       toMinecraft.ts      # a Discord message as a tellraw command (not wired up yet): prefix and colour, one line, \u escapes, cut to fit RCON's limit
       serverProperties.ts # reads the Minecraft server's server.properties (not wired up yet): RCON's port and password, or why it's off, and online-mode
+      seal.ts             # seals the helper's messages to the bot and its answers (not wired up yet; both ends will use it): keys from the pairing secret with HKDF, AES-256-GCM, the replay window
       bridge.ts           # wiring: lines to entries to events, alerts through the gate, posts to the right webhook, `!link` codes to the bot once paired (not yet)
       main.ts             # the entrypoint (npm run mcbridge): --config, the tailer, crash watcher and sender, shutdown on SIGINT, SIGTERM, SIGHUP (and SIGBREAK on Windows)
 test/
@@ -342,6 +343,7 @@ test/
       rcon.test.ts                  # against a fake RCON server on port 0: framing, split reads, one command at a time, timeouts, drops and retry, backoff, stop races
       toMinecraft.test.ts           # the component's shape, quotes and backslashes kept in the string, escapes, § and control characters, cutting to the limit, prefix and colour rules
       serverProperties.test.ts      # Java properties syntax (separators, escapes, continuations, comments), UTF-8 with the ISO-8859-1 fallback, RCON settings and defaults
+      seal.test.ts                  # pinned keys and wire format, round trips, every tampering refused (ciphertext, tag, IV, key, bridge, route, direction, reply), envelope checks, the replay window
       bridge.test.ts                # a real log's posts, stack traces flushed when quiet, summaries, the backlog scan, `!link` lines (chat until paired, then reported), crash reports, read errors
 ```
 
