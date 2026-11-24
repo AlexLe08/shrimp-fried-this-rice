@@ -1,6 +1,6 @@
 import type { Server } from 'node:http';
 import { serve } from '@hono/node-server';
-import { createApp } from './app.ts';
+import { createApp, type AppOptions } from './app.ts';
 
 // cloudflared keeps an idle connection to the bot open for 90 s by default;
 // were Node to close it first (after 5 s by default), the request cloudflared
@@ -32,7 +32,7 @@ export function dashboardPortFromEnv(env: NodeJS.ProcessEnv): number | null {
  * server failed, logged: the bot runs on without its dashboard rather than
  * leaving every server without reminders.
  */
-export function startDashboard(port: number): Promise<number | null> {
+export function startDashboard(port: number, appOptions: AppOptions = { auth: null }): Promise<number | null> {
 	if (server) {
 		console.error('The dashboard is already running; not starting it again.');
 		return Promise.resolve(null);
@@ -40,7 +40,7 @@ export function startDashboard(port: number): Promise<number | null> {
 	return new Promise((resolve) => {
 		let listening: Server;
 		try {
-			listening = startServer(port, resolve);
+			listening = startServer(port, appOptions, resolve);
 		} catch (error) {
 			console.error('The dashboard is off: its server failed:', error);
 			resolve(null);
@@ -56,10 +56,10 @@ export function startDashboard(port: number): Promise<number | null> {
 	});
 }
 
-function startServer(port: number, resolve: (port: number) => void): Server {
+function startServer(port: number, appOptions: AppOptions, resolve: (port: number) => void): Server {
 	return serve(
 		{
-			fetch: createApp().fetch,
+			fetch: createApp(appOptions).fetch,
 			port,
 			hostname: '127.0.0.1',
 			// Otherwise it swaps the process's global Request and Response for its
