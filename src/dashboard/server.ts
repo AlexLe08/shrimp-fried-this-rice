@@ -7,6 +7,11 @@ import { createApp } from './app.ts';
 // next sends on it would fail with a 502.
 export const KEEP_ALIVE_TIMEOUT_MS = 100_000;
 
+// How long shutdown lets requests under way finish before cutting them off:
+// a client stuck partway through one would otherwise hold the server open
+// past index.ts's 5 s forced exit, which could cut off a reminder mid-send.
+export const CLOSE_GRACE_MS = 2000;
+
 let server: Server | null = null;
 
 /** DASHBOARD_PORT from `.env`, or null when unset (a dev bot) or malformed (logged). */
@@ -28,21 +33,19 @@ export function dashboardPortFromEnv(env: NodeJS.ProcessEnv): number | null {
  * leaving every server without reminders.
  */
 export function startDashboard(port: number): Promise<number | null> {
+	if (server) {
+		console.error('The dashboard is already running; not starting it again.');
+		return Promise.resolve(null);
+	}
 	return new Promise((resolve) => {
-		const listening = serve(
-			{
-				fetch: createApp().fetch,
-				port,
-				hostname: '127.0.0.1',
-				// Otherwise it swaps the process's global Request and Response for its
-				// own, under every other fetch in the bot (discord.js, off-VM backups).
-				overrideGlobalObjects: false,
-			},
-			(info) => {
-				console.log(`Dashboard listening on http://127.0.0.1:${info.port}`);
-				resolve(info.port);
-			},
-		) as Server;
+		let listening: Server;
+		try {
+			listening = startServer(port, resolve);
+		} catch (error) {
+			console.error('The dashboard is off: its server failed:', error);
+			resolve(null);
+			return;
+		}
 		listening.keepAliveTimeout = KEEP_ALIVE_TIMEOUT_MS;
 		listening.on('error', (error) => {
 			console.error('The dashboard is off: its server failed:', error);
@@ -53,13 +56,35 @@ export function startDashboard(port: number): Promise<number | null> {
 	});
 }
 
-/** Stops taking requests and waits for those under way, which may still need the client and the database. */
-export async function stopDashboard(): Promise<void> {
+function startServer(port: number, resolve: (port: number) => void): Server {
+	return serve(
+		{
+			fetch: createApp().fetch,
+			port,
+			hostname: '127.0.0.1',
+			// Otherwise it swaps the process's global Request and Response for its
+			// own, under every other fetch in the bot (discord.js, off-VM backups).
+			overrideGlobalObjects: false,
+		},
+		(info) => {
+			console.log(`Dashboard listening on http://127.0.0.1:${info.port}`);
+			resolve(info.port);
+		},
+	) as Server;
+}
+
+/**
+ * Stops taking requests and waits for those under way, which may still need
+ * the client and the database, for up to `graceMs`; then cuts off the rest.
+ */
+export async function stopDashboard(graceMs = CLOSE_GRACE_MS): Promise<void> {
 	const running = server;
 	if (!running) return;
 	server = null;
 	await new Promise<void>((resolve) => {
+		const cutOff = setTimeout(() => running.closeAllConnections(), graceMs);
 		running.close((error) => {
+			clearTimeout(cutOff);
 			if (error) console.error('Error while stopping the dashboard:', error);
 			resolve();
 		});

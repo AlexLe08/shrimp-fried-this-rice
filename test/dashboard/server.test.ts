@@ -1,4 +1,5 @@
 import http from 'node:http';
+import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -85,13 +86,36 @@ describe('startDashboard', () => {
 
 	it('resolves null and logs, rather than throwing, when the port is taken', async () => {
 		const { error } = quietLogs();
-		const port = await startDashboard(0);
+		const other = net.createServer();
+		await new Promise<void>((resolve) => other.listen(0, '127.0.0.1', resolve));
+		const port = (other.address() as AddressInfo).port;
 
-		const second = await startDashboard(port!);
+		const result = await startDashboard(port);
 
-		expect(second).toBeNull();
+		expect(result).toBeNull();
 		expect(error).toHaveBeenCalledWith('The dashboard is off: its server failed:', expect.anything());
 		expect(__dashboardServerForTests()).toBeNull();
+		await new Promise((resolve) => other.close(resolve));
+	});
+
+	it('resolves null and logs, rather than throwing, when the server throws as it starts', async () => {
+		const { error } = quietLogs();
+
+		await expect(startDashboard(70_000)).resolves.toBeNull();
+
+		expect(error).toHaveBeenCalledWith('The dashboard is off: its server failed:', expect.any(RangeError));
+		expect(__dashboardServerForTests()).toBeNull();
+	});
+
+	it('refuses to start a second server while one is running', async () => {
+		const { error } = quietLogs();
+		await startDashboard(0);
+		const running = __dashboardServerForTests();
+
+		await expect(startDashboard(0)).resolves.toBeNull();
+
+		expect(error).toHaveBeenCalledWith(expect.stringContaining('already running'));
+		expect(__dashboardServerForTests()).toBe(running);
 	});
 });
 
@@ -107,11 +131,28 @@ describe('stopDashboard', () => {
 		expect(await getKeepAlive(port, agent)).toBe('ok');
 
 		const started = Date.now();
-		await stopDashboard();
+		await stopDashboard(60_000);
 
 		expect(Date.now() - started).toBeLessThan(2000);
 		expect(__dashboardServerForTests()).toBeNull();
 		await expect(fetch(`http://127.0.0.1:${port}/health`)).rejects.toThrow();
 		agent.destroy();
+	});
+
+	it('cuts off a request still under way once the grace period is over', async () => {
+		quietLogs();
+		const port = (await startDashboard(0))!;
+		const client = net.connect(port, '127.0.0.1');
+		await new Promise((resolve) => client.once('connect', resolve));
+		const closed = new Promise((resolve) => client.once('close', resolve));
+		// Headers never finished: the server counts it as a request under way.
+		client.write('GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\n');
+		await new Promise((resolve) => setTimeout(resolve, 50));
+
+		const started = Date.now();
+		await stopDashboard(100);
+
+		expect(Date.now() - started).toBeLessThan(2000);
+		await closed;
 	});
 });

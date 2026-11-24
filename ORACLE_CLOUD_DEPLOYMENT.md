@@ -389,7 +389,7 @@ The dashboard is served at `https://shrimp-fried-rice.alexle.dev` through a Clou
    echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared noble main' | sudo tee /etc/apt/sources.list.d/cloudflared.list
    sudo apt-get update && sudo apt-get install cloudflared
    ```
-3. **Connect it to the tunnel.** In Cloudflare's dashboard: Networking → Tunnels → the tunnel. Its setup page shows an install command for your operating system (Debian, 64-bit ARM). Step 2 already installed `cloudflared`, so run only the line that installs it as a service with the tunnel's token (`sudo cloudflared service install <token>`). The token is a secret like `.env`: anyone with it can run the tunnel and answer for the hostname. Then check:
+3. **Connect it to the tunnel.** In Cloudflare's dashboard: Networking → Tunnels → the tunnel. Its setup page shows an install command for your operating system (Debian, 64-bit ARM). Step 2 already installed `cloudflared`, so run only the line that installs it as a service with the tunnel's token (`sudo cloudflared service install <token>`). The token is a secret like `.env`: anyone with it can run the tunnel and answer for the hostname. Type a space before the command, so bash leaves it out of your shell history (Ubuntu's default `HISTCONTROL=ignoreboth`). Then check:
 
    ```bash
    sudo systemctl status cloudflared    # active (running), and enabled so it starts at boot

@@ -88,8 +88,9 @@ the workflow, indexed in its `README.md`.
   commit.
 - `src/` is grouped by area: `core/` (bot plumbing and Discord helpers
   any area may use), `reminders/` and `ffxiv/` (later `minecraft/`),
-  and `dashboard/` (the web dashboard, served on `127.0.0.1` behind
-  `cloudflared`; decisions 0008 and 0009), each holding its own commands, events, embeds and `storage.ts`.
+  each holding its own commands, events, embeds and `storage.ts`.
+  `dashboard/` holds the web dashboard, served on `127.0.0.1` behind
+  `cloudflared` (decisions 0008 and 0009).
   `src/index.ts` and `src/deploy-commands.ts` stay at the top of `src/`:
   the VM's systemd unit starts `./src/index.ts`, so moving it would leave
   the bot down after the deploy.
@@ -133,8 +134,8 @@ the workflow, indexed in its `README.md`.
   calls `refreshGuildStatusMessage` afterwards.
 - `src/core/shutdown.ts` handles SIGTERM/SIGINT (systemd restarts on
   deploy): stop the dashboard's server (`src/dashboard/server.ts`,
-  finishing requests under way), stop the scheduler, destroy the client,
-  close the database, in that order. Nothing may touch the database after
+  finishing requests under way, for up to 2 s), stop the scheduler,
+  destroy the client, close the database, in that order. Nothing may touch the database after
   it closes.
 - Tests are Vitest in `test/`, mirroring `src/`. Discord objects are small
   fakes built from `vi.fn()`s (`test/mocks.ts`, `test/mockInteraction.ts`), cast with
