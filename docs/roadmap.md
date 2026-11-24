@@ -249,8 +249,8 @@ Later item), not a follow-up.
   Hono (the owner's choice of dependency), the helper long-polling.
   Facts checked against each provider's docs that day; what couldn't be
   is marked in the records.
-- **Snapshots of `bot.db` on the VM** (2026-11-23, first part of Next up
-  item 1). `src/core/backup.ts` writes complete copies with `VACUUM INTO`
+- **Snapshots of `bot.db` on the VM** (2026-11-23, first part of backing up
+  `bot.db`). `src/core/backup.ts` writes complete copies with `VACUUM INTO`
   to `backups/` beside the database (created `0700`), through a `.tmp`
   file renamed once finished, as SQLite's docs warn a cut-off one can be
   corrupt. One before pending migrations (newest 5 kept; if it fails the
@@ -271,7 +271,7 @@ Later item), not a follow-up.
   deploy with a migration it races the restarted bot to migrate (as
   before this) and to snapshot. Not yet run on the VM.
 - **`bot.db` readable only by the bot's user** (2026-11-23, second part
-  of Next up item 1). `core/database.ts` sets `bot.db` to `0600` on
+  of backing up `bot.db`). `core/database.ts` sets `bot.db` to `0600` on
   every start (creating a new one that way) and any `-wal` and `-shm`
   left over; snapshots are `0600` before they're renamed into place, and
   saving one sets earlier ones (the umask's mode, inside the `0700`
@@ -284,7 +284,7 @@ Later item), not a follow-up.
   left them `0644` beside a `0644` `bot.db`. A failed `chmod` is logged
   and the bot runs on. Not yet run on the VM.
 - **Encrypted copies of `bot.db` off the VM** (2026-11-24, third part of
-  Next up item 1; [decision 0011](decisions/0011-off-vm-backups.md)).
+  backing up `bot.db`; [decision 0011](decisions/0011-off-vm-backups.md)).
   `src/core/offsiteBackup.ts`, a scheduled check after the daily one,
   encrypts the newest daily snapshot not yet sent to the owner's age
   public key with `age-encryption` 0.3.1 (a new runtime dependency,
@@ -306,8 +306,9 @@ Later item), not a follow-up.
   owner downloaded it and decrypted it with the age key into a working
   database. The console paths in section 10 were corrected from that
   walk-through. The stale-upload DM is not yet tried in Discord.
-- **Restore procedure for `bot.db`** (2026-11-24, last part of Next up
-  item 1). `ORACLE_CLOUD_DEPLOYMENT.md` section 11: which copy to restore
+- **Restore procedure for `bot.db`** (2026-11-24, last part of backing up
+  `bot.db`, which the owner put first in Next up on 2026-11-23 after
+  reviewing decisions 0001 to 0009 for serious consequences). `ORACLE_CLOUD_DEPLOYMENT.md` section 11: which copy to restore
   (a pre-migration snapshot, a daily one, or an off-VM copy after
   rebuilding the VM), getting an off-VM copy onto the VM, a check of a copy
   through the project's own `better-sqlite3` (the VM may have no `sqlite3`),
@@ -318,33 +319,22 @@ Later item), not a follow-up.
   the restore came up with the old rows and `integrity_check` still said
   `ok`. A drill restores a `VACUUM INTO` copy made right after stopping
   the bot, so trying it loses nothing (checked locally: it includes what's
-  still in the `-wal`). Not yet tried on the VM.
+  still in the `-wal`). The owner ran the drill on the VM on 2026-11-24,
+  after #64 merged, and it worked. Decision 0011 asks for it again after
+  a large schema change or every few months.
 
 ## Next up
 
 Feature work, in this order unless the owner says otherwise. Schema
 changes are cheapest now, while the bot is pre-release (decision 0003).
 
-Items 2 to 5 are designed in
+Items 1 to 4 are designed in
 [`plans/minecraft-ff14-features.md`](plans/minecraft-ff14-features.md),
 which has their PR order (its "Suggested pull request order"), the inputs
 to ask the owner for, and which facts are still unverified. The owner put
-them ahead of items 6 and 7.
+them ahead of items 5 and 6.
 
-1. **Back up `bot.db`** (from reviewing decisions 0001 to 0009 for
-   serious consequences; put first by the owner, 2026-11-23). It has no backup today: one file on
-   the VM's disk, and soon it holds bridges' webhook tokens and keys and
-   players' links as well as every server's reminders. Losing the VM, a
-   bad migration or a bug that deletes rows would lose all of it, and
-   every server would have to set everything up again. Snapshots on the
-   VM are done (Done above), covering a bad migration, lost rows, and a
-   decision 0003 reset up to the last daily snapshot. Left:
-   - Off the VM: done and set up (Done above).
-   - The restore procedure is written (Done above). Left: its drill
-     (`ORACLE_CLOUD_DEPLOYMENT.md` section 11, "Trying it"), once on the
-     VM by the owner, then the date recorded here.
-     (`bot.db` and the snapshots are now owner-only: Done above.)
-2. **Minecraft bridge, what's left** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
+1. **Minecraft bridge, what's left** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
    The first version, crash reports and player avatars are done and tested
    end to end (Done above). Left: Discord to Minecraft chat, designed in
    [A8](plans/minecraft-ff14-features.md#discord-to-minecraft-chat-a8)
@@ -354,8 +344,8 @@ them ahead of items 6 and 7.
    code typed in game. That replaces choosing in game (`!avatar`), the
    owner's call (2026-11-21). Its helper-side parts A8a to A8c (the RCON
    client, the `tellraw` builder and `server.properties` reader, and the
-   `!link` line) are done; the rest follows item 3.
-3. **Dashboard foundation, then two-way Minecraft chat**
+   `!link` line) are done; the rest follows item 2.
+2. **Dashboard foundation, then two-way Minecraft chat**
    ([Track D](plans/minecraft-ff14-features.md#track-d-web-dashboard)
    D0 and D1, moved up by the owner on 2026-11-22, with the rest of the
    Minecraft work, ahead of the collection tracker). The hostname and
@@ -364,21 +354,21 @@ them ahead of items 6 and 7.
    the tunnel exists (2026-11-23, asking for no payment method); D1 adds
    its route and installs `cloudflared` on the VM. Then A8d to A8i:
    two-way chat, linking and pictures.
-4. **Collection tracker (`/collection`, `/collectionadmin`)**
+3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the
    group's spreadsheet.
-5. **Lodestone news and scheduled events**
+4. **Lodestone news and scheduled events**
    ([Track C](plans/minecraft-ff14-features.md#track-c-lodestone-news-and-scheduled-events)),
    then the **role check-in** after onboarding
    ([Track E, E2](plans/minecraft-ff14-features.md#e-role-check-in-after-choosing-a-role)),
    which needs the Server Members Intent switched on first.
-6. **File or audio attachments on reminders** (bundled sounds or user
+5. **File or audio attachments on reminders** (bundled sounds or user
    uploads). Open questions first: where uploads live (the VM's disk, or
    Discord's own CDN by re-posting the attachment URL, which expires),
    size limits, and the free tier. Likely a design note or decision record
    before code.
-7. **Rework `/remindme`** (brainstorm in its own session first). One
+6. **Rework `/remindme`** (brainstorm in its own session first). One
    command does everything through optional options: view (no options),
    update (`enabled`, `interval`, `message`, `embed`), snooze, and `reset`,
    with rules about which combine. Options to weigh include subcommands
