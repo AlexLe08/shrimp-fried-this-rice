@@ -283,6 +283,27 @@ Later item), not a follow-up.
   the database's own mode whatever the umask, so a umask alone would have
   left them `0644` beside a `0644` `bot.db`. A failed `chmod` is logged
   and the bot runs on. Not yet run on the VM.
+- **Encrypted copies of `bot.db` off the VM** (2026-11-24, third part of
+  Next up item 1; [decision 0011](decisions/0011-off-vm-backups.md)).
+  `src/core/offsiteBackup.ts`, a scheduled check after the daily one,
+  encrypts the newest daily snapshot not yet sent to the owner's age
+  public key with `age-encryption` 0.3.1 (a new runtime dependency,
+  approved in the decision) and `PUT`s it to a bucket's write-only
+  pre-authenticated URL, under a new name each attempt; what was sent is
+  kept in `backups/offsite-upload.json`. A failure is logged without the
+  URL and retried hourly; shutdown aborts an upload under way. Once the
+  newest copy is over 48 hours old, the application's owner (or its
+  team's owner, from `client.application.fetch()`, so no new `.env`
+  value) gets a DM once a day. Off unless `BACKUP_UPLOAD_URL` and
+  `BACKUP_AGE_RECIPIENT` are both set, and a malformed one is refused at
+  startup with a log line. Checked: `age-encryption` does X25519 through
+  WebCrypto (`crypto.subtle`), so tests await each run for real between
+  fake-timer polls; a bucket PAR's URL ends in `/o/` and an upload is a
+  `PUT` with the name appended (Oracle's docs, 2026-11-24; the success
+  status isn't stated, so any 2xx counts). The console setup is
+  `ORACLE_CLOUD_DEPLOYMENT.md`'s section 10, for the owner. Not yet run
+  against a real bucket or on the VM; the stale-upload DM not tried in
+  Discord.
 
 ## Next up
 
@@ -303,16 +324,10 @@ them ahead of items 6 and 7.
    every server would have to set everything up again. Snapshots on the
    VM are done (Done above), covering a bad migration, lost rows, and a
    decision 0003 reset up to the last daily snapshot. Left:
-   - Off the VM: an encrypted copy, as the file will hold secrets.
-     Decided in [decision 0011](decisions/0011-off-vm-backups.md)
-     (accepted 2026-11-24): daily, encrypted with age to the owner's
-     public key through the `age-encryption` package (approved by the
-     owner, 2026-11-24), uploaded to Oracle's Always Free Object Storage
-     through a write-only pre-authenticated URL, with a DM to the owner
-     when the newest copy is over 48 hours old. Next: the owner sets up
-     the bucket, the retention and lifecycle rules, the write-only URL
-     and an age key pair in Oracle's console, then the PR that builds
-     it.
+   - Off the VM: built (Done above). Next: the owner follows
+     `ORACLE_CLOUD_DEPLOYMENT.md`'s section 10 (age key pair, bucket,
+     retention and lifecycle rules, the write-only URL, the two `.env`
+     values) and checks that the first copy decrypts.
    - A restore procedure in `ORACLE_CLOUD_DEPLOYMENT.md`, tried once.
      (`bot.db` and the snapshots are now owner-only: Done above.)
 2. **Minecraft bridge, what's left** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).

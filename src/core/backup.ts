@@ -21,7 +21,7 @@ const STAMP = String.raw`\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d\.\d{3}Z`;
 const DAILY = new RegExp(`^daily-(${STAMP})\\.db$`);
 const PRE_MIGRATION = new RegExp(`^pre-migration-v\\d+-(${STAMP})\\.db$`);
 
-function stampOf(date: Date): string {
+export function stampOf(date: Date): string {
 	return date.toISOString().replaceAll(':', '-');
 }
 
@@ -80,6 +80,11 @@ function snapshotsIn(dir: string, pattern: RegExp): { file: string; takenAt: Dat
 			return match ? [{ file: path.join(dir, name), takenAt: dateOf(match[1]!) }] : [];
 		})
 		.sort((a, b) => a.takenAt.getTime() - b.takenAt.getTime());
+}
+
+/** The daily snapshots in `dir`, oldest first. */
+export function dailySnapshots(dir: string): { file: string; takenAt: Date }[] {
+	return snapshotsIn(dir, DAILY);
 }
 
 function prune(dir: string, pattern: RegExp, keep: number): void {
