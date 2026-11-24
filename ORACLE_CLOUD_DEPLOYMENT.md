@@ -120,6 +120,8 @@ DISCORD_TOKEN=your-production-bot-token-here
 DISCORD_CLIENT_ID=your-production-application-client-id
 ```
 
+Two more, `BACKUP_UPLOAD_URL` and `BACKUP_AGE_RECIPIENT`, turn on encrypted copies of `bot.db` off the VM; [section 10](#10-off-vm-backups-one-time-setup) sets them up.
+
 Save with **Ctrl+O**, **Enter**, then exit with **Ctrl+X**.
 
 **Note:** unlike a PaaS platform with an ephemeral filesystem (Railway, Fly.io, etc.), a raw VM's disk is persistent by default — `bot.db` needs no special volume configuration or environment-variable override; it's simply created at its normal default path and stays there indefinitely across deploys and reboots.
@@ -259,6 +261,36 @@ What it needs, set up once:
 **Why `bot.db` is never at risk:** it's git-ignored, and `git reset --hard` only resets tracked files, so the database (and `.env`) survive every deploy. Anything edited by hand in tracked files on the VM is discarded, though: change code only through a PR.
 
 **Deploying by hand** (if Actions is down): SSH in and run the same commands as above.
+
+---
+
+## 10. Off-VM backups: one-time setup
+
+The bot uploads each daily snapshot of `bot.db`, encrypted to your age public key, to an Object Storage bucket in this tenancy ([decision 0011](docs/decisions/0011-off-vm-backups.md); how it behaves is in the README's Design notes). It does nothing until the two `.env` values below are set. Set it up once, in this order. Oracle's console labels below are from its docs (read 2026-11-24), not checked by clicking through.
+
+1. **Two-factor sign-in** on the Oracle account, if it isn't on yet: whoever signs in to the console can delete the VM, the bucket and its retention rule together.
+2. **An age key pair, on your own machine** (never on the VM): install `age` (`brew install age` on macOS), then run `age-keygen -o shrimp-backups.key`. It prints the public key (`Public key: age1…`), which goes in the VM's `.env`. The file is the identity that decrypts every copy: keep it in your password manager and an offline copy (printed, or on a USB stick). Losing it makes every copy useless, and nothing recovers it.
+3. **The bucket:** Storage → Buckets → Create Bucket, in the VM's compartment, Standard tier, visibility **private** (the default). Leave versioning off: a retention rule can't be added to a bucket that has it.
+4. **The retention rule:** the bucket → Retention Rules → Create Rule, time-bound, **30 days**. Leave **Enable retention rule lock** unticked: locking can't be undone, not even by Oracle Support.
+5. **Let Object Storage run lifecycle policies:** Identity → Policies, in the **root** compartment, a policy with `Allow service objectstorage-<region_identifier> to manage object-family in compartment <compartment_name>`, with the region identifier from Oracle's Regions and Availability Domains page (for example `us-ashburn-1`).
+6. **The lifecycle policy:** the bucket → Lifecycle Policy Rules → Create Rule, action **Delete**, after **60 days**. It must stay longer than the retention rule's 30 days, which it can't delete under.
+7. **The write-only URL:** the bucket → Pre-Authenticated Requests → Create, target **Bucket**, access **Permit object writes**, with an expiry far ahead (it's required but has no limit; a year or more, with a reminder to renew it). Copy the URL straight away: it's shown only once. It ends in `/o/`.
+8. **On the VM**, add both to `.env` and restart the bot:
+
+   ```env
+   BACKUP_UPLOAD_URL=https://objectstorage.<region>.oraclecloud.com/p/<token>/n/<namespace>/b/<bucket>/o/
+   BACKUP_AGE_RECIPIENT=age1...
+   ```
+
+   ```bash
+   sudo systemctl restart discordbotshrimp
+   journalctl -u discordbotshrimp -f   # within a minute: "Uploaded an encrypted copy of daily-….db as …"
+   ```
+
+   The URL is a secret like the bot's token: anyone with it can upload to the bucket, though not list or delete what's there. If the log says `Off-VM backups are off: …`, one value is missing or malformed.
+9. **Check one copy decrypts**, on your machine: download the newest object from the bucket in the console, then `age -d -i shrimp-backups.key -o restored.db daily-….db.age` and open `restored.db` with `sqlite3`.
+
+**Renewing or replacing the URL** (it expired, was revoked, or the user who made it lost permission): create a new one as in step 7, put it in `.env` and restart the bot. If uploads stop for 48 hours, the bot DMs the application's owner once a day until one goes up again.
 
 ---
 
