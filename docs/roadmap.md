@@ -473,6 +473,29 @@ Later item), not a follow-up.
   derived keys and a sealed body are pinned by tests, so a change that
   would lock out running helpers fails. Not wired up yet: nothing calls
   it until the routes.
+- **The Minecraft helper's endpoint** (2026-11-24, third part of A8d).
+  `POST /minecraft/connect` and `POST /minecraft/poll` on the dashboard's
+  server (`src/minecraft/helperRoutes.ts`), with each helper's session,
+  held poll and waiting messages in memory (`src/minecraft/helperHub.ts`).
+  A request is checked cheapest first: 240 a minute per address, JSON of
+  at most 16 KiB, a well-formed envelope, 120 a minute per bridge before
+  the lookup, then the seal and the replay guard. Refusals before the seal
+  opens are in the clear (400, 401 for an unknown bridge and a forged seal
+  alike, 413, 415, 429); every answer after it is sealed, so nobody on the
+  way can fake a "taken over". A poll is held up to 50 s; a new connection
+  takes the bridge over (the old session gets 409); a session that lapsed
+  (60 s after its last poll) or that a restart forgot gets 410 and
+  connects again; messages wait up to 30 s, at most 200 a bridge. Worked
+  out here: the helper's routes skip the pages' 60-a-minute limit, as a
+  busy channel means about a poll per message; `@hono/node-server` 2.1
+  aborts a request's signal when its helper hangs up (read in its source,
+  then tested against the real server), so a held poll lets go without
+  taking a message; and shutdown answers held polls at once, then keeps
+  closing connections as they go idle, as `server.close()` closes only
+  those idle when it's called (found by the new shutdown test, which
+  otherwise waited out the grace period). Not used yet: no bridge can be
+  paired until the next part, and nothing delivers messages until the
+  relay (A8e). Not tried through the real tunnel.
 
 ## Next up
 
@@ -506,10 +529,11 @@ them ahead of items 5 and 6.
    done (Done above): the web server through the tunnel, login with
    Discord, the server list guarded per server, the read-only reminders
    page and rate limits, all tried on the live dashboard. Left: A8d to
-   A8i, two-way chat, linking and pictures. A8d's storage and the
-   sealing of the helper's messages are done (Done above); next,
-   pairing and the long-poll route, with a limit on a request body's
-   size before its envelope is read (the plan's "Endpoint safety").
+   A8i, two-way chat, linking and pictures. A8d's storage, the
+   sealing of the helper's messages and its endpoint are done (Done
+   above); next, pairing (making a bridge's webhooks and secret, and the
+   config to download), then deleting a link whose member has left (on
+   Unknown Member only), the rest of A8d.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the
