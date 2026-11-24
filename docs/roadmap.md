@@ -444,7 +444,8 @@ them ahead of items 5 and 6.
    server is done and reachable through the tunnel, as are login with
    Discord, the server list guarded per server, and the read-only
    reminders page (Done above). Left: rate limiting per visitor (keyed
-   on Cloudflare's client-IP header) and per signed-in user: logins already have a cap for the whole dashboard, and access
+   on Cloudflare's client-IP header) and per signed-in user: logins
+   already have a cap for the whole dashboard, and access
    answers are cached per user for 30 s, but each new Discord account
    that logs in adds one call per server every 30 s to the request
    queue reminders share (decision 0012). Then A8d to A8i:

@@ -129,7 +129,7 @@ describe("a server's reminders", () => {
 		const text = await page();
 
 		expect(text).toContain('<h2>water</h2>');
-		expect(text).toContain('Every 2 hours in #general, as an embed.');
+		expect(text).toContain('Every 2 hours in #general, set to an embed.');
 		expect(text).toContain('<blockquote>water message</blockquote>');
 		const at = new Date(NOW + 120 * 60_000).toISOString();
 		expect(text).toContain(
@@ -147,10 +147,35 @@ describe("a server's reminders", () => {
 
 		const text = await page();
 
-		expect(text).toContain('Every 90 minutes in #general, as plain text.');
+		expect(text).toContain('Every 90 minutes in #general, set to plain text.');
 		expect(text).toContain('Due on the next check.');
 		expect(text).toContain('Disabled.');
 		expect(text).toMatch(/Snoozed, next <time [^>]+>in 30 minutes<\/time>\./);
+	});
+
+	// Through a snooze, as only a snooze (up to a week) runs past a day.
+	it.each([
+		[20_000, 'in under a minute'],
+		[60_000, 'in 1 minute'],
+		[60 * 60_000, 'in 60 minutes'],
+		[119.5 * 60_000, 'in 2 hours'],
+		[36 * 60 * 60_000, 'in 36 hours'],
+		[3 * 24 * 60 * 60_000, 'in 3 days'],
+	])('words a time %i ms ahead as "%s"', async (ahead, words) => {
+		remind('nap', { intervalMinutes: 5 });
+		snoozeGuildReminder('g1', 'nap', { until: NOW + ahead, skipMissed: false, now: NOW });
+
+		expect(await page()).toMatch(new RegExp(`Snoozed, next <time [^>]+>${words}</time>\\.`));
+	});
+
+	it.each([
+		[60, 'Every 1 hour'],
+		[1440, 'Every 24 hours'],
+		[5, 'Every 5 minutes'],
+	])('words an interval of %i minutes as "%s"', async (minutes, words) => {
+		remind('water', { intervalMinutes: minutes });
+
+		expect(await page()).toContain(`${words} in #general`);
 	});
 
 	it("shows every reminder as paused when the server's master toggle is off", async () => {

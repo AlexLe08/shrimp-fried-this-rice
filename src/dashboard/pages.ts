@@ -118,11 +118,12 @@ function reminderItem(reminder: ReminderView, now: number): Page {
 		reminder.channelName === null
 			? html`a channel the bot can't see (ID ${reminder.channelId})`
 			: html`#${reminder.channelName}`;
+	// The setting, not what Discord gets: a message with a link, or a channel
+	// without Embed Links, is still sent as plain text (reminderMessage.ts).
+	const format = reminder.embed ? 'set to an embed' : 'set to plain text';
 	return html`<li>
 		<h2>${reminder.label}</h2>
-		<p>
-			Every ${interval(reminder.intervalMinutes)} in ${channel}, ${reminder.embed ? 'as an embed' : 'as plain text'}.
-		</p>
+		<p>Every ${interval(reminder.intervalMinutes)} in ${channel}, ${format}.</p>
 		<p>${stateText(reminder.state, now)}.</p>
 		<blockquote>${reminder.message}</blockquote>
 	</li>`;
