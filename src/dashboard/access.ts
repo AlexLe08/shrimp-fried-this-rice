@@ -11,6 +11,8 @@ export interface DashboardGuild {
 	id: string;
 	name: string;
 	members: { fetch(options: { user: string; force: boolean; cache: boolean }): Promise<DashboardMember> };
+	/** Kept current by the Guilds intent, so reading a channel's name asks Discord nothing. */
+	channels: { cache: { get(id: string): { name: string } | undefined } };
 }
 
 /** What the dashboard uses of the client; discord.js's Client fits it. */

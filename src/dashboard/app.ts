@@ -9,6 +9,8 @@ import { createLoginGate } from './loginGate.ts';
 import { homePage, messagePage, serverPage, serversPage } from './pages.ts';
 import { endSession, sessionFromToken, startSession } from './sessions.ts';
 import { SESSION_LIFETIME_MS, type DashboardSession } from './storage.ts';
+import { MAX_REMINDERS_PER_GUILD, getGuildReminders, isGuildMasterEnabled } from '../reminders/storage.ts';
+import { reminderState } from '../reminders/reminderState.ts';
 
 export interface AppOptions {
 	/** Login's settings; null serves the dashboard without login. */
@@ -161,7 +163,22 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 		return c.html(serversPage(servers));
 	});
 
-	app.get('/servers/:guildId', (c) => c.html(serverPage(c.get('server'))));
+	app.get('/servers/:guildId', (c) => {
+		const server = c.get('server');
+		const time = now();
+		const masterEnabled = isGuildMasterEnabled(server.id);
+		const channels = options.client?.guilds.cache.get(server.id)?.channels.cache;
+		const reminders = getGuildReminders(server.id).map((reminder) => ({
+			label: reminder.reminder_label,
+			channelId: reminder.channel_id,
+			channelName: channels?.get(reminder.channel_id)?.name ?? null,
+			intervalMinutes: reminder.interval_minutes,
+			message: reminder.message,
+			embed: reminder.embed === 1,
+			state: reminderState(reminder, masterEnabled, time),
+		}));
+		return c.html(serverPage(server, { masterEnabled, reminders, max: MAX_REMINDERS_PER_GUILD, now: time }));
+	});
 
 	app.post('/logout', (c) => {
 		endSession(getCookie(c, SESSION_COOKIE, 'host'));
