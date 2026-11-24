@@ -10,8 +10,8 @@ let dir: string;
 let dbPath: string;
 
 // user_version once every migration has run: 0 added snoozed_until, 1 embed,
-// 2 the /recruit tables, 3 dashboard_sessions.
-const LATEST_VERSION = 4;
+// 2 the /recruit tables, 3 dashboard_sessions, 4 the Minecraft bridge tables.
+const LATEST_VERSION = 5;
 
 function createPreMigrationDatabase(): void {
 	const db = new Database(dbPath);
@@ -238,6 +238,53 @@ describe('schema migrations', () => {
 		expect(storage.getGuildReminderByLabel('g1', 'water')).toMatchObject({ message: 'drink', last_sent_at: 12345 });
 		const { token } = sessions.startSession({ id: 'u1', username: 'alex' }, 1000);
 		expect(sessions.sessionFromToken(token, 2000)).toMatchObject({ user_id: 'u1' });
+		storage.closeDatabase();
+		expect(inspect().version).toBe(LATEST_VERSION);
+	});
+
+	// Production's database ran migrations 0 to 3 (#20, #24, #39, #69).
+	it('takes a database at version 4 to the latest, adding the Minecraft tables and keeping its sessions', async () => {
+		createPreMigrationDatabase();
+		const db = new Database(dbPath);
+		db.exec(`
+			ALTER TABLE guild_reminders ADD COLUMN snoozed_until INTEGER NOT NULL DEFAULT 0;
+			ALTER TABLE user_settings ADD COLUMN snoozed_until INTEGER NOT NULL DEFAULT 0;
+			ALTER TABLE guild_reminders ADD COLUMN embed INTEGER NOT NULL DEFAULT 1;
+			ALTER TABLE user_settings ADD COLUMN embed INTEGER NOT NULL DEFAULT 1;
+			CREATE TABLE recruit_settings (guild_id TEXT PRIMARY KEY, channel_id TEXT NOT NULL, ping_role_id TEXT,
+				follow_up_days INTEGER NOT NULL DEFAULT 30, enabled INTEGER NOT NULL DEFAULT 1);
+			CREATE TABLE recruits (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, name TEXT NOT NULL,
+				name_key TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', added_by TEXT NOT NULL, added_at INTEGER NOT NULL,
+				due_at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending', resolved_by TEXT, resolved_at INTEGER);
+			CREATE UNIQUE INDEX recruits_open_name ON recruits (guild_id, name_key) WHERE status IN ('pending', 'reminded');
+			CREATE TABLE dashboard_sessions (id_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, username TEXT NOT NULL,
+				created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
+			INSERT INTO dashboard_sessions VALUES ('h1', 'u1', 'alex', 1000, 5000);
+		`);
+		db.pragma('user_version = 4');
+		db.close();
+
+		const storage = await openStorage();
+		const dashboard = await import('../../../src/dashboard/storage.ts');
+		const minecraft = await import('../../../src/minecraft/storage.ts');
+		expect(storage.getGuildReminderByLabel('g1', 'water')).toMatchObject({ message: 'drink', last_sent_at: 12345 });
+		expect(dashboard.getSession('h1', 2000)).toMatchObject({ user_id: 'u1' });
+		const bridge = minecraft.createBridge({
+			guildId: 'g1',
+			chat: { channelId: 'c1', webhookId: 'w1', token: 't1' },
+			alerts: { channelId: 'c2', webhookId: 'w2', token: 't2' },
+			keys: { request: Buffer.alloc(32, 1), response: Buffer.alloc(32, 2) },
+			serverName: 'Survival',
+			now: 1,
+		});
+		minecraft.saveLink({
+			bridgeId: bridge.id,
+			name: 'Steve',
+			userId: 'u1',
+			uuid: '069a79f4-44e9-4726-a5be-fca90e38aaf5',
+			now: 1,
+		});
+		expect(minecraft.getMemberLinks('g1', 'u1')).toHaveLength(1);
 		storage.closeDatabase();
 		expect(inspect().version).toBe(LATEST_VERSION);
 	});
