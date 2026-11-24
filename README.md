@@ -109,7 +109,7 @@ Slash commands are registered **globally** (via `deploycommands`), so they're av
 
 ## Testing
 
-Tests are written with [Vitest](https://vitest.dev) and cover the entire codebase — persistence (`core/database.ts`, `reminders/storage.ts`, `ffxiv/recruit/storage.ts` and `minecraft/storage.ts`), the scheduler with its due-reminder checks and the recruit follow-up check, the status embed builder, both event handlers, and every command file.
+Tests are written with [Vitest](https://vitest.dev) and cover the entire codebase — persistence (`core/database.ts`, `reminders/storage.ts`, `ffxiv/recruit/storage.ts` and `minecraft/storage.ts`), the scheduler with its due-reminder checks and the recruit follow-up check, the status embed builder, every event handler, and every command file.
 
 ```bash
 npm test              # run once and exit

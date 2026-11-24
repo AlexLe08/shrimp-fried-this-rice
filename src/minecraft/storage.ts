@@ -52,8 +52,6 @@ export interface MinecraftLink {
 	linked_at: number;
 }
 
-export const MAX_SERVER_NAME_LENGTH = 80;
-
 /** A webhook the bot made in a bridge's channel. */
 export interface BridgeWebhook {
 	channelId: string;
@@ -209,7 +207,8 @@ export function markBridgeAnnounced(id: string, channelId: string): void {
  * (decision 0010). It never moves back, so a message relayed late can't
  * make the catch-up relay the ones after it a second time. Ids are compared
  * as snowflakes: a longer id is a later one, and ids of one length compare
- * as text.
+ * as text. So `messageId` must be a Discord message id: anything else would
+ * compare wrongly and could block every later update.
  */
 export function recordRelayedMessage(id: string, messageId: string): void {
 	db.prepare(
