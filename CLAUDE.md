@@ -135,8 +135,8 @@ the workflow, indexed in its `README.md`.
 - `src/core/shutdown.ts` handles SIGTERM/SIGINT (systemd restarts on
   deploy): stop the dashboard's server (`src/dashboard/server.ts`,
   finishing requests under way, for up to 2 s), stop the scheduler,
-  destroy the client, close the database, in that order. Nothing may touch the database after
-  it closes.
+  destroy the client, close the database, in that order. Nothing may
+  touch the database after it closes.
 - Tests are Vitest in `test/`, mirroring `src/`. Discord objects are small
   fakes built from `vi.fn()`s (`test/mocks.ts`, `test/mockInteraction.ts`), cast with
   `as unknown as Client` / `as never`, except where a function takes a
