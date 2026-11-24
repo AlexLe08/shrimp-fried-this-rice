@@ -322,6 +322,23 @@ Later item), not a follow-up.
   still in the `-wal`). The owner ran the drill on the VM on 2026-11-24,
   after #64 merged, and it worked. Decision 0011 asks for it again after
   a large schema change or every few months.
+- **The dashboard's web server** (2026-11-24, first part of D1;
+  decisions 0008 and 0009). `hono` and `@hono/node-server` join
+  `package.json`. `src/dashboard/server.ts` serves the app on `127.0.0.1`
+  at `DASHBOARD_PORT` (off without it; a malformed or taken port is
+  logged and the bot runs on), with only `/health` so far; shutdown stops
+  it first, finishing requests under way and cutting off any still going
+  after 2 s (before `index.ts`'s 5 s forced exit). Checked: `cloudflared` keeps an
+  idle connection to the origin for 90 s by default (Cloudflare's origin
+  parameters, 2026-11-24) and Node closes one after 5 s, which would fail
+  `cloudflared`'s next request on it with a 502, so the server keeps them
+  for 100 s; a probe on Node 24.21 showed a socket idle for 70 s, past
+  `headersTimeout`'s 60, still answered. Node 24's `server.close()`
+  closes idle connections itself, so shutdown doesn't wait on them.
+  `overrideGlobalObjects: false` stops `@hono/node-server` replacing the
+  process's global `Request` and `Response`. Installing `cloudflared` and
+  the route are `ORACLE_CLOUD_DEPLOYMENT.md` section 12, for the owner.
+  Not yet run on the VM or through the tunnel.
 
 ## Next up
 
@@ -351,8 +368,10 @@ them ahead of items 5 and 6.
    Minecraft work, ahead of the collection tracker). The hostname and
    HTTPS, Discord login, and a read-only reminders page. D0 is done:
    decisions 0008 and 0009 (Done above). The domain is on Cloudflare and
-   the tunnel exists (2026-11-23, asking for no payment method); D1 adds
-   its route and installs `cloudflared` on the VM. Then A8d to A8i:
+   the tunnel exists (2026-11-23, asking for no payment method). D1's web
+   server is done (Done above), with `cloudflared` and the route left to
+   set up on the VM (`ORACLE_CLOUD_DEPLOYMENT.md` section 12). Left:
+   login, the server picker and the reminders page. Then A8d to A8i:
    two-way chat, linking and pictures.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).

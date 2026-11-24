@@ -27,10 +27,12 @@
   "license": "MIT",
   "type": "module",
   "dependencies": {
+    "@hono/node-server": "^2.1.11",
     "age-encryption": "^0.3.1",
     "better-sqlite3": "^13.0.3",
     "discord.js": "^14.27.0",
-    "dotenv": "^17.4.2"
+    "dotenv": "^17.4.2",
+    "hono": "^4.13.21"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
