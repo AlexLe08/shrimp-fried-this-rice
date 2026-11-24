@@ -46,7 +46,7 @@ for (const fileUrl of findAreaModules('events')) {
 client.cooldowns = new Collection();
 
 const dashboardPort = dashboardPortFromEnv(process.env);
-if (dashboardPort !== null) void startDashboard(dashboardPort, { auth: authConfigFromEnv(process.env) });
+if (dashboardPort !== null) void startDashboard(dashboardPort, { auth: authConfigFromEnv(process.env), client });
 
 // A failed login (bad token, Discord down) exits nonzero; systemd restarts it.
 client.login(process.env['DISCORD_TOKEN']).catch((error: unknown) => {

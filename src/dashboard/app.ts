@@ -1,20 +1,42 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { Hono, type Context } from 'hono';
+import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { csrf } from 'hono/csrf';
 import { secureHeaders } from 'hono/secure-headers';
 import { DiscordRateLimitedError, authorizeUrl, discordUserFromCode, type AuthConfig, type Fetch } from './auth.ts';
+import { serverAccess, type DashboardClient, type ManagedServer } from './access.ts';
 import { createLoginGate } from './loginGate.ts';
-import { homePage, messagePage } from './pages.ts';
+import { homePage, messagePage, serverPage, serversPage } from './pages.ts';
 import { endSession, sessionFromToken, startSession } from './sessions.ts';
-import { SESSION_LIFETIME_MS } from './storage.ts';
+import { SESSION_LIFETIME_MS, type DashboardSession } from './storage.ts';
 
 export interface AppOptions {
 	/** Login's settings; null serves the dashboard without login. */
 	auth: AuthConfig | null;
+	/** The bot's client, to see which servers a user may manage; without it none are shown. */
+	client?: DashboardClient | null;
 	fetch?: Fetch;
 	now?: () => number;
 }
+
+type Env = { Variables: { session: DashboardSession; server: ManagedServer } };
+
+/**
+ * Who may reach each route, which a test checks against the app's routes, so
+ * a new route can't be added without saying (decision 0009: deny by default).
+ * `signed-in` routes go through requireSession; `server` routes are under
+ * /servers/:guildId, where requireServer checks the user may manage that
+ * server before any handler runs.
+ */
+export const ROUTE_ACCESS = {
+	'GET /health': 'public',
+	'GET /': 'public',
+	'GET /login': 'public',
+	'GET /auth/callback': 'public',
+	'POST /logout': 'public',
+	'GET /servers': 'signed-in',
+	'GET /servers/:guildId': 'server',
+} as const;
 
 // Both __Host-: only this exact hostname can set them, so another site under
 // alexle.dev can't plant or overwrite one (decision 0009).
@@ -30,11 +52,12 @@ function sameState(a: string, b: string): boolean {
 	return left.length === right.length && timingSafeEqual(left, right);
 }
 
-export function createApp(options: AppOptions = { auth: null }): Hono {
+export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 	const { auth } = options;
 	const fetchFn = options.fetch ?? fetch;
 	const now = options.now ?? Date.now;
-	const app = new Hono();
+	const access = options.client ? serverAccess(options.client, now) : null;
+	const app = new Hono<Env>();
 	const loginGate = createLoginGate(now);
 
 	app.use(
@@ -107,6 +130,38 @@ export function createApp(options: AppOptions = { auth: null }): Hono {
 		setCookie(c, SESSION_COOKIE, token, { ...cookieOptions, maxAge: Math.floor(SESSION_LIFETIME_MS / 1000) });
 		return c.redirect('/', 302);
 	});
+
+	const notFound = (c: Context) =>
+		c.html(messagePage('Not found', "There's nothing here, or it isn't yours to see."), 404);
+
+	// Signed out, back to the home page, which offers login.
+	const requireSession: MiddlewareHandler<Env> = async (c, next) => {
+		const session = sessionFromToken(getCookie(c, SESSION_COOKIE, 'host'), now());
+		if (!session) return c.redirect('/', 302);
+		c.set('session', session);
+		return next();
+	};
+
+	// One answer, 404, whether the bot isn't in the server, the user isn't a
+	// member, or they can't manage it: none tells a visitor the server exists.
+	const requireServer: MiddlewareHandler<Env> = async (c, next) => {
+		const server = access && (await access.serverUserManages(c.req.param('guildId') ?? '', c.get('session').user_id));
+		if (!server) return notFound(c);
+		c.set('server', server);
+		return next();
+	};
+
+	app.use('/servers', requireSession);
+	// The wildcard matches /servers/:guildId itself too, so one registration
+	// covers the server's page and everything under it.
+	app.use('/servers/:guildId/*', requireSession, requireServer);
+
+	app.get('/servers', async (c) => {
+		const servers = access ? await access.serversUserManages(c.get('session').user_id) : [];
+		return c.html(serversPage(servers));
+	});
+
+	app.get('/servers/:guildId', (c) => c.html(serverPage(c.get('server'))));
 
 	app.post('/logout', (c) => {
 		endSession(getCookie(c, SESSION_COOKIE, 'host'));

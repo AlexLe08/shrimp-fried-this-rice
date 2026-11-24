@@ -24,6 +24,7 @@ export function homePage(signedInAs: string | null, loginAvailable: boolean): Pa
 			'Dashboard',
 			html`<h1>Shrimp Fried Rice</h1>
 				<p>Signed in as ${signedInAs}.</p>
+				<p><a href="/servers">Your servers</a></p>
 				<form method="post" action="/logout"><button type="submit">Log out</button></form>`,
 		);
 	}
@@ -38,7 +39,31 @@ export function homePage(signedInAs: string | null, loginAvailable: boolean): Pa
 	);
 }
 
-/** A page for a login that didn't complete: what happened, and the way back. */
+export function serversPage(servers: { id: string; name: string }[]): Page {
+	return layout(
+		'Your servers',
+		html`<h1>Your servers</h1>
+			${
+				servers.length === 0
+					? html`<p>No servers to show. This lists the servers the bot is in where you have Manage Server.</p>`
+					: html`<ul>
+							${servers.map((server) => html`<li><a href="/servers/${server.id}">${server.name}</a></li>`)}
+						</ul>`
+			}
+			<p><a href="/">Back to the dashboard</a></p>`,
+	);
+}
+
+export function serverPage(server: { name: string }): Page {
+	return layout(
+		server.name,
+		html`<h1>${server.name}</h1>
+			<p>This server's reminders will show here.</p>
+			<p><a href="/servers">Your servers</a></p>`,
+	);
+}
+
+/** A page for a login that didn't complete, or one that isn't there: what happened, and the way back. */
 export function messagePage(title: string, message: string): Page {
 	return layout(
 		title,

@@ -377,6 +377,26 @@ Later item), not a follow-up.
   yet saved on the production application. Section 13 now says so.
   Whether a browser keeps a `Secure` cookie on `http://127.0.0.1` for
   local login isn't checked.
+- **Dashboard server list, guarded per server** (2026-11-24, fourth
+  part of D1). `/servers` lists the servers the bot is in where the
+  user has Manage Server, and `/servers/<id>` shows one (its name, until
+  the reminders page). The owner's call that day: the bot checks for
+  itself rather than asking for the `guilds` scope at login, so
+  permissions are current on every page, not as they were at login.
+  `dashboard/access.ts` asks Discord with `members.fetch({ force: true })`:
+  without the privileged Server Members intent the bot isn't told of
+  role changes, so a cached member could keep a lost permission. From
+  review: each answer is reused for 30 s (a check under way is shared),
+  as each is a call in the request queue reminders share and any
+  signed-in visitor could otherwise reload a page into it; and a member
+  in timeout is refused, which discord.js's permissions ignore. One guard on `/servers/:guildId/*` (which Hono matches for
+  `/servers/:guildId` too; registering both ran it twice) answers the
+  same 404 for a server the bot isn't in, a non-member and a member
+  without Manage Server. `ROUTE_ACCESS` lists every route as public,
+  signed-in or server, and a test fails for one served but not listed
+  (decision 0009's deny-by-default check), then tries every non-public
+  route signed out and every server route as another server's manager.
+  Not yet tried against Discord.
 
 ## Next up
 
@@ -408,12 +428,11 @@ them ahead of items 5 and 6.
    decisions 0008 and 0009 (Done above). The domain is on Cloudflare and
    the tunnel exists (2026-11-23, asking for no payment method). D1's web
    server is done and reachable through the tunnel, and login with
-   Discord is done (Done above). Left: the server picker, guarded per
-   server (decision 0009's deny-by-default middleware, with the test
-   that fails for a route neither guarded nor marked public, arriving
-   with the first guarded route), the reminders page, and rate limiting
-   per visitor (keyed on Cloudflare's client-IP header; logins already
-   have a cap for the whole dashboard). Then A8d to A8i:
+   Discord, and the server list guarded per server, are done (Done
+   above). Left: the reminders page, and rate limiting per visitor
+   (keyed on Cloudflare's client-IP header; logins already have a cap
+   for the whole dashboard, and each server page asks Discord once per
+   server). Then A8d to A8i:
    two-way chat, linking and pictures.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
