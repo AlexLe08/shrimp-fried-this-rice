@@ -59,16 +59,23 @@ describe('servers', () => {
 		expect(guild.members.fetch).toHaveBeenCalledTimes(1);
 	});
 
-	it.each([
-		['a member without Manage Server', 'g1', 'u2'],
-		['someone who is not a member', 'g1', 'u3'],
-		["a server the bot isn't in", 'g9', 'u1'],
-		['a manager of another server', 'g2', 'u1'],
-	])('answers 404, the same page, for %s', async (_case, guildId, userId) => {
-		const response = await serversApp().request(`/servers/${guildId}`, { headers: signedIn(userId) });
+	it('answers 404 with the same page for a non-manager, a non-member, a server the bot is not in, and another server', async () => {
+		const app = serversApp();
+		const cases = [
+			['g1', 'u2'],
+			['g1', 'u3'],
+			['g9', 'u1'],
+			['g2', 'u1'],
+		] as const;
 
-		expect(response.status).toBe(404);
-		expect(await response.text()).toContain('<h1>Not found</h1>');
+		const responses = await Promise.all(
+			cases.map(([guildId, userId]) => app.request(`/servers/${guildId}`, { headers: signedIn(userId) })),
+		);
+
+		expect(responses.map((response) => response.status)).toEqual([404, 404, 404, 404]);
+		const bodies = await Promise.all(responses.map((response) => response.text()));
+		expect(bodies[0]).toContain('<h1>Not found</h1>');
+		expect(new Set(bodies).size).toBe(1);
 	});
 
 	it('shows no servers without a client', async () => {
@@ -89,6 +96,14 @@ describe('route access', () => {
 
 	it('declares the access of every route the app serves, and serves every route it declares', () => {
 		expect(served.sort()).toEqual(Object.keys(ROUTE_ACCESS).sort());
+	});
+
+	// Middleware is registered for every method (ALL); a handler registered
+	// that way (app.all) would escape the check above, so only these may be.
+	it('registers nothing for every method but the middleware', () => {
+		const everyMethod = new Set(app.routes.filter((r) => r.method === 'ALL').map((r) => r.path));
+
+		expect([...everyMethod].sort()).toEqual(['/*', '/servers', '/servers/:guildId/*']);
 	});
 
 	it('keeps every server route under /servers/:guildId, where the guard runs', () => {

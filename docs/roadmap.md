@@ -383,10 +383,13 @@ Later item), not a follow-up.
   the reminders page). The owner's call that day: the bot checks for
   itself rather than asking for the `guilds` scope at login, so
   permissions are current on every page, not as they were at login.
-  `dashboard/access.ts` asks Discord with `members.fetch({ force: true })`
-  each time: without the privileged Server Members intent the bot isn't
-  told of role changes, so a cached member could keep a lost
-  permission. One guard on `/servers/:guildId/*` (which Hono matches for
+  `dashboard/access.ts` asks Discord with `members.fetch({ force: true })`:
+  without the privileged Server Members intent the bot isn't told of
+  role changes, so a cached member could keep a lost permission. From
+  review: each answer is reused for 30 s (a check under way is shared),
+  as each is a call in the request queue reminders share and any
+  signed-in visitor could otherwise reload a page into it; and a member
+  in timeout is refused, which discord.js's permissions ignore. One guard on `/servers/:guildId/*` (which Hono matches for
   `/servers/:guildId` too; registering both ran it twice) answers the
   same 404 for a server the bot isn't in, a non-member and a member
   without Manage Server. `ROUTE_ACCESS` lists every route as public,

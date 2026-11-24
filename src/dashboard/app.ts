@@ -4,7 +4,7 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { csrf } from 'hono/csrf';
 import { secureHeaders } from 'hono/secure-headers';
 import { DiscordRateLimitedError, authorizeUrl, discordUserFromCode, type AuthConfig, type Fetch } from './auth.ts';
-import { serverUserManages, serversUserManages, type DashboardClient, type ManagedServer } from './access.ts';
+import { serverAccess, type DashboardClient, type ManagedServer } from './access.ts';
 import { createLoginGate } from './loginGate.ts';
 import { homePage, messagePage, serverPage, serversPage } from './pages.ts';
 import { endSession, sessionFromToken, startSession } from './sessions.ts';
@@ -54,9 +54,9 @@ function sameState(a: string, b: string): boolean {
 
 export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 	const { auth } = options;
-	const client = options.client ?? null;
 	const fetchFn = options.fetch ?? fetch;
 	const now = options.now ?? Date.now;
+	const access = options.client ? serverAccess(options.client, now) : null;
 	const app = new Hono<Env>();
 	const loginGate = createLoginGate(now);
 
@@ -145,7 +145,7 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 	// One answer, 404, whether the bot isn't in the server, the user isn't a
 	// member, or they can't manage it: none tells a visitor the server exists.
 	const requireServer: MiddlewareHandler<Env> = async (c, next) => {
-		const server = client && (await serverUserManages(client, c.req.param('guildId') ?? '', c.get('session').user_id));
+		const server = access && (await access.serverUserManages(c.req.param('guildId') ?? '', c.get('session').user_id));
 		if (!server) return notFound(c);
 		c.set('server', server);
 		return next();
@@ -157,7 +157,7 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 	app.use('/servers/:guildId/*', requireSession, requireServer);
 
 	app.get('/servers', async (c) => {
-		const servers = client ? await serversUserManages(client, c.get('session').user_id) : [];
+		const servers = access ? await access.serversUserManages(c.get('session').user_id) : [];
 		return c.html(serversPage(servers));
 	});
 
