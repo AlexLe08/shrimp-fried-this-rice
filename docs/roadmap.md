@@ -428,8 +428,12 @@ Later item), not a follow-up.
   Checked against Cloudflare's HTTP headers docs (2026-11-24): the
   header carries the visitor's address to the origin. Neither those docs
   nor the Tunnel docs say Cloudflare replaces a value the client sent,
-  or that the header reaches a tunnel origin; not yet checked on the
-  live dashboard.
+  or that the header reaches a tunnel origin, so the owner checked both
+  on the live dashboard on 2026-11-24 after the deploy: the journal had
+  no line about a missing `CF-Connecting-IP`, 61 loads in a minute from
+  one machine got a 429 while another network still loaded, and
+  requests sending forged `CF-Connecting-IP` values were still limited
+  by the real address.
 
 ## Next up
 
@@ -462,9 +466,8 @@ them ahead of items 5 and 6.
    the tunnel exists (2026-11-23, asking for no payment method). D1 is
    done (Done above): the web server through the tunnel, login with
    Discord, the server list guarded per server, the read-only reminders
-   page and rate limits. Left: checking on the live dashboard that
-   `CF-Connecting-IP` arrives and can't be forged (the rate limits entry
-   above). Then A8d to A8i: two-way chat, linking and pictures.
+   page and rate limits, all tried on the live dashboard. Left: A8d to
+   A8i, two-way chat, linking and pictures.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the
