@@ -7,7 +7,7 @@ import {
 	deleteGuildStatusMessage,
 	type GuildReminder,
 } from './storage.ts';
-import { isSnoozed } from './snooze.ts';
+import { reminderState } from './reminderState.ts';
 import { discordTime } from '../core/discord.ts';
 
 // How /reminder list and the status embed both start a reminder's line.
@@ -34,25 +34,19 @@ export function buildReminderStatusEmbed(guildId: string, guildName: string): Em
 
 	const lines = reminders.map((r) => {
 		const base = reminderSummary(r);
-
-		if (!masterEnabled) {
-			return `${base} — ⏸ paused (server master toggle is off)`;
+		const state = reminderState(r, masterEnabled, now);
+		switch (state.kind) {
+			case 'paused':
+				return `${base} — ⏸ paused (server master toggle is off)`;
+			case 'disabled':
+				return `${base} — ⏸ disabled`;
+			case 'snoozed':
+				return `${base} — 💤 snoozed, next ${discordTime(state.at, 'R')}`;
+			case 'due':
+				return `${base} — due on next check`;
+			case 'scheduled':
+				return `${base} — next ${discordTime(state.at, 'R')}`;
 		}
-		if (!r.enabled) {
-			return `${base} — ⏸ disabled`;
-		}
-
-		const nextFireMs = r.last_sent_at + r.interval_minutes * 60_000;
-
-		if (isSnoozed(r.snoozed_until, now)) {
-			// Sends at whichever comes later: the snooze's end or its usual time.
-			return `${base} — 💤 snoozed, next ${discordTime(Math.max(r.snoozed_until, nextFireMs), 'R')}`;
-		}
-		if (r.last_sent_at === 0 || nextFireMs <= now) {
-			return `${base} — due on next check`;
-		}
-
-		return `${base} — next ${discordTime(nextFireMs, 'R')}`;
 	});
 
 	embed.setDescription(lines.join('\n'));

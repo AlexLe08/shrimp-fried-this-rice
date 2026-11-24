@@ -1,5 +1,6 @@
 import { html } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
+import type { ReminderState } from '../reminders/reminderState.ts';
 
 type Page = HtmlEscapedString | Promise<HtmlEscapedString>;
 
@@ -54,11 +55,101 @@ export function serversPage(servers: { id: string; name: string }[]): Page {
 	);
 }
 
-export function serverPage(server: { name: string }): Page {
+/** A server's reminder as its page shows it. `channelName` is null for a channel the bot can't see. */
+export interface ReminderView {
+	label: string;
+	channelId: string;
+	channelName: string | null;
+	intervalMinutes: number;
+	message: string;
+	embed: boolean;
+	state: ReminderState;
+}
+
+export interface ServerReminders {
+	masterEnabled: boolean;
+	reminders: ReminderView[];
+	max: number;
+	now: number;
+}
+
+function plural(count: number, unit: string): string {
+	return `${count} ${unit}${count === 1 ? '' : 's'}`;
+}
+
+function interval(minutes: number): string {
+	return minutes % 60 === 0 ? plural(minutes / 60, 'hour') : plural(minutes, 'minute');
+}
+
+// Worked out on the server, as the pages run no scripts to show it in the
+// visitor's own time zone; the exact time, in UTC, is the element's tooltip.
+// Pages aren't cached (no-store), so it's as of the page load.
+function fromNow(at: number, now: number): Page {
+	const minutes = Math.round((at - now) / 60_000);
+	const text =
+		minutes < 1
+			? 'in under a minute'
+			: minutes < 120
+				? `in ${plural(minutes, 'minute')}`
+				: minutes < 48 * 60
+					? `in ${plural(Math.round(minutes / 60), 'hour')}`
+					: `in ${plural(Math.round(minutes / (24 * 60)), 'day')}`;
+	const iso = new Date(at).toISOString();
+	return html`<time datetime="${iso}" title="${iso.slice(0, 16).replace('T', ' ')} UTC">${text}</time>`;
+}
+
+function stateText(state: ReminderState, now: number): Page | string {
+	switch (state.kind) {
+		case 'paused':
+			return "Paused: this server's reminders are off";
+		case 'disabled':
+			return 'Disabled';
+		case 'snoozed':
+			return html`Snoozed, next ${fromNow(state.at, now)}`;
+		case 'due':
+			return 'Due on the next check';
+		case 'scheduled':
+			return html`Next ${fromNow(state.at, now)}`;
+	}
+}
+
+function reminderItem(reminder: ReminderView, now: number): Page {
+	const channel =
+		reminder.channelName === null
+			? html`a channel the bot can't see (ID ${reminder.channelId})`
+			: html`#${reminder.channelName}`;
+	// The setting, not what Discord gets: a message with a link, or a channel
+	// without Embed Links, is still sent as plain text (reminderMessage.ts).
+	const format = reminder.embed ? 'set to an embed' : 'set to plain text';
+	return html`<li>
+		<h2>${reminder.label}</h2>
+		<p>Every ${interval(reminder.intervalMinutes)} in ${channel}, ${format}.</p>
+		<p>${stateText(reminder.state, now)}.</p>
+		<blockquote>${reminder.message}</blockquote>
+	</li>`;
+}
+
+/** A server's reminders, read-only: changing them is /reminder's, in Discord. */
+export function serverPage(server: { name: string }, view: ServerReminders): Page {
 	return layout(
 		server.name,
 		html`<h1>${server.name}</h1>
-			<p>This server's reminders will show here.</p>
+			<p>
+				${
+					view.masterEnabled
+						? 'Reminders are on for this server.'
+						: 'Reminders are off for this server (/reminder master), so none are sent.'
+				}
+				${plural(view.reminders.length, 'reminder')} of ${view.max}. Change them with
+				<code>/reminder</code> in Discord.
+			</p>
+			${
+				view.reminders.length === 0
+					? html`<p>No reminders yet. Use <code>/reminder create</code> in Discord to add one.</p>`
+					: html`<ul>
+							${view.reminders.map((reminder) => reminderItem(reminder, view.now))}
+						</ul>`
+			}
 			<p><a href="/servers">Your servers</a></p>`,
 	);
 }

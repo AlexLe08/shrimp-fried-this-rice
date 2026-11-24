@@ -3,6 +3,13 @@ import { ROUTE_ACCESS, createApp } from '../../src/dashboard/app.ts';
 import type { AuthConfig } from '../../src/dashboard/auth.ts';
 import { startSession } from '../../src/dashboard/sessions.ts';
 import { __resetForTests } from '../../src/core/database.ts';
+import {
+	createGuildReminder,
+	setGuildMasterEnabled,
+	setGuildReminderEnabled,
+	snoozeGuildReminder,
+	updateGuildReminderLastSent,
+} from '../../src/reminders/storage.ts';
 import { fakeClient, fakeGuild } from './fakeGuilds.ts';
 
 const auth: AuthConfig = { clientId: 'client-1', clientSecret: 'secret-1', origin: 'https://dash.example' };
@@ -83,6 +90,128 @@ describe('servers', () => {
 
 		expect(await (await app.request('/servers', { headers: signedIn() })).text()).toContain('No servers to show');
 		expect((await app.request('/servers/g1', { headers: signedIn() })).status).toBe(404);
+	});
+});
+
+describe("a server's reminders", () => {
+	async function page(channels: Record<string, string> = { c1: 'general' }): Promise<string> {
+		const app = createApp({
+			auth,
+			client: fakeClient([fakeGuild('g1', 'Shrimp Hall', { u1: true }, channels)]),
+			now: () => NOW,
+		});
+		return (await app.request('/servers/g1', { headers: signedIn() })).text();
+	}
+
+	function remind(label: string, options: { intervalMinutes?: number; embed?: boolean; guildId?: string } = {}) {
+		createGuildReminder({
+			guildId: options.guildId ?? 'g1',
+			label,
+			channelId: 'c1',
+			intervalMinutes: options.intervalMinutes ?? 60,
+			message: `${label} message`,
+			embed: options.embed ?? true,
+		});
+	}
+
+	it('says there are none yet, and how to add one', async () => {
+		const text = await page();
+
+		expect(text).toContain('0 reminders of 20');
+		expect(text).toContain('No reminders yet');
+		expect(text).toContain('Reminders are on for this server.');
+	});
+
+	it("shows a reminder's label, channel, interval, format and message, and when it is next sent", async () => {
+		remind('water', { intervalMinutes: 120 });
+		updateGuildReminderLastSent(1, NOW);
+
+		const text = await page();
+
+		expect(text).toContain('<h2>water</h2>');
+		expect(text).toContain('Every 2 hours in #general, set to an embed.');
+		expect(text).toContain('<blockquote>water message</blockquote>');
+		const at = new Date(NOW + 120 * 60_000).toISOString();
+		expect(text).toContain(
+			`Next <time datetime="${at}" title="${at.slice(0, 16).replace('T', ' ')} UTC">in 2 hours</time>.`,
+		);
+		expect(text).toContain('1 reminder of 20');
+	});
+
+	it('shows due, disabled and snoozed reminders, and plain-text ones', async () => {
+		remind('due', { intervalMinutes: 90, embed: false });
+		remind('off');
+		setGuildReminderEnabled('g1', 'off', false);
+		remind('nap', { intervalMinutes: 5 });
+		snoozeGuildReminder('g1', 'nap', { until: NOW + 30 * 60_000, skipMissed: false, now: NOW });
+
+		const text = await page();
+
+		expect(text).toContain('Every 90 minutes in #general, set to plain text.');
+		expect(text).toContain('Due on the next check.');
+		expect(text).toContain('Disabled.');
+		expect(text).toMatch(/Snoozed, next <time [^>]+>in 30 minutes<\/time>\./);
+	});
+
+	// Through a snooze, as only a snooze (up to a week) runs past a day.
+	it.each([
+		[20_000, 'in under a minute'],
+		[60_000, 'in 1 minute'],
+		[60 * 60_000, 'in 60 minutes'],
+		[119.5 * 60_000, 'in 2 hours'],
+		[36 * 60 * 60_000, 'in 36 hours'],
+		[3 * 24 * 60 * 60_000, 'in 3 days'],
+	])('words a time %i ms ahead as "%s"', async (ahead, words) => {
+		remind('nap', { intervalMinutes: 5 });
+		snoozeGuildReminder('g1', 'nap', { until: NOW + ahead, skipMissed: false, now: NOW });
+
+		expect(await page()).toMatch(new RegExp(`Snoozed, next <time [^>]+>${words}</time>\\.`));
+	});
+
+	it.each([
+		[60, 'Every 1 hour'],
+		[1440, 'Every 24 hours'],
+		[5, 'Every 5 minutes'],
+	])('words an interval of %i minutes as "%s"', async (minutes, words) => {
+		remind('water', { intervalMinutes: minutes });
+
+		expect(await page()).toContain(`${words} in #general`);
+	});
+
+	it("shows every reminder as paused when the server's master toggle is off", async () => {
+		remind('water');
+		setGuildMasterEnabled('g1', false);
+
+		const text = await page();
+
+		expect(text).toContain('Reminders are off for this server');
+		expect(text).toContain('Paused: this server&#39;s reminders are off.');
+	});
+
+	it("names a channel the bot can't see by its id", async () => {
+		remind('water');
+
+		expect(await page({})).toContain("in a channel the bot can't see (ID c1)");
+	});
+
+	it("shows only this server's reminders", async () => {
+		remind('ours');
+		remind('theirs', { guildId: 'g2' });
+
+		const text = await page();
+
+		expect(text).toContain('<h2>ours</h2>');
+		expect(text).not.toContain('theirs');
+	});
+
+	it('escapes labels, messages and channel names', async () => {
+		remind('<b>label</b>');
+
+		const text = await page({ c1: '<i>chan</i>' });
+
+		expect(text).toContain('&lt;b&gt;label&lt;/b&gt;');
+		expect(text).toContain('#&lt;i&gt;chan&lt;/i&gt;');
+		expect(text).not.toMatch(/<b>|<i>/);
 	});
 });
 

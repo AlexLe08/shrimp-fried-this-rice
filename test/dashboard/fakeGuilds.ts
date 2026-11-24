@@ -6,9 +6,15 @@ import type { DashboardClient, DashboardGuild } from '../../src/dashboard/access
  * A server the bot is in. `members` maps a user id to whether they have
  * Manage Server there, 'timed out' for one with it but in timeout, or an
  * error Discord answers with; anyone else isn't a member (discord.js
- * rejects with Unknown Member, as Discord answers).
+ * rejects with Unknown Member, as Discord answers). `channels` maps a
+ * channel id to its name, for those in the bot's cache.
  */
-export function fakeGuild(id: string, name: string, members: Record<string, boolean | 'timed out' | Error> = {}) {
+export function fakeGuild(
+	id: string,
+	name: string,
+	members: Record<string, boolean | 'timed out' | Error> = {},
+	channels: Record<string, string> = {},
+) {
 	const fetch = vi.fn(async ({ user }: { user: string; force: boolean; cache: boolean }) => {
 		const entry = members[user];
 		if (entry === undefined)
@@ -19,7 +25,10 @@ export function fakeGuild(id: string, name: string, members: Record<string, bool
 			isCommunicationDisabled: () => entry === 'timed out',
 		};
 	});
-	return { id, name, members: { fetch } } satisfies DashboardGuild;
+	const channelCache = new Map(
+		Object.entries(channels).map(([channelId, channelName]) => [channelId, { name: channelName }]),
+	);
+	return { id, name, members: { fetch }, channels: { cache: channelCache } } satisfies DashboardGuild;
 }
 
 export function fakeClient(guilds: DashboardGuild[]): DashboardClient {
