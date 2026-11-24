@@ -400,6 +400,17 @@ Later item), not a follow-up.
   Tried by the owner on the live dashboard on 2026-11-24 after the
   deploy: the list showed the servers where they have Manage Server, as
   expected.
+- **Dashboard reminders page** (2026-11-24, fifth part of D1).
+  `/servers/<id>` lists the server's reminders, read-only: the master
+  toggle, then each one's label, channel, interval, embed or plain text,
+  message and where it stands. Where it stands moved out of the status
+  embed into `reminders/reminderState.ts`, which both use, so the page
+  and `/reminder status` can't disagree (the embed's tests pass
+  unchanged). Channel names come from the bot's cache (no Discord call);
+  one it can't see shows by its ID. Times are worked out on the server,
+  as the CSP allows no scripts, with the exact UTC time as a tooltip.
+  No new route, so `ROUTE_ACCESS` and the guard are unchanged. Not yet
+  tried on the live dashboard.
 
 ## Next up
 
@@ -430,11 +441,10 @@ them ahead of items 5 and 6.
    HTTPS, Discord login, and a read-only reminders page. D0 is done:
    decisions 0008 and 0009 (Done above). The domain is on Cloudflare and
    the tunnel exists (2026-11-23, asking for no payment method). D1's web
-   server is done and reachable through the tunnel, and login with
-   Discord, and the server list guarded per server, are done (Done
-   above). Left: the reminders page, and rate limiting per visitor
-   (keyed on Cloudflare's client-IP header) and per signed-in user:
-   logins already have a cap for the whole dashboard, and access
+   server is done and reachable through the tunnel, as are login with
+   Discord, the server list guarded per server, and the read-only
+   reminders page (Done above). Left: rate limiting per visitor (keyed
+   on Cloudflare's client-IP header) and per signed-in user: logins already have a cap for the whole dashboard, and access
    answers are cached per user for 30 s, but each new Discord account
    that logs in adds one call per server every 30 s to the request
    queue reminders share (decision 0012). Then A8d to A8i:
