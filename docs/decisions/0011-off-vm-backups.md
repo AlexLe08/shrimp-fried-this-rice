@@ -1,6 +1,6 @@
 # 0011: Encrypted copies of `bot.db` go to Oracle Object Storage, through a write-only URL
 
-Status: Proposed · 2026-11-23
+Status: Accepted · 2026-11-24
 
 ## Context
 
@@ -55,7 +55,7 @@ copy goes up again.
 
 **Why:**
 
-Since an Oracle account already exists it felt appropriate to continue using it when the VM is already tied to it.
+Since an Oracle account already exists it felt appropriate to continue using it when the VM is already tied to it. Encryption has to happen to a public key so that it isn't bound to the VM that may eventually be replaced in the future, or taken away. age-encryption is also small and easy to test in CI.
 
 ## Consequences
 

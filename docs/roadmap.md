@@ -304,13 +304,15 @@ them ahead of items 6 and 7.
    VM are done (Done above), covering a bad migration, lost rows, and a
    decision 0003 reset up to the last daily snapshot. Left:
    - Off the VM: an encrypted copy, as the file will hold secrets.
-     Proposed in [decision 0011](decisions/0011-off-vm-backups.md)
-     (2026-11-23): daily, encrypted with age to the owner's public key
-     through the `age-encryption` package (a runtime dependency, the
-     owner's decision), uploaded to Oracle's Always Free Object Storage
+     Decided in [decision 0011](decisions/0011-off-vm-backups.md)
+     (accepted 2026-11-24): daily, encrypted with age to the owner's
+     public key through the `age-encryption` package (approved by the
+     owner, 2026-11-24), uploaded to Oracle's Always Free Object Storage
      through a write-only pre-authenticated URL, with a DM to the owner
-     when the newest copy is over 48 hours old. Built once the owner
-     accepts it and sets up the bucket.
+     when the newest copy is over 48 hours old. Next: the owner sets up
+     the bucket, the retention and lifecycle rules, the write-only URL
+     and an age key pair in Oracle's console, then the PR that builds
+     it.
    - A restore procedure in `ORACLE_CLOUD_DEPLOYMENT.md`, tried once.
      (`bot.db` and the snapshots are now owner-only: Done above.)
 2. **Minecraft bridge, what's left** ([Track A](plans/minecraft-ff14-features.md#track-a-minecraft-bridge)).
