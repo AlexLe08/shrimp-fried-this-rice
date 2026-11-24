@@ -88,7 +88,8 @@ the workflow, indexed in its `README.md`.
   commit.
 - `src/` is grouped by area: `core/` (bot plumbing and Discord helpers
   any area may use), `reminders/` and `ffxiv/` (later `minecraft/`),
-  each holding its own commands, events, embeds and `storage.ts`.
+  and `dashboard/` (the web dashboard, served on `127.0.0.1` behind
+  `cloudflared`; decisions 0008 and 0009), each holding its own commands, events, embeds and `storage.ts`.
   `src/index.ts` and `src/deploy-commands.ts` stay at the top of `src/`:
   the VM's systemd unit starts `./src/index.ts`, so moving it would leave
   the bot down after the deploy.
@@ -131,8 +132,10 @@ the workflow, indexed in its `README.md`.
   `/reminder status` embed; anything that changes a server's reminders
   calls `refreshGuildStatusMessage` afterwards.
 - `src/core/shutdown.ts` handles SIGTERM/SIGINT (systemd restarts on
-  deploy): stop the scheduler, destroy the client, close the database, in
-  that order. Nothing may touch the database after it closes.
+  deploy): stop the dashboard's server (`src/dashboard/server.ts`,
+  finishing requests under way), stop the scheduler, destroy the client,
+  close the database, in that order. Nothing may touch the database after
+  it closes.
 - Tests are Vitest in `test/`, mirroring `src/`. Discord objects are small
   fakes built from `vi.fn()`s (`test/mocks.ts`, `test/mockInteraction.ts`), cast with
   `as unknown as Client` / `as never`, except where a function takes a
@@ -165,11 +168,9 @@ the workflow, indexed in its `README.md`.
 - Adding a runtime dependency is a design decision for the owner, not an
   implementation detail. The owner chose `hono` and `@hono/node-server`
   for the dashboard on 2026-11-23
-  ([decision 0009](docs/decisions/0009-dashboard-on-hono.md));
-  they join `package.json` in D1's PR, not before. The owner chose
+  ([decision 0009](docs/decisions/0009-dashboard-on-hono.md)), and
   `age-encryption` for encrypting the off-VM copies of `bot.db` on
-  2026-11-24 ([decision 0011](docs/decisions/0011-off-vm-backups.md));
-  it joins `package.json` in the PR that builds them, not before.
+  2026-11-24 ([decision 0011](docs/decisions/0011-off-vm-backups.md)).
 
 ## Workflow
 

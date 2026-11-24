@@ -51,6 +51,7 @@ Deliberate choices from before the [decision records](docs/decisions/):
 - TypeScript 6.0 (pinned for typescript-eslint), executed natively by Node (no compile step in the normal run path — see [Execution Model](#execution-model))
 - SQLite via `better-sqlite3` for persistence
 - [`age-encryption`](https://github.com/FiloSottile/typage) to encrypt the database's copies off the VM
+- [Hono](https://hono.dev) with `@hono/node-server` for the web dashboard, in the bot's own process ([decision 0009](docs/decisions/0009-dashboard-on-hono.md)); so far it only answers `/health`
 - [Vitest](https://vitest.dev) for testing, with `@vitest/coverage-v8` for coverage reporting
 
 ## Execution Model
@@ -88,6 +89,8 @@ Slash commands are registered **globally** (via `deploycommands`), so they're av
    DISCORD_CLIENT_ID=your-dev-application-client-id
    ```
    > ⚠️ Never commit `.env` to version control. It's already listed in `.gitignore`.
+
+   Optionally, `DASHBOARD_PORT=8787` (any free port) starts the dashboard, on `http://127.0.0.1:8787` only; `/health` answers `ok`. Without it the dashboard is off.
 
 4. **Register slash commands**
    ```bash
@@ -152,8 +155,9 @@ Key production-specific details, for future reference:
 - **Schema migrations:** run by `core/database.ts` when the bot starts, so the deploy's restart applies any new ones to `bot.db`. A migration that fails rolls back and the bot exits, which the deploy's login check reports; systemd then restarts it every 5 seconds, failing the same way, and no reminders send until a fix is deployed.
 - **Backups on the VM:** `core/backup.ts` saves snapshots of `bot.db` in `backups/` beside it (created `0700`, so only the bot's user can open it; untouched by deploys, like `bot.db` itself), each a complete SQLite file written with `VACUUM INTO` and renamed into place once finished. One is saved before pending migrations are applied (`pre-migration-v<version>-<time>.db`, the newest 5 kept); if it can't be saved, the bot exits without migrating. One at the same version from the last 10 minutes is reused, so a migration failing in systemd's restart loop doesn't push the older ones out. A scheduled check saves one a day (`daily-<time>.db`, the newest 7 kept), timed from the newest one's name, so restarts don't reset it; after a failure it tries again an hour later. These don't survive losing the VM's disk; the copies off the VM below do.
 - **Backups off the VM** ([decision 0011](docs/decisions/0011-off-vm-backups.md)): `core/offsiteBackup.ts`, a scheduled check after the daily one, encrypts the newest daily snapshot not yet sent to the owner's age public key (`age-encryption`; the VM never holds the key that decrypts) and uploads it with a `PUT` to an Oracle Object Storage bucket through a write-only pre-authenticated URL. The bucket keeps each copy for at least 30 days (a retention rule) and deletes it after 60 (a lifecycle policy). Each attempt uploads under a new name (`<snapshot>.sent-<time>.db.age`), since the retention rule refuses a second upload to a name. What was sent is recorded in `backups/offsite-upload.json` (`0600`), so a restart doesn't resend it. A failed upload is logged without the URL, which is a secret, and tried again an hour later; shutdown aborts one under way. When the newest copy uploaded is over 48 hours old (or, before the first, the oldest snapshot is), the bot DMs the application's owner, once a day until one goes up again, and again after a restart; a DM that fails is logged. It's off without `BACKUP_UPLOAD_URL` and `BACKUP_AGE_RECIPIENT` in `.env` (a local dev bot), and logs why if only one is set or one is malformed. Setup is in [`ORACLE_CLOUD_DEPLOYMENT.md`](ORACLE_CLOUD_DEPLOYMENT.md), section 10. Restoring from either kind of copy is section 11, which sets the old `bot.db` aside with its `-wal` and `-shm`: one left beside the restored file would be replayed into it.
+- **Dashboard** ([decisions 0008](docs/decisions/0008-dashboard-hostname-and-https.md) and [0009](docs/decisions/0009-dashboard-on-hono.md)): `dashboard/server.ts` serves the Hono app in `dashboard/app.ts` on `127.0.0.1` at `DASHBOARD_PORT` from `.env`, so nothing outside the VM can reach it directly. `cloudflared`, a separate systemd service on the VM, connects out to Cloudflare and passes requests for `https://shrimp-fried-rice.alexle.dev` to it, so the VM opens no inbound port and holds no certificate. So far the only page is `/health`, which answers `ok`. The server keeps an idle connection open for 100 s, longer than `cloudflared`'s 90, as a connection Node closed first would fail `cloudflared`'s next request on it with a 502. It's off without `DASHBOARD_PORT`, and a malformed port or one already taken is logged and the bot runs on without it. A deploy restarts the bot but not `cloudflared`, which answers with an error page for those seconds. Setup is in [`ORACLE_CLOUD_DEPLOYMENT.md`](ORACLE_CLOUD_DEPLOYMENT.md), section 12.
 - **npm install-scripts:** `better-sqlite3`'s native build step (which only builds when no prebuilt binary matches) is explicitly approved via the `allowScripts` field committed in `package.json` — required for npm v12+'s install-script security gating.
-- **Graceful shutdown:** `systemctl restart`/`stop` send `SIGTERM`, which `src/core/shutdown.ts` handles by stopping the scheduler (and waiting for any send already under way), destroying the Discord client, and closing the database connection before the process exits — rather than the process being killed mid-operation. `Ctrl+C` during local `npm run dev` sends `SIGINT`, handled identically.
+- **Graceful shutdown:** `systemctl restart`/`stop` send `SIGTERM`, which `src/core/shutdown.ts` handles by stopping the dashboard (it takes no new requests and finishes those under way), stopping the scheduler (and waiting for any send already under way), destroying the Discord client, and closing the database connection before the process exits — rather than the process being killed mid-operation. `Ctrl+C` during local `npm run dev` sends `SIGINT`, handled identically.
 - **Service management:** the bot runs under a systemd unit (`discordbotshrimp.service`). Common commands:
   ```bash
   sudo systemctl status discordbotshrimp     # check if running
@@ -197,7 +201,7 @@ src/
     backup.ts             # snapshots of the database in backups/: before migrating, and a daily scheduled check
     offsiteBackup.ts      # the daily snapshot, encrypted with age, uploaded to Oracle Object Storage; a DM to the owner when uploads stop
     loadCommands.ts       # finds every area's commands/ and events/ files; the one command list for index.ts and deploy-commands.ts
-    shutdown.ts           # graceful SIGTERM/SIGINT handling — stops the scheduler, destroys the client, closes the database
+    shutdown.ts           # graceful SIGTERM/SIGINT handling — stops the dashboard and the scheduler, destroys the client, closes the database
     scheduler.ts          # polling loop — runs a list of named checks every 60 s, one at a time each, and waits for them on shutdown
     eventListener.ts      # wraps each event handler so a rejection is logged, not an unhandled crash
     customEmoji.ts        # finds custom emoji in a reminder's text that the bot can't use where it sends
@@ -229,6 +233,9 @@ src/
         helpers.ts        # finding an open entry by name, shared options, and why follow-ups are held back
       storage.ts          # the trial members' queries, row types and limits (settings, entries, due follow-ups)
       followUps.ts        # the scheduler's follow-up check — posts each due follow-up once, pausing a server whose posts fail
+  dashboard/              # the web dashboard (decisions 0008 and 0009)
+    app.ts                # the Hono app and its routes (/health so far)
+    server.ts             # serves it on 127.0.0.1 at DASHBOARD_PORT, and stops it on shutdown
   minecraft/
     bridge/               # mcbridge, a helper that runs beside a Minecraft server (setup: docs/MINECRAFT_BRIDGE.md; the bot never loads it)
       formats.ts          # the log line prefix of each server flavor (vanilla so far)
@@ -260,7 +267,7 @@ test/
       databasePath.test.ts          # the default database path is bot.db in the project root
       filePermissions.test.ts       # bot.db and its -wal and -shm files are made owner-only, new or existing; a failed chmod is logged
     loadCommands.test.ts            # which command and event files are found, and the commands they load
-    shutdown.test.ts                # gracefulShutdown orchestration tests (mocked scheduler + database)
+    shutdown.test.ts                # gracefulShutdown orchestration tests (mocked dashboard, scheduler + database)
     backup.test.ts                  # snapshots (owner-only) and pruning on a real file; the daily check through the scheduler with fake timers
     offsiteBackup.test.ts           # uploads decrypted with a test key (mocked fetch), retries, shutdown, the stale-upload DM, .env and the owner lookup
     scheduler.test.ts               # the polling loop with fake checks: every poll, a throwing check, the overlap guard, stopping
@@ -294,6 +301,9 @@ test/
       followUps.test.ts             # the follow-up check run by the scheduler, using fake timers
       subcommands/
         registered.test.ts          # every file in src/ffxiv/recruit/subcommands/ is registered by /recruit
+  dashboard/
+    app.test.ts                     # the app's routes, through app.request
+    server.test.ts                  # DASHBOARD_PORT, serving on 127.0.0.1, the keep-alive timeout, a port already taken, and stopping
   minecraft/
     bridge/
       fixtures/                     # vanilla 26.3 logs from the owner's server (player names replaced), and a hand-written error log, `!link` log and crash report

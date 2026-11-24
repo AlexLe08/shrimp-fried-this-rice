@@ -120,7 +120,7 @@ DISCORD_TOKEN=your-production-bot-token-here
 DISCORD_CLIENT_ID=your-production-application-client-id
 ```
 
-Two more, `BACKUP_UPLOAD_URL` and `BACKUP_AGE_RECIPIENT`, turn on encrypted copies of `bot.db` off the VM; [section 10](#10-off-vm-backups-one-time-setup) sets them up.
+Two more, `BACKUP_UPLOAD_URL` and `BACKUP_AGE_RECIPIENT`, turn on encrypted copies of `bot.db` off the VM; [section 10](#10-off-vm-backups-one-time-setup) sets them up. `DASHBOARD_PORT` turns on the dashboard; [section 12](#12-the-dashboard-cloudflare-tunnel-one-time-setup) sets it up.
 
 Save with **Ctrl+O**, **Enter**, then exit with **Ctrl+X**.
 
@@ -364,6 +364,56 @@ In `~/shrimp-fried-this-rice`. Don't approve a deploy until you're done: it woul
 
 ---
 
+## 12. The dashboard: Cloudflare Tunnel (one-time setup)
+
+The dashboard is served at `https://shrimp-fried-rice.alexle.dev` through a Cloudflare Tunnel ([decision 0008](docs/decisions/0008-dashboard-hostname-and-https.md); how it behaves is in the README's Production Deployment). `cloudflared` runs on the VM as its own systemd service, connects out to Cloudflare, and passes requests to the bot on `127.0.0.1`, so no port is opened in the VM's security list or iptables. The domain is on Cloudflare and the tunnel exists (created 2026-11-23, nothing connected yet). So far the bot serves only `/health`, which answers `ok`. The apt commands and the route's fields below are from Cloudflare's docs (read 2026-11-24); the install command in step 3 is shown by the dashboard and wasn't in the docs, so check it there.
+
+1. **Turn the dashboard on in the bot.** Add a port to the VM's `.env` (8787 here; any free one), then restart and check it:
+
+   ```env
+   DASHBOARD_PORT=8787
+   ```
+
+   ```bash
+   sudo systemctl restart discordbotshrimp
+   journalctl -u discordbotshrimp -n 20          # "Dashboard listening on http://127.0.0.1:8787"
+   curl -s http://127.0.0.1:8787/health; echo    # ok
+   ```
+
+   If the log says `The dashboard is off: …`, the port is malformed or something else already listens on it.
+2. **Install `cloudflared`** from Cloudflare's apt repository ([pkg.cloudflare.com](https://pkg.cloudflare.com/index.html), Ubuntu 24.04, stable; it serves the VM's arm64 build itself):
+
+   ```bash
+   sudo mkdir -p --mode=0755 /usr/share/keyrings
+   curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+   echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared noble main' | sudo tee /etc/apt/sources.list.d/cloudflared.list
+   sudo apt-get update && sudo apt-get install cloudflared
+   ```
+3. **Connect it to the tunnel.** In Cloudflare's dashboard: Networking → Tunnels → the tunnel. Its setup page shows an install command for your operating system (Debian, 64-bit ARM). Step 2 already installed `cloudflared`, so run only the line that installs it as a service with the tunnel's token (`sudo cloudflared service install <token>`). The token is a secret like `.env`: anyone with it can run the tunnel and answer for the hostname. Then check:
+
+   ```bash
+   sudo systemctl status cloudflared    # active (running), and enabled so it starts at boot
+   ```
+
+   The tunnel shows as healthy in Cloudflare's dashboard.
+4. **Route the hostname to the bot:** the tunnel → Routes → Add route → Published application. Subdomain `shrimp-fried-rice`, domain `alexle.dev`, no path, service URL `http://127.0.0.1:8787` (the port from step 1). Write `127.0.0.1`, not `localhost`: the bot listens on IPv4 only, and `localhost` can resolve to IPv6's `::1`. Leave the additional application settings as they are: the bot keeps idle connections open longer than `cloudflared`'s 90 s default, which a lower setting there would only shorten. No Access policy is needed.
+5. **Check from your own machine:**
+
+   ```bash
+   curl -s https://shrimp-fried-rice.alexle.dev/health; echo    # ok
+   ```
+
+   Cloudflare's error page instead means the request reached Cloudflare but not the bot: check steps 3 and 4, and that the bot is running.
+
+**Updating `cloudflared`:** the deploy doesn't touch it. Update it with apt, as it was installed; restarting it drops the dashboard for a few seconds:
+
+```bash
+sudo apt-get update && sudo apt-get install --only-upgrade cloudflared
+sudo systemctl restart cloudflared
+```
+
+---
+
 ## Quick reference: common commands
 
 | Task | Command |
@@ -374,4 +424,5 @@ In `~/shrimp-fried-this-rice`. Don't approve a deploy until you're done: it woul
 | Re-register slash commands | `npm run deploycommands` |
 | Full deploy | merge a PR to `main`, then approve the `production` deployment |
 | Restore `bot.db` from a copy | section 11 |
+| Check the dashboard's tunnel | `sudo systemctl status cloudflared` |
 | SSH into the VM | `ssh -i ~/Downloads/your-key-filename.key ubuntu@YOUR_PUBLIC_IP` |
