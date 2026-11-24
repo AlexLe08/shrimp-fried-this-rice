@@ -76,26 +76,39 @@ export function offsiteBackupCheck({ dir, uploadUrl, recipient, notifyOwner }: O
 	}
 	let lastFailureAt = -Infinity;
 	let lastWarnedAt = -Infinity;
+	// Besides the marker: if writing it fails (a full disk), the same snapshot
+	// would otherwise go up again every hour, each copy held for 30 days.
+	let lastSent: string | null = null;
 
 	async function upload(signal: AbortSignal, now: number): Promise<void> {
 		const newest = dailySnapshots(dir).at(-1);
 		if (!newest) return;
 		const snapshot = path.basename(newest.file);
-		if (readMarker(dir)?.snapshot === snapshot) return;
+		if (snapshot === lastSent || readMarker(dir)?.snapshot === snapshot) return;
 		const encrypted = await encrypter.encrypt(fs.readFileSync(newest.file));
 		// A new name each attempt: the retention rule refuses a second PUT to a
 		// name for 30 days, so retrying under the same name after a timeout whose
 		// upload did reach Oracle would fail for that whole time.
 		const name = `${snapshot.replace(/\.db$/, '')}.sent-${stampOf(new Date(now))}.db.age`;
-		const response = await fetch(`${uploadUrl}${encodeURIComponent(name)}`, {
-			method: 'PUT',
-			body: encrypted,
-			signal: AbortSignal.any([signal, AbortSignal.timeout(UPLOAD_TIMEOUT_MS)]),
-		});
-		if (!response.ok) {
-			const detail = (await response.text().catch(() => '')).slice(0, 200);
-			throw new Error(`Object Storage refused the upload: HTTP ${response.status} ${detail}`.trim());
+		// setTimeout rather than AbortSignal.timeout, which fake timers can't advance.
+		const timeout = new AbortController();
+		const timer = setTimeout(() => timeout.abort(new Error('The upload timed out')), UPLOAD_TIMEOUT_MS);
+		try {
+			const response = await fetch(`${uploadUrl}${encodeURIComponent(name)}`, {
+				method: 'PUT',
+				body: encrypted,
+				signal: AbortSignal.any([signal, timeout.signal]),
+			});
+			if (!response.ok) {
+				const detail = (await response.text().catch(() => '')).slice(0, 200);
+				throw new Error(`Object Storage refused the upload: HTTP ${response.status} ${detail}`.trim());
+			}
+			// Unread, it holds the connection until garbage collection.
+			await response.body?.cancel();
+		} finally {
+			clearTimeout(timer);
 		}
+		lastSent = snapshot;
 		writeMarker(dir, { snapshot, uploadedAt: new Date(now).toISOString() });
 		console.log(`Uploaded an encrypted copy of ${snapshot} as ${name}`);
 	}

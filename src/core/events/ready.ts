@@ -14,7 +14,9 @@ export default {
 		// The deploy job waits for this exact line to confirm the bot logged in.
 		console.log(`Ready! Logged in as ${client.user.tag}`);
 		const backups = backupDirectory();
-		// After the daily check, so a poll that saves a snapshot also sends it.
+		// The scheduler starts each poll's checks without waiting, but the daily
+		// check saves synchronously, so this one, started after it, sees its
+		// snapshot in the same poll.
 		const offsite = backups && offsiteBackupCheckFromEnv(process.env, backups, ownerNotifier(client));
 		startScheduler([
 			...dueReminderChecks(client),

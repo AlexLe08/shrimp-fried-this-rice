@@ -14,7 +14,7 @@ import { startScheduler, stopScheduler, type ScheduledCheck } from '../../src/co
 
 const POLL_MS = 60_000;
 const HOUR_MS = 60 * 60 * 1000;
-const URL = 'https://objectstorage.example.invalid/p/secret-token/n/ns/b/bot-backups/o/';
+const PAR_URL = 'https://objectstorage.example.invalid/p/secret-token/n/ns/b/bot-backups/o/';
 const NOW = new Date('2026-11-24T12:00:00.000Z');
 
 let identity: string;
@@ -34,7 +34,7 @@ let pending: Promise<unknown>[] = [];
 // Encrypting goes through WebCrypto, which settles outside the fake clock, so
 // each run the scheduler starts is awaited for real before the next poll.
 function check(): ScheduledCheck {
-	const inner = offsiteBackupCheck({ dir, uploadUrl: URL, recipient, notifyOwner });
+	const inner = offsiteBackupCheck({ dir, uploadUrl: PAR_URL, recipient, notifyOwner });
 	return {
 		name: inner.name,
 		run(signal) {
@@ -99,7 +99,7 @@ describe('offsiteBackupCheck', () => {
 
 		expect(uploads()).toHaveLength(1);
 		const [{ url, body }] = uploads() as [{ url: string; body: Uint8Array }];
-		expect(url).toBe(`${URL}daily-2026-11-23T12-00-00.000Z.sent-2026-11-24T12-01-00.000Z.db.age`);
+		expect(url).toBe(`${PAR_URL}daily-2026-11-23T12-00-00.000Z.sent-2026-11-24T12-01-00.000Z.db.age`);
 		expect(fetchMock.mock.calls[0]![1]).toMatchObject({ method: 'PUT' });
 		expect(await decrypt(body)).toBe('newest');
 		expect(Buffer.from(body).includes('newest')).toBe(false);
@@ -146,7 +146,7 @@ describe('offsiteBackupCheck', () => {
 		expect(console.error).not.toHaveBeenCalled();
 	});
 
-	it('logs a refused upload without the URL, and tries again an hour later under a new name', async () => {
+	it('logs a refused upload without the PAR_URL, and tries again an hour later under a new name', async () => {
 		writeSnapshot('2026-11-23T12-00-00.000Z');
 		fetchMock.mockResolvedValue(
 			new Response('{"code":"NotAuthenticated","message":"PAR does not exist"}', { status: 401 }),
@@ -164,8 +164,8 @@ describe('offsiteBackupCheck', () => {
 		fetchMock.mockResolvedValue(new Response(null, { status: 200 }));
 		await poll();
 		expect(uploads().map(({ url }) => url)).toEqual([
-			`${URL}daily-2026-11-23T12-00-00.000Z.sent-2026-11-24T12-01-00.000Z.db.age`,
-			`${URL}daily-2026-11-23T12-00-00.000Z.sent-2026-11-24T13-01-00.000Z.db.age`,
+			`${PAR_URL}daily-2026-11-23T12-00-00.000Z.sent-2026-11-24T12-01-00.000Z.db.age`,
+			`${PAR_URL}daily-2026-11-23T12-00-00.000Z.sent-2026-11-24T13-01-00.000Z.db.age`,
 		]);
 		expect(fs.existsSync(path.join(dir, 'offsite-upload.json'))).toBe(true);
 	});
@@ -187,6 +187,53 @@ describe('offsiteBackupCheck', () => {
 
 		expect(console.error).not.toHaveBeenCalled();
 		expect(fs.existsSync(path.join(dir, 'offsite-upload.json'))).toBe(false);
+	});
+
+	it('gives up on an upload that hangs after 2 minutes, logs it, and tries again an hour later', async () => {
+		writeSnapshot('2026-11-23T12-00-00.000Z');
+		fetchMock.mockImplementationOnce(
+			(_url: string, init: RequestInit) =>
+				new Promise((_resolve, reject) => {
+					init.signal!.addEventListener('abort', () => reject(init.signal!.reason));
+				}),
+		);
+		startScheduler([check()]);
+		await vi.advanceTimersByTimeAsync(POLL_MS);
+		// Not poll(): this upload only ends when the timeout aborts it.
+		await vi.waitUntil(() => fetchMock.mock.calls.length > 0);
+
+		await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
+		await Promise.all(pending.splice(0));
+		expect(console.error).toHaveBeenCalledWith('Off-VM backup check failed:', expect.any(Error));
+		expect((vi.mocked(console.error).mock.calls[0]![1] as Error).message).toMatch(/timed out/);
+
+		await poll(60);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(fs.existsSync(path.join(dir, 'offsite-upload.json'))).toBe(true);
+	});
+
+	it('sends the newest snapshot again when its record is cut off', async () => {
+		writeSnapshot('2026-11-23T12-00-00.000Z');
+		fs.writeFileSync(path.join(dir, 'offsite-upload.json'), '{"snapshot":"daily-2026-11-23T12-00');
+		startScheduler([check()]);
+
+		await poll();
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(console.error).not.toHaveBeenCalled();
+	});
+
+	it("doesn't send a snapshot again when its record can't be written", async () => {
+		writeSnapshot('2026-11-23T12-00-00.000Z');
+		// A folder where the record goes: renaming onto it fails.
+		fs.mkdirSync(path.join(dir, 'offsite-upload.json', 'x'), { recursive: true });
+		startScheduler([check()]);
+
+		await poll();
+		expect(console.error).toHaveBeenCalledWith('Off-VM backup check failed:', expect.any(Error));
+
+		await poll(2 * 60);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 
 	describe('when uploads stop', () => {
@@ -245,14 +292,14 @@ describe('offsiteBackupCheck', () => {
 		});
 	});
 
-	it('refuses a URL that isn’t a bucket pre-authenticated request, or a malformed recipient', () => {
+	it('refuses a PAR_URL that isn’t a bucket pre-authenticated request, or a malformed recipient', () => {
 		expect(() => offsiteBackupCheck({ dir, uploadUrl: 'http://example.invalid/o/', recipient, notifyOwner })).toThrow(
 			/BACKUP_UPLOAD_URL/,
 		);
 		expect(() =>
 			offsiteBackupCheck({ dir, uploadUrl: 'https://example.invalid/p/x/n/ns/b/b/o/name', recipient, notifyOwner }),
 		).toThrow(/BACKUP_UPLOAD_URL/);
-		expect(() => offsiteBackupCheck({ dir, uploadUrl: URL, recipient: 'age1nope', notifyOwner })).toThrow(
+		expect(() => offsiteBackupCheck({ dir, uploadUrl: PAR_URL, recipient: 'age1nope', notifyOwner })).toThrow(
 			/BACKUP_AGE_RECIPIENT/,
 		);
 	});
@@ -265,11 +312,11 @@ describe('offsiteBackupCheckFromEnv', () => {
 	});
 
 	it('is off, and says so, with only one of them', () => {
-		expect(offsiteBackupCheckFromEnv({ BACKUP_UPLOAD_URL: URL }, dir, notifyOwner)).toBeNull();
+		expect(offsiteBackupCheckFromEnv({ BACKUP_UPLOAD_URL: PAR_URL }, dir, notifyOwner)).toBeNull();
 		expect(console.error).toHaveBeenCalledWith(expect.stringContaining('set both'));
 	});
 
-	it('is off, and says which value is wrong without quoting the URL', () => {
+	it('is off, and says which value is wrong without quoting the PAR_URL', () => {
 		const url = 'not a url, secret-token';
 		expect(
 			offsiteBackupCheckFromEnv({ BACKUP_UPLOAD_URL: url, BACKUP_AGE_RECIPIENT: recipient }, dir, notifyOwner),
@@ -281,7 +328,7 @@ describe('offsiteBackupCheckFromEnv', () => {
 
 	it('returns the check with both', () => {
 		const result = offsiteBackupCheckFromEnv(
-			{ BACKUP_UPLOAD_URL: URL, BACKUP_AGE_RECIPIENT: recipient },
+			{ BACKUP_UPLOAD_URL: PAR_URL, BACKUP_AGE_RECIPIENT: recipient },
 			dir,
 			notifyOwner,
 		);
