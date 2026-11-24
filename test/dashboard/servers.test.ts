@@ -222,8 +222,9 @@ describe("a server's reminders", () => {
 });
 
 // Decision 0009: deny by default. A route missing from ROUTE_ACCESS, or one
-// listed but not served, fails here, and every non-public route is tried
-// signed out and, for a server's routes, as a manager of another server.
+// listed but not served, fails here, and every route behind a login is tried
+// signed out and, for a server's routes, as a manager of another server. The
+// Minecraft helper's routes have no login: they're tried without a seal.
 describe('route access', () => {
 	const app = createApp({ auth, client: fakeClient([fakeGuild('g1', 'Shrimp Hall', { u2: true })]), now: () => NOW });
 	const served = [...new Set(app.routes.filter((r) => r.method !== 'ALL').map((r) => `${r.method} ${r.path}`))];
@@ -252,7 +253,13 @@ describe('route access', () => {
 		return { method, path: path.replace(':guildId', 'g1') };
 	};
 
-	it.each(declared.filter(([, access]) => access !== 'public').map(([route]) => route))(
+	it("keeps every helper route under /minecraft/, where the pages' rate limit gives way to its own", () => {
+		for (const [route, access] of declared) {
+			if (access === 'helper') expect(route).toMatch(/^POST \/minecraft\/[a-z]+$/);
+		}
+	});
+
+	it.each(declared.filter(([, access]) => access === 'signed-in' || access === 'server').map(([route]) => route))(
 		'sends a signed-out visitor of %s back to the home page',
 		async (route) => {
 			const { method, path } = withGuild(route);
@@ -261,6 +268,21 @@ describe('route access', () => {
 
 			expect(response.status).toBe(302);
 			expect(response.headers.get('location')).toBe('/');
+		},
+	);
+
+	it.each(declared.filter(([, access]) => access === 'helper').map(([route]) => route))(
+		'refuses %s without a sealed body, even from a signed-in visitor',
+		async (route) => {
+			const { method, path } = withGuild(route);
+
+			const response = await app.request(path, {
+				method,
+				headers: { ...signedIn('u2'), 'content-type': 'application/json' },
+				body: '{}',
+			});
+
+			expect(response.status).toBe(400);
 		},
 	);
 

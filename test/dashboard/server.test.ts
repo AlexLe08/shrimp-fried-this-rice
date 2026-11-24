@@ -9,6 +9,10 @@ import {
 	startDashboard,
 	stopDashboard,
 } from '../../src/dashboard/server.ts';
+import { __resetForTests } from '../../src/core/database.ts';
+import { type Envelope, deriveKeys, newBridgeSecret, open, seal } from '../../src/minecraft/bridge/seal.ts';
+import { HelperHub } from '../../src/minecraft/helperHub.ts';
+import { createBridge } from '../../src/minecraft/storage.ts';
 
 afterEach(async () => {
 	await stopDashboard();
@@ -18,6 +22,37 @@ afterEach(async () => {
 function quietLogs(): { error: ReturnType<typeof vi.spyOn> } {
 	vi.spyOn(console, 'log').mockImplementation(() => {});
 	return { error: vi.spyOn(console, 'error').mockImplementation(() => {}) };
+}
+
+/** A paired bridge, and a helper's sealed POST to the running dashboard. */
+function helperFor(port: number) {
+	__resetForTests();
+	const keys = deriveKeys(newBridgeSecret());
+	const { id } = createBridge({
+		guildId: 'g1',
+		chat: { channelId: 'chat', webhookId: 'wh-chat', token: 'tok-chat' },
+		alerts: { channelId: 'alerts', webhookId: 'wh-alerts', token: 'tok-alerts' },
+		keys,
+		serverName: 'Survival',
+		now: Date.now(),
+	});
+	async function call(route: string, message: unknown, signal?: AbortSignal) {
+		const request = seal(keys, 'request', { bridgeId: id, route }, message, Date.now());
+		const response = await fetch(`http://127.0.0.1:${port}/minecraft/${route}`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(request),
+			signal: signal ?? null,
+		});
+		const opened = open(
+			keys,
+			'response',
+			{ bridgeId: id, route, replyTo: request.iv },
+			(await response.json()) as Envelope,
+		);
+		return { status: response.status, message: opened.ok ? opened.message : opened.reason };
+	}
+	return { id, call };
 }
 
 /** GET over a keep-alive agent, which leaves the connection open and idle afterwards. */
@@ -119,7 +154,46 @@ describe('startDashboard', () => {
 	});
 });
 
+describe("the Minecraft helper's long poll", () => {
+	it('is released when the helper hangs up, so a message after it waits for the next poll', async () => {
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+		quietLogs();
+		const hub = new HelperHub();
+		const port = (await startDashboard(0, { auth: null, helpers: hub }))!;
+		const helper = helperFor(port);
+		const { message } = await helper.call('connect', {});
+		const { session } = message as { session: string };
+		const controller = new AbortController();
+
+		const abandoned = helper.call('poll', { session }, controller.signal).catch(() => 'aborted');
+		await vi.waitFor(() => expect(hub.__isPollHeldForTests(helper.id)).toBe(true));
+		controller.abort();
+
+		await expect(abandoned).resolves.toBe('aborted');
+		await vi.waitFor(() => expect(hub.__isPollHeldForTests(helper.id)).toBe(false));
+		hub.deliver(helper.id, 'kept');
+		await expect(helper.call('poll', { session })).resolves.toEqual({ status: 200, message: { messages: ['kept'] } });
+	});
+});
+
 describe('stopDashboard', () => {
+	it("answers a helper's held poll at once rather than cutting it off after the grace", async () => {
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+		quietLogs();
+		const hub = new HelperHub();
+		const port = (await startDashboard(0, { auth: null, helpers: hub }))!;
+		const helper = helperFor(port);
+		const { message } = await helper.call('connect', {});
+		const poll = helper.call('poll', message);
+		await vi.waitFor(() => expect(hub.__isPollHeldForTests(helper.id)).toBe(true));
+
+		const started = Date.now();
+		await stopDashboard(60_000);
+
+		expect(Date.now() - started).toBeLessThan(2000);
+		await expect(poll).resolves.toEqual({ status: 200, message: { messages: [] } });
+	});
+
 	it('does nothing when the dashboard was never started', async () => {
 		await expect(stopDashboard()).resolves.toBeUndefined();
 	});
