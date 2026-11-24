@@ -17,6 +17,8 @@ const NOW = 1_000_000;
 
 beforeEach(() => {
 	__resetForTests();
+	// Most requests here come without CF-Connecting-IP, which the app warns of once.
+	vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
 afterEach(() => {
@@ -353,6 +355,26 @@ describe('rate limits', () => {
 
 		expect((await app.request('/', { headers: visitor('2001:db8:1:2::ffff') })).status).toBe(429);
 		expect((await app.request('/', { headers: visitor('2001:db8:1:3::1') })).status).toBe(200);
+	});
+
+	it('warns once when requests come without a usable CF-Connecting-IP, and not for ones with it', async () => {
+		const warn = vi.mocked(console.warn);
+		const app = createApp({ auth, now: () => NOW });
+		await app.request('/', { headers: visitor('203.0.113.7') });
+		expect(warn).not.toHaveBeenCalled();
+
+		await app.request('/');
+		await app.request('/', { headers: visitor('not-an-ip') });
+
+		expect(warn).toHaveBeenCalledTimes(1);
+		expect(warn.mock.calls[0]![0]).toContain('CF-Connecting-IP');
+	});
+
+	it('counts requests without a usable address as one visitor', async () => {
+		const app = createApp({ auth, now: () => NOW });
+		for (let i = 0; i < VISITOR_REQUESTS_PER_MINUTE; i++) await app.request('/');
+
+		expect((await app.request('/', { headers: visitor('garbage') })).status).toBe(429);
 	});
 
 	it('leaves /health out of the visitor limit', async () => {

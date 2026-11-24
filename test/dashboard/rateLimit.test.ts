@@ -33,6 +33,29 @@ describe('createRateLimiter', () => {
 		expect(limiter.take('k0')).toBeGreaterThan(0);
 	});
 
+	it('when full, looks for expired keys at most once a second', () => {
+		let time = 0;
+		const limiter = createRateLimiter(1, 60_000, () => time);
+		limiter.take('a');
+		time = 500;
+		limiter.take('b');
+		limiter.take('c');
+		time = 30_000;
+		for (let i = 3; i < MAX_KEYS; i++) limiter.take(`k${i}`);
+		time = 60_000;
+		// The periodic sweep frees 'a' (not yet 'b' or 'c'), and new-1 takes its place.
+		expect(limiter.take('new-1')).toBe(0);
+
+		// 'b' and 'c' have expired, but the last sweep was under a second ago:
+		// new keys share the overflow count, which takes a slot of its own.
+		time = 60_600;
+		expect(limiter.take('new-2')).toBe(0);
+		expect(limiter.take('new-3')).toBeGreaterThan(0);
+		// A second on, a sweep frees 'b' and 'c', so a new key gets its own count again.
+		time = 61_000;
+		expect(limiter.take('new-4')).toBe(0);
+	});
+
 	it('makes room for new keys once the old ones have expired', () => {
 		let time = 0;
 		const limiter = createRateLimiter(1, 60_000, () => time);
@@ -60,11 +83,16 @@ describe('visitorKey', () => {
 		expect(visitorKey(address)).toBe(key);
 	});
 
+	it('keys an IPv4 address written as IPv6 by the IPv4 address', () => {
+		expect(visitorKey('::ffff:203.0.113.7')).toBe('203.0.113.7');
+		expect(visitorKey('::FFFF:198.51.100.1')).toBe('198.51.100.1');
+	});
+
 	it('gives every address in one /64 the same key', () => {
 		expect(visitorKey('2001:db8:1:2::a')).toBe(visitorKey('2001:db8:1:2:ffff:ffff:ffff:ffff'));
 	});
 
-	it.each([undefined, '', 'not-an-ip', '203.0.113.7, 198.51.100.1'])(
+	it.each([undefined, '', 'not-an-ip', '203.0.113.7, 198.51.100.1', 'fe80::1%eth0'])(
 		'puts a missing or malformed header (%s) in one shared bucket',
 		(header) => {
 			expect(visitorKey(header)).toBe('unknown');

@@ -12,6 +12,7 @@ import {
 	VISITOR_LOGIN_WINDOW_MS,
 	VISITOR_LOGINS_PER_WINDOW,
 	VISITOR_REQUESTS_PER_MINUTE,
+	UNKNOWN_VISITOR,
 	createRateLimiter,
 	visitorKey,
 } from './rateLimit.ts';
@@ -94,18 +95,31 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 		await next();
 		c.header('Cache-Control', 'no-store');
 	});
+	// Without a usable address every visitor shares one count, which would
+	// look like the dashboard turning everyone away, so say so once.
+	let warnedNoAddress = false;
+	const visitorOf = (c: Context) => {
+		const key = visitorKey(c.req.header('cf-connecting-ip'));
+		if (key === UNKNOWN_VISITOR && !warnedNoAddress) {
+			warnedNoAddress = true;
+			console.warn(
+				'Dashboard: a request came without a usable CF-Connecting-IP; all such requests share one rate limit.',
+			);
+		}
+		return key;
+	};
+	// /health is left out: it touches neither Discord nor the database.
+	app.use(async (c, next) => {
+		if (c.req.path === '/health') return next();
+		const wait = visitorRequests.take(visitorOf(c));
+		if (wait > 0) return tooMany(c, wait, 'Too many requests from your network. Please try again in a minute.');
+		return next();
+	});
 	// Form posts only from the dashboard's own pages. Either check lets one
 	// through: an Origin of the exact public origin (behind the tunnel the
 	// request's own URL is 127.0.0.1's), or Sec-Fetch-Site: same-origin. A
 	// sibling site under alexle.dev has its own Origin and is same-site, so it
 	// passes neither.
-	// /health is left out: it touches neither Discord nor the database.
-	app.use(async (c, next) => {
-		if (c.req.path === '/health') return next();
-		const wait = visitorRequests.take(visitorKey(c.req.header('cf-connecting-ip')));
-		if (wait > 0) return tooMany(c, wait, 'Too many requests from your network. Please try again in a minute.');
-		return next();
-	});
 	app.use(csrf({ origin: auth ? auth.origin : [], secFetchSite: 'same-origin' }));
 
 	// For checking that the tunnel reaches the bot: it touches neither Discord nor the database.
@@ -140,7 +154,7 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 		}
 
 		// Before the dashboard-wide gate, so one visitor can't use up everyone's logins.
-		const wait = visitorLogins.take(visitorKey(c.req.header('cf-connecting-ip')));
+		const wait = visitorLogins.take(visitorOf(c));
 		if (wait > 0) return tooMany(c, wait, 'Too many logins from your network. Please try again in a few minutes.');
 		if (!loginGate.tryTake()) {
 			return c.html(messagePage('Too many logins', 'Too many logins right now. Please try again in a minute.'), 429);

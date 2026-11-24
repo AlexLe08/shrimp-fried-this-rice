@@ -18,7 +18,10 @@ export const MINUTE_MS = 60_000;
 export const MAX_KEYS = 10_000;
 const OVERFLOW_KEY = 'overflow';
 // Shared by every request with no usable address: stricter, never looser.
-const UNKNOWN_VISITOR = 'unknown';
+export const UNKNOWN_VISITOR = 'unknown';
+// When full, how often a new key may trigger a sweep, so a flood of new
+// addresses can't make every request scan every key.
+const FULL_SWEEP_EVERY_MS = 1000;
 
 export interface RateLimiter {
 	/** Counts one request for `key`: 0 if allowed, else the milliseconds until its window resets. */
@@ -40,7 +43,7 @@ export function createRateLimiter(limit: number, windowMs: number, now: () => nu
 			if (time - lastSweep >= windowMs) sweep(time);
 			let key = requested;
 			if (!windows.has(key) && windows.size >= MAX_KEYS) {
-				sweep(time);
+				if (time - lastSweep >= FULL_SWEEP_EVERY_MS) sweep(time);
 				if (windows.size >= MAX_KEYS) key = OVERFLOW_KEY;
 			}
 			let window = windows.get(key);
@@ -66,6 +69,9 @@ export function visitorKey(header: string | undefined): string {
 	const address = header?.trim() ?? '';
 	if (isIPv4(address)) return address;
 	if (!isIPv6(address)) return UNKNOWN_VISITOR;
+	// An IPv4 address written as IPv6 is that IPv4 visitor, not one /64 shared by all of them.
+	const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address)?.[1];
+	if (mapped && isIPv4(mapped)) return mapped;
 	// URL's serializer canonicalizes it: lower case, hex only, the longest run of zero groups as `::`.
 	const host = URL.parse(`http://[${address}]/`)?.hostname.slice(1, -1);
 	if (!host) return UNKNOWN_VISITOR;

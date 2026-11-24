@@ -422,7 +422,8 @@ Later item), not a follow-up.
   dashboard-wide cap, the per-visitor login limit is what slows new
   accounts piling up access checks (decision 0012). Answers are 429
   with `Retry-After`. A visitor is keyed on `CF-Connecting-IP`, an IPv6
-  address by its /64; no usable address shares one count. Past 10,000
+  address by its /64; no usable address shares one count, logged once
+  so a header that doesn't arrive shows in the journal. Past 10,000
   keys in a window, new ones share one count, so memory stays bounded.
   Checked against Cloudflare's HTTP headers docs (2026-11-24): the
   header carries the visitor's address to the origin. Neither those docs
