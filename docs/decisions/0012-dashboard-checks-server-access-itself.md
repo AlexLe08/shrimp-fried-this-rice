@@ -68,8 +68,9 @@ responsive and accurate. Will look into the alternativem ethods if this bot were
 - discord.js's `permissions` ignore a timeout, so the check asks for it
   separately. A server's own command permission overrides (Server
   Settings → Integrations) aren't consulted: Manage Server decides. That
-  isn't a privilege gain (someone with Manage Server can change those
-  overrides), but moderators given `/reminder` without Manage Server
+  is unlikely to be a privilege gain (someone with Manage Server can
+  likely change those overrides; from memory, not checked against
+  Discord's docs), but moderators given `/reminder` without Manage Server
   can't use the dashboard. Whether to follow the overrides instead is
   decided before D2.
 - Any failure counts as no access, a Discord outage included, so a
