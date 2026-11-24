@@ -95,6 +95,21 @@ describe('HelperHub', () => {
 		await expect(hub.poll(BRIDGE, hub.connect(BRIDGE))).resolves.toEqual({ kind: 'messages', messages: ['early'] });
 	});
 
+	it('hands over at most MAX_MESSAGES_PER_POLL at a time, the rest with the next poll', async () => {
+		const hub = new HelperHub();
+		const session = hub.connect(BRIDGE);
+		for (let i = 0; i < MAX_MESSAGES_PER_POLL + 1; i++) hub.deliver(BRIDGE, i);
+
+		await expect(hub.poll(BRIDGE, session)).resolves.toEqual({
+			kind: 'messages',
+			messages: [...Array(MAX_MESSAGES_PER_POLL).keys()],
+		});
+		await expect(hub.poll(BRIDGE, session)).resolves.toEqual({
+			kind: 'messages',
+			messages: [MAX_MESSAGES_PER_POLL],
+		});
+	});
+
 	it('drops messages past MAX_HELD_MESSAGES, saying so', async () => {
 		const hub = new HelperHub();
 		const session = hub.connect(BRIDGE);
@@ -224,11 +239,13 @@ describe('HelperHub', () => {
 		it('takes no messages for a poll already abandoned', async () => {
 			const hub = new HelperHub();
 			const session = hub.connect(BRIDGE);
+			hub.deliver(BRIDGE, 'kept');
 			const controller = new AbortController();
 			controller.abort();
 
 			await expect(hub.poll(BRIDGE, session, controller.signal)).resolves.toEqual(none);
 			expect(hub.__isPollHeldForTests(BRIDGE)).toBe(false);
+			await expect(hub.poll(BRIDGE, session)).resolves.toEqual({ kind: 'messages', messages: ['kept'] });
 		});
 	});
 

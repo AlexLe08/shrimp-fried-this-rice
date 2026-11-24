@@ -78,8 +78,14 @@ export class HelperHub {
 		// as when its connection dropped without the bot noticing.
 		state.held?.answer({ kind: 'messages', messages: [] });
 
+		// Before taking any: a helper that hung up while its request was read
+		// would never get them.
+		if (signal?.aborted) {
+			this.#endPoll(state, session);
+			return Promise.resolve({ kind: 'messages', messages: [] });
+		}
 		const ready = this.#take(state);
-		if (ready.length > 0 || this.#closed || signal?.aborted) {
+		if (ready.length > 0 || this.#closed) {
 			this.#endPoll(state, session);
 			return Promise.resolve({ kind: 'messages', messages: ready });
 		}

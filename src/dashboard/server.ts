@@ -43,7 +43,7 @@ export function startDashboard(port: number, appOptions: AppOptions = { auth: nu
 	}
 	return new Promise((resolve) => {
 		let listening: Server;
-		const hub = appOptions.helpers ?? new HelperHub();
+		const hub = appOptions.helpers ?? new HelperHub(appOptions.now);
 		try {
 			listening = startServer(port, { ...appOptions, helpers: hub }, resolve);
 		} catch (error) {

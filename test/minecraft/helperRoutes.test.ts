@@ -155,6 +155,7 @@ describe("the Minecraft helper's endpoint", () => {
 
 	it.each([
 		['connect', 'not an object'],
+		['connect', null],
 		['poll', {}],
 		['poll', { session: 42 }],
 		['poll', ['session']],
