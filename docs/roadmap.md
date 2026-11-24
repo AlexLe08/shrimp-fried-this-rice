@@ -412,6 +412,23 @@ Later item), not a follow-up.
   No new route, so `ROUTE_ACCESS` and the guard are unchanged. Tried by
   the owner on the live dashboard on 2026-11-24 after the deploy: a
   reminder created in Discord showed on the server's page.
+- **Dashboard rate limits** (2026-11-24, sixth and last part of D1).
+  `dashboard/rateLimit.ts`, fixed windows counted in memory (a restart
+  clears them; no new dependency, as Hono has none built in): 60
+  requests a minute per visitor (`/health` aside), 5 logins in 10
+  minutes per visitor, checked before the dashboard-wide 30 a minute so
+  one visitor can't use that up, and 30 signed-in pages a minute per
+  account across its sessions and addresses. Together with the
+  dashboard-wide cap, the per-visitor login limit is what slows new
+  accounts piling up access checks (decision 0012). Answers are 429
+  with `Retry-After`. A visitor is keyed on `CF-Connecting-IP`, an IPv6
+  address by its /64; no usable address shares one count. Past 10,000
+  keys in a window, new ones share one count, so memory stays bounded.
+  Checked against Cloudflare's HTTP headers docs (2026-11-24): the
+  header carries the visitor's address to the origin. Neither those docs
+  nor the Tunnel docs say Cloudflare replaces a value the client sent,
+  or that the header reaches a tunnel origin; not yet checked on the
+  live dashboard.
 
 ## Next up
 
@@ -441,16 +458,12 @@ them ahead of items 5 and 6.
    Minecraft work, ahead of the collection tracker). The hostname and
    HTTPS, Discord login, and a read-only reminders page. D0 is done:
    decisions 0008 and 0009 (Done above). The domain is on Cloudflare and
-   the tunnel exists (2026-11-23, asking for no payment method). D1's web
-   server is done and reachable through the tunnel, as are login with
-   Discord, the server list guarded per server, and the read-only
-   reminders page (Done above). Left: rate limiting per visitor (keyed
-   on Cloudflare's client-IP header) and per signed-in user: logins
-   already have a cap for the whole dashboard, and access
-   answers are cached per user for 30 s, but each new Discord account
-   that logs in adds one call per server every 30 s to the request
-   queue reminders share (decision 0012). Then A8d to A8i:
-   two-way chat, linking and pictures.
+   the tunnel exists (2026-11-23, asking for no payment method). D1 is
+   done (Done above): the web server through the tunnel, login with
+   Discord, the server list guarded per server, the read-only reminders
+   page and rate limits. Left: checking on the live dashboard that
+   `CF-Connecting-IP` arrives and can't be forged (the rate limits entry
+   above). Then A8d to A8i: two-way chat, linking and pictures.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the
