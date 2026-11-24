@@ -337,8 +337,9 @@ Later item), not a follow-up.
   closes idle connections itself, so shutdown doesn't wait on them.
   `overrideGlobalObjects: false` stops `@hono/node-server` replacing the
   process's global `Request` and `Response`. Installing `cloudflared` and
-  the route are `ORACLE_CLOUD_DEPLOYMENT.md` section 12, for the owner.
-  Not yet run on the VM or through the tunnel.
+  the route are `ORACLE_CLOUD_DEPLOYMENT.md` section 12, which the owner
+  followed on the VM on 2026-11-24: `/health` answered `ok` on the VM and
+  through `https://shrimp-fried-rice.alexle.dev`.
 
 ## Next up
 
@@ -369,9 +370,9 @@ them ahead of items 5 and 6.
    HTTPS, Discord login, and a read-only reminders page. D0 is done:
    decisions 0008 and 0009 (Done above). The domain is on Cloudflare and
    the tunnel exists (2026-11-23, asking for no payment method). D1's web
-   server is done (Done above), with `cloudflared` and the route left to
-   set up on the VM (`ORACLE_CLOUD_DEPLOYMENT.md` section 12). Left:
-   login, the server picker and the reminders page. Then A8d to A8i:
+   server is done and reachable through the tunnel (Done above). Left:
+   login (sessions in `bot.db`, the owner's call on 2026-11-24), the
+   server picker and the reminders page. Then A8d to A8i:
    two-way chat, linking and pictures.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
