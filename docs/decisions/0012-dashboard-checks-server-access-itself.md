@@ -37,9 +37,9 @@ have Manage Server there and aren't in timeout. The same check backs the
 server list and the guard on every `/servers/:guildId` route. Login stays
 `identify` only.
 
-**Why:** 
+**Why:**
 
-responsive and accurate. Will look into the alternativem ethods if this bot were to grow in scale and use.
+Responsive and accurate. Will look into the alternative methods if this bot were to grow in scale and use.
 
 ## Consequences
 
