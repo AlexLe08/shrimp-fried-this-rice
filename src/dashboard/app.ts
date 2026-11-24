@@ -3,7 +3,8 @@ import { Hono, type Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { csrf } from 'hono/csrf';
 import { secureHeaders } from 'hono/secure-headers';
-import { authorizeUrl, discordUserFromCode, type AuthConfig, type Fetch } from './auth.ts';
+import { DiscordRateLimitedError, authorizeUrl, discordUserFromCode, type AuthConfig, type Fetch } from './auth.ts';
+import { createLoginGate } from './loginGate.ts';
 import { homePage, messagePage } from './pages.ts';
 import { endSession, sessionFromToken, startSession } from './sessions.ts';
 import { SESSION_LIFETIME_MS } from './storage.ts';
@@ -34,12 +35,28 @@ export function createApp(options: AppOptions = { auth: null }): Hono {
 	const fetchFn = options.fetch ?? fetch;
 	const now = options.now ?? Date.now;
 	const app = new Hono();
+	const loginGate = createLoginGate(now);
 
-	app.use(secureHeaders());
-	// Form posts only from the dashboard's own pages: the exact public origin
-	// (behind the tunnel the request's own URL is 127.0.0.1's), and a browser's
-	// Sec-Fetch-Site of same-origin, which a sibling site under alexle.dev
-	// (same-site) doesn't get.
+	app.use(
+		secureHeaders({
+			// Hono's default, no-referrer, makes browsers send `Origin: null` on the
+			// dashboard's own form posts, which the CSRF check below then can't match.
+			referrerPolicy: 'same-origin',
+			// The pages have no scripts, styles or images, and post forms only to the dashboard.
+			contentSecurityPolicy: { defaultSrc: ["'none'"], formAction: ["'self'"], frameAncestors: ["'none'"] },
+		}),
+	);
+	// Pages name the signed-in user, so the browser mustn't show a stored copy
+	// after log-out (going back), nor keep one for the next person on the machine.
+	app.use(async (c, next) => {
+		await next();
+		c.header('Cache-Control', 'no-store');
+	});
+	// Form posts only from the dashboard's own pages. Either check lets one
+	// through: an Origin of the exact public origin (behind the tunnel the
+	// request's own URL is 127.0.0.1's), or Sec-Fetch-Site: same-origin. A
+	// sibling site under alexle.dev has its own Origin and is same-site, so it
+	// passes neither.
 	app.use(csrf({ origin: auth ? auth.origin : [], secFetchSite: 'same-origin' }));
 
 	// For checking that the tunnel reaches the bot: it touches neither Discord nor the database.
@@ -73,10 +90,14 @@ export function createApp(options: AppOptions = { auth: null }): Hono {
 			return c.html(messagePage('Login expired', 'That login link has expired or is invalid. Please try again.'), 400);
 		}
 
+		if (!loginGate.tryTake()) {
+			return c.html(messagePage('Too many logins', 'Too many logins right now. Please try again in a minute.'), 429);
+		}
 		let user;
 		try {
 			user = await discordUserFromCode(auth, code, fetchFn);
 		} catch (cause) {
+			if (cause instanceof DiscordRateLimitedError) loginGate.blockFor(cause.retryAfterMs);
 			console.error('Dashboard login failed:', cause);
 			return c.html(messagePage('Login failed', "Discord didn't complete the login. Please try again."), 502);
 		}

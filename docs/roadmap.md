@@ -358,7 +358,15 @@ Later item), not a follow-up.
   is `__Host-session` (`HttpOnly`, `Secure`, `SameSite=Lax`), and a new
   login ends the browser's earlier session. Hono's CSRF check, given the
   exact public origin and `Sec-Fetch-Site: same-origin`, guards form
-  posts; Hono's security headers on every response. Off without
+  posts; Hono's security headers on every response, with
+  `Referrer-Policy: same-origin` (its default, `no-referrer`, makes
+  browsers send `Origin: null` on the dashboard's own form posts, from
+  review), a CSP allowing nothing but form posts to the dashboard, and
+  `Cache-Control: no-store`. Logins are capped at 30 a minute for the
+  whole dashboard, and stop until Discord's `Retry-After` after a 429:
+  anyone can start one, and Discord blocks an IP after 10,000 refused
+  requests in 10 minutes (its rate limit docs, 2026-11-24), which would
+  cut the bot off too. Off without
   `DISCORD_CLIENT_SECRET` and `DASHBOARD_URL` (`ORACLE_CLOUD_DEPLOYMENT.md`
   section 13, for the owner). Checked against Discord's OAuth2 docs
   (2026-11-24): the token exchange is a form post with HTTP Basic client
@@ -397,8 +405,11 @@ them ahead of items 5 and 6.
    the tunnel exists (2026-11-23, asking for no payment method). D1's web
    server is done and reachable through the tunnel, and login with
    Discord is done (Done above). Left: the server picker, guarded per
-   server (decision 0009's deny-by-default middleware), the reminders
-   page, and rate limiting. Then A8d to A8i:
+   server (decision 0009's deny-by-default middleware, with the test
+   that fails for a route neither guarded nor marked public, arriving
+   with the first guarded route), the reminders page, and rate limiting
+   per visitor (keyed on Cloudflare's client-IP header; logins already
+   have a cap for the whole dashboard). Then A8d to A8i:
    two-way chat, linking and pictures.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).

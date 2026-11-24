@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 import {
+	DiscordRateLimitedError,
 	authConfigFromEnv,
 	authorizeUrl,
 	discordUserFromCode,
@@ -145,6 +146,18 @@ describe('discordUserFromCode', () => {
 			'Discord refused the login code: HTTP 400 {"error":"invalid_grant"}',
 		);
 		expect(fetchFn).toHaveBeenCalledTimes(1);
+	});
+
+	it("throws a rate-limit error carrying Discord's Retry-After on a 429", async () => {
+		const limited = (headers: Record<string, string>) =>
+			fakeDiscord({ token: new Response('{"retry_after": 2.5}', { status: 429, headers }) });
+
+		const error = await discordUserFromCode(config, 'code-1', limited({ 'Retry-After': '2.5' })).catch((e) => e);
+		expect(error).toBeInstanceOf(DiscordRateLimitedError);
+		expect((error as DiscordRateLimitedError).retryAfterMs).toBe(2500);
+
+		const withoutHeader = await discordUserFromCode(config, 'code-1', limited({})).catch((e) => e);
+		expect((withoutHeader as DiscordRateLimitedError).retryAfterMs).toBe(60_000);
 	});
 
 	it('throws on a token response without an access token', async () => {

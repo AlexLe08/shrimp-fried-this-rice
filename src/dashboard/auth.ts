@@ -18,6 +18,19 @@ export interface DiscordUser {
 
 export type Fetch = typeof fetch;
 
+// When Discord's 429 doesn't say how long to wait.
+const DEFAULT_RETRY_AFTER_MS = 60_000;
+
+/** Discord answered 429: no more logins until `retryAfterMs` has passed. */
+export class DiscordRateLimitedError extends Error {
+	readonly retryAfterMs: number;
+
+	constructor(retryAfterMs: number) {
+		super(`Discord rate limited dashboard logins for ${Math.ceil(retryAfterMs / 1000)} s`);
+		this.retryAfterMs = retryAfterMs;
+	}
+}
+
 /**
  * Login's settings from `.env`, or null when the dashboard runs without
  * login: none of them set (a dev bot), or one missing or malformed (logged).
@@ -68,6 +81,11 @@ function basicAuth(config: AuthConfig): string {
 }
 
 async function discordError(what: string, response: Response): Promise<Error> {
+	if (response.status === 429) {
+		// Seconds, possibly fractional (Discord's rate limit docs).
+		const seconds = Number(response.headers.get('retry-after'));
+		return new DiscordRateLimitedError(seconds > 0 ? seconds * 1000 : DEFAULT_RETRY_AFTER_MS);
+	}
 	const detail = await response.text().catch(() => '');
 	return new Error(`${what}: HTTP ${response.status} ${detail.slice(0, 200)}`.trim());
 }

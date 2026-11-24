@@ -437,6 +437,12 @@ The dashboard's login is Discord OAuth2 (how it behaves is in the README's Produ
 
 **Replacing the secret** (it leaked, or was reset): reset it as in step 2, put the new one in `.env` and restart the bot. Sessions already started stay signed in; they don't depend on the secret.
 
+**Signing everyone out** (after a leak, say): run this in the project folder on the VM. It deletes every session, so every browser's cookie stops working:
+
+```bash
+node -e "const db = require('better-sqlite3')('bot.db', { fileMustExist: true }); console.log(db.prepare('DELETE FROM dashboard_sessions').run().changes, 'sessions ended'); db.close();"
+```
+
 ---
 
 ## Quick reference: common commands

@@ -3,6 +3,7 @@ import { createApp } from '../../src/dashboard/app.ts';
 import type { AuthConfig, Fetch } from '../../src/dashboard/auth.ts';
 import { sessionFromToken, startSession } from '../../src/dashboard/sessions.ts';
 import { __resetForTests } from '../../src/core/database.ts';
+import { LOGINS_PER_MINUTE } from '../../src/dashboard/loginGate.ts';
 
 const ORIGIN = 'https://dash.example';
 const auth: AuthConfig = { clientId: 'client-1', clientSecret: 'secret-1', origin: ORIGIN };
@@ -67,6 +68,20 @@ describe('dashboard app', () => {
 
 		expect(response.headers.get('x-frame-options')).toBe('SAMEORIGIN');
 		expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+		expect(response.headers.get('content-security-policy')).toBe(
+			"default-src 'none'; form-action 'self'; frame-ancestors 'none'",
+		);
+	});
+
+	// With no-referrer, browsers send `Origin: null` on the dashboard's own
+	// form posts, so the CSRF check's origin match could never pass.
+	it('sends Referrer-Policy: same-origin, not no-referrer', async () => {
+		expect((await createApp().request('/')).headers.get('referrer-policy')).toBe('same-origin');
+	});
+
+	it('tells browsers not to store pages, which name the signed-in user', async () => {
+		expect((await createApp().request('/')).headers.get('cache-control')).toBe('no-store');
+		expect((await loginApp().request('/login')).headers.get('cache-control')).toBe('no-store');
 	});
 });
 
@@ -191,6 +206,41 @@ describe('/auth/callback', () => {
 		expect(fetchFn).not.toHaveBeenCalled();
 	});
 
+	it(`refuses logins beyond ${LOGINS_PER_MINUTE} a minute without asking Discord`, async () => {
+		const fetchFn = fakeDiscord();
+		const app = loginApp(fetchFn);
+		for (let i = 0; i < LOGINS_PER_MINUTE; i++) {
+			const { state, cookie } = await beginLogin(app);
+			await app.request(`/auth/callback?code=code-1&state=${state}`, { headers: { Cookie: cookie } });
+		}
+		fetchFn.mockClear();
+		const { state, cookie } = await beginLogin(app);
+
+		const response = await app.request(`/auth/callback?code=code-1&state=${state}`, { headers: { Cookie: cookie } });
+
+		expect(response.status).toBe(429);
+		expect(await response.text()).toContain('Too many logins');
+		expect(fetchFn).not.toHaveBeenCalled();
+	});
+
+	it('stops asking Discord after its 429 until the Retry-After has passed', async () => {
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		let time = NOW;
+		const fetchFn = vi.fn<Fetch>(async () => new Response('{}', { status: 429, headers: { 'Retry-After': '30' } }));
+		const app = createApp({ auth, fetch: fetchFn, now: () => time });
+		const callback = async () => {
+			const { state, cookie } = await beginLogin(app);
+			return app.request(`/auth/callback?code=code-1&state=${state}`, { headers: { Cookie: cookie } });
+		};
+
+		expect((await callback()).status).toBe(502);
+		expect((await callback()).status).toBe(429);
+		expect(fetchFn).toHaveBeenCalledTimes(1);
+		time += 30_000;
+		await callback();
+		expect(fetchFn).toHaveBeenCalledTimes(2);
+	});
+
 	it("says the login was cancelled when the visitor cancelled Discord's page", async () => {
 		const app = loginApp();
 		const { state, cookie } = await beginLogin(app);
@@ -234,6 +284,17 @@ describe('/logout', () => {
 		expect(response.status).toBe(303);
 		expect(response.headers.get('location')).toBe('/');
 		expect(setCookies(response)['__Host-session']).toContain('Max-Age=0');
+		expect(sessionFromToken(token, NOW)).toBeUndefined();
+	});
+
+	it.each([
+		['the Origin alone (a browser without Sec-Fetch-Site)', { Origin: ORIGIN }],
+		['Sec-Fetch-Site alone', { 'Sec-Fetch-Site': 'same-origin' }],
+	])('accepts a log-out with %s', async (_case, headers) => {
+		const app = loginApp();
+		const { token } = startSession({ id: 'u1', username: 'Alex' }, NOW);
+
+		expect((await logout(app, token, headers)).status).toBe(303);
 		expect(sessionFromToken(token, NOW)).toBeUndefined();
 	});
 
