@@ -199,15 +199,32 @@ function bridgeItem(bridge: BridgeView): Page {
 	</li>`;
 }
 
-/** A server's Minecraft bridges, read-only, for its owner and members with the role they allow. */
+/** The allowed role as the page shows it; `name` is null for a role no longer in the server. */
+export type AllowedRoleView = { id: string; name: string | null } | null;
+
+function managersText(role: AllowedRoleView): Page | string {
+	if (role === null) return "Only the server's owner manages them.";
+	if (role.name === null) {
+		return html`The server's owner manages them, and members with a role that's no longer in the server (ID ${role.id}),
+		so nobody else does.`;
+	}
+	return html`The server's owner manages them, and members with the role @${role.name}.`;
+}
+
+/** A server's Minecraft bridges, for its owner and members with the role they allow. */
 export function minecraftPage(
 	server: { id: string; name: string },
-	view: { bridges: BridgeView[]; max: number },
+	view: { bridges: BridgeView[]; max: number; allowedRole: AllowedRoleView; isOwner: boolean },
 ): Page {
+	const managers = html`<p>
+		${managersText(view.allowedRole)}
+		${view.isOwner ? html`<a href="/servers/${server.id}/minecraft/role">Change who may manage them</a>` : ''}
+	</p>`;
 	return layout(
 		`${server.name}: Minecraft servers`,
 		html`<h1>${server.name}: Minecraft servers</h1>
 			<p>${plural(view.bridges.length, 'Minecraft server')} of ${view.max} paired with this Discord server.</p>
+			${managers}
 			${
 				view.bridges.length === 0
 					? html`<p>No Minecraft servers paired yet.</p>`
@@ -393,5 +410,58 @@ export function messagePage(title: string, message: string): Page {
 		html`<h1>${title}</h1>
 			<p>${message}</p>
 			<p><a href="/">Back to the dashboard</a></p>`,
+	);
+}
+
+/** A role the owner may allow to manage the server's bridges. */
+export interface RoleChoice {
+	id: string;
+	name: string;
+}
+
+/** Who may manage the bridges besides the owner: one role, or nobody. For the owner alone. */
+export function rolePage(
+	server: { id: string; name: string },
+	view: { choices: RoleChoice[]; current: string | null; problem?: 'unknown-role' },
+): Page {
+	const title = `${server.name}: who may manage Minecraft servers`;
+	return layout(
+		title,
+		html`<h1>${title}</h1>
+			${view.problem ? html`<p role="alert">That role can't be chosen. Pick one from the list.</p>` : ''}
+			<p>
+				As the server's owner, you always may. Members with the role you choose here may too: pair Minecraft servers,
+				change their settings, and remove them.
+			</p>
+			<p>
+				Anyone who can give members that role (Manage Roles, with a higher role of their own) can make themselves a
+				manager, so choose one only trusted members can give.
+			</p>
+			${
+				view.current !== null && !view.choices.some((choice) => choice.id === view.current)
+					? html`<p>
+							The role chosen before is no longer in the server (ID ${view.current}), so nobody but you manages them.
+							Saving without picking another clears it.
+						</p>`
+					: ''
+			}
+			<form method="post" action="/servers/${server.id}/minecraft/role">
+				<p>
+					<label
+						>Role
+						<select name="role">
+							<option value="" ${view.current === null ? 'selected' : ''}>Nobody else: only the owner</option>
+							${view.choices.map(
+								(choice) =>
+									html`<option value="${choice.id}" ${choice.id === view.current ? 'selected' : ''}>
+										@${choice.name}
+									</option>`,
+							)}
+						</select></label
+					>
+				</p>
+				<p><button type="submit">Save</button></p>
+			</form>
+			<p><a href="/servers/${server.id}/minecraft">Back to its Minecraft servers</a></p>`,
 	);
 }

@@ -24,9 +24,11 @@ import {
 	messagePage,
 	minecraftPage,
 	pairedPage,
+	rolePage,
 	serverPage,
 	serversPage,
 	type AddBridgeProblem,
+	type RoleChoice,
 } from './pages.ts';
 import { endSession, sessionFromToken, startSession } from './sessions.ts';
 import { SESSION_LIFETIME_MS, type DashboardSession } from './storage.ts';
@@ -36,7 +38,12 @@ import type { Announcer } from '../minecraft/announcement.ts';
 import type { BridgePairing } from '../minecraft/dashboardPairing.ts';
 import { HelperHub } from '../minecraft/helperHub.ts';
 import { registerHelperRoutes } from '../minecraft/helperRoutes.ts';
-import { MAX_BRIDGES_PER_GUILD, getGuildBridges } from '../minecraft/storage.ts';
+import {
+	MAX_BRIDGES_PER_GUILD,
+	getGuildBridges,
+	getMinecraftGuildSettings,
+	setAllowedRole,
+} from '../minecraft/storage.ts';
 
 export interface AppOptions {
 	/** Login's settings; null serves the dashboard without login. */
@@ -62,7 +69,8 @@ type Env = { Variables: { session: DashboardSession; server: ServerRights } };
  * are under /servers/:guildId, where requireServer checks the user has a right
  * in that server before any handler runs, then the route's own `requires`
  * checks the right it needs: Manage Server for `server` (decision 0012), the
- * server's owner or allowed role for `bridges` (decision 0013). `helper`
+ * server's owner or allowed role for `bridges` (decision 0013), the owner
+ * alone for `owner`. `helper`
  * routes are the Minecraft helper's, which open only with a bridge's keys
  * (minecraft/helperRoutes.ts).
  */
@@ -77,6 +85,8 @@ export const ROUTE_ACCESS = {
 	'GET /servers/:guildId/minecraft': 'bridges',
 	'GET /servers/:guildId/minecraft/new': 'bridges',
 	'POST /servers/:guildId/minecraft/new': 'bridges',
+	'GET /servers/:guildId/minecraft/role': 'owner',
+	'POST /servers/:guildId/minecraft/role': 'owner',
 	'POST /minecraft/connect': 'helper',
 	'POST /minecraft/poll': 'helper',
 } as const;
@@ -233,12 +243,11 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 
 	// Each server route names the right it needs, after requireServer has
 	// found the user's rights; the same 404 for one they lack.
+	const RIGHT_OF = { server: 'manageServer', bridges: 'manageBridges', owner: 'owner' } as const;
 	const requires =
-		(level: 'server' | 'bridges'): MiddlewareHandler<Env> =>
-		async (c, next) => {
-			const rights = c.get('server');
-			return (level === 'server' ? rights.manageServer : rights.manageBridges) ? next() : notFound(c);
-		};
+		(level: keyof typeof RIGHT_OF): MiddlewareHandler<Env> =>
+		async (c, next) =>
+			c.get('server')[RIGHT_OF[level]] ? next() : notFound(c);
 
 	app.use('/servers', requireSession);
 	// The wildcard matches /servers/:guildId itself too, so one registration
@@ -277,8 +286,57 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 			alerts: channel(bridge.alerts_channel_id),
 			announced: bridge.announced_channel_id === bridge.chat_channel_id,
 		}));
-		return c.html(minecraftPage(server, { bridges, max: MAX_BRIDGES_PER_GUILD }));
+		const roleId = getMinecraftGuildSettings(server.id)?.allowed_role_id ?? null;
+		const roles = options.client?.guilds.cache.get(server.id)?.roles.cache;
+		const allowedRole = roleId === null ? null : { id: roleId, name: roles?.get(roleId)?.name ?? null };
+		return c.html(minecraftPage(server, { bridges, max: MAX_BRIDGES_PER_GUILD, allowedRole, isOwner: server.owner }));
 	});
+
+	// Roles the owner may allow: not @everyone (its id is the server's), which
+	// would make every member a manager, nor one an integration holds, which
+	// can't be given to members. Highest first, as Discord lists them.
+	const roleChoices = (guildId: string): RoleChoice[] => {
+		const roles = options.client?.guilds.cache.get(guildId)?.roles.cache;
+		if (!roles) return [];
+		return [...roles.values()]
+			.filter((role) => role.id !== guildId && !role.managed)
+			.sort((a, b) => b.position - a.position)
+			.map(({ id, name }) => ({ id, name }));
+	};
+	const rolePageFor = (server: ServerRights, problem?: 'unknown-role') =>
+		rolePage(server, {
+			choices: roleChoices(server.id),
+			current: getMinecraftGuildSettings(server.id)?.allowed_role_id ?? null,
+			...(problem && { problem }),
+		});
+
+	app.get('/servers/:guildId/minecraft/role', requires('owner'), (c) => c.html(rolePageFor(c.get('server'))));
+
+	app.post(
+		'/servers/:guildId/minecraft/role',
+		requires('owner'),
+		bodyLimit({ maxSize: 1024, onError: (c) => c.html(messagePage('Too large', 'That form was too large.'), 413) }),
+		async (c) => {
+			const server = c.get('server');
+			// A change checks with Discord, not the 30 s answer (decision 0012):
+			// after the server changes hands, the cached answer still calls the
+			// former owner its owner for up to 30 s.
+			const fresh = access && (await access.rightsIn(server.id, c.get('session').user_id, { fresh: true }));
+			if (!fresh?.owner) return notFound(c);
+			const body = await c.req.parseBody();
+			const role = typeof body['role'] === 'string' ? body['role'] : '';
+			if (role === '') {
+				setAllowedRole(server.id, null);
+			} else {
+				if (!roleChoices(server.id).some((choice) => choice.id === role)) {
+					return c.html(rolePageFor(server, 'unknown-role'), 400);
+				}
+				setAllowedRole(server.id, role);
+			}
+			// Nothing secret in the answer, so back to the list: a reload doesn't send it again.
+			return c.redirect(`/servers/${server.id}/minecraft`, 303);
+		},
+	);
 
 	const pairingOff = (c: Context) =>
 		c.html(messagePage('Pairing unavailable', "Minecraft servers can't be paired on this bot."), 503);

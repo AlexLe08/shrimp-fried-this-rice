@@ -708,6 +708,17 @@ Later item), not a follow-up.
   before checking they can see it, which would have told an allowed-role
   member a hidden channel's name; and the form's body is capped at
   8 KiB. Not tried against Discord or on the live dashboard (A8h).
+- **Who may manage Minecraft servers** (2026-11-25, third part of A8f).
+  The owner alone (a third route level, `owner`, from the same member
+  fetch) chooses the allowed role at `/servers/:guildId/minecraft/role`,
+  or clears it; the Minecraft page names it. Offered: the server's roles
+  but `@everyone` and integrations', highest first. Saving asks Discord
+  afresh (`rightsIn` gains `{ fresh: true }`, skipping and replacing the
+  30 s answer, decision 0012), so a former owner can't in the 30 s after
+  the server changes hands, then redirects, as nothing in the answer is
+  secret. Worked out here: no one-time token, as saving twice changes
+  nothing; and the page warns that whoever can give the role can make
+  themselves a manager. Not tried against Discord (A8h).
 
 ## Next up
 
@@ -747,8 +758,8 @@ them ahead of items 5 and 6.
    reads bridge chat channels, announces the relay and catches up after
    a restart, the helper puts chat into the game, and it keeps the
    bridge's settings (Done above): A8e is done. A8f is under way: who
-   reaches a server's Minecraft pages, a list of its bridges, and adding
-   one (Done above). Next: who may manage (the allowed role), the bridge's settings
+   reaches a server's Minecraft pages, a list of its bridges, adding
+   one, and who may manage them (Done above). Next: the bridge's settings
    (regenerate, remove), per-player pictures and members' links, then
    linking (codes, the `!link` reports, My Minecraft accounts,
    `/minecraft link`) and `/minecraft avatar`, and queuing a settings

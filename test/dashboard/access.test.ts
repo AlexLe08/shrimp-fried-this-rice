@@ -136,12 +136,12 @@ describe('rightsIn', () => {
 		);
 
 	it.each([
-		['the owner', 'u1', false, true],
-		['a member with the allowed role', 'u2', false, true],
-		['a member with another role', 'u3', false, false],
-		['a member with Manage Server only', 'u4', true, false],
-		['a member in timeout, with Manage Server and the allowed role', 'u5', false, false],
-	])('gives %s the right rights, from one fetch', async (_who, userId, manageServer, manageBridges) => {
+		['the owner', 'u1', false, true, true],
+		['a member with the allowed role', 'u2', false, true, false],
+		['a member with another role', 'u3', false, false, false],
+		['a member with Manage Server only', 'u4', true, false, false],
+		['a member in timeout, with Manage Server and the allowed role', 'u5', false, false, false],
+	])('gives %s the right rights, from one fetch', async (_who, userId, manageServer, manageBridges, owner) => {
 		setAllowedRole('g1', 'r-mc');
 		const server = guild();
 
@@ -150,6 +150,7 @@ describe('rightsIn', () => {
 			name: 'Shrimp Hall',
 			manageServer,
 			manageBridges,
+			owner,
 		});
 		expect(server.members.fetch).toHaveBeenCalledTimes(1);
 	});
@@ -166,6 +167,7 @@ describe('rightsIn', () => {
 		await expect(serverAccess(fakeClient([server])).rightsIn('g1', 'u1')).resolves.toMatchObject({
 			manageServer: false,
 			manageBridges: false,
+			owner: false,
 		});
 	});
 
@@ -183,6 +185,31 @@ describe('rightsIn', () => {
 	});
 });
 
+describe('fresh', () => {
+	it('asks Discord again within the cache, and keeps the new answer', async () => {
+		const server = fakeGuild('g1', 'Shrimp Hall', { u1: true });
+		const access = serverAccess(fakeClient([server]), () => 0);
+
+		await access.rightsIn('g1', 'u1');
+		await access.rightsIn('g1', 'u1', { fresh: true });
+		expect(server.members.fetch).toHaveBeenCalledTimes(2);
+
+		await access.rightsIn('g1', 'u1');
+		expect(server.members.fetch).toHaveBeenCalledTimes(2);
+	});
+
+	it('sees a right lost within the cache', async () => {
+		const members: Record<string, boolean> = { u1: true };
+		const access = serverAccess(fakeClient([fakeGuild('g1', 'Shrimp Hall', members)]), () => 0);
+
+		await access.rightsIn('g1', 'u1');
+		members['u1'] = false;
+
+		await expect(access.rightsIn('g1', 'u1')).resolves.toMatchObject({ manageServer: true });
+		await expect(access.rightsIn('g1', 'u1', { fresh: true })).resolves.toMatchObject({ manageServer: false });
+	});
+});
+
 describe('serversWithRights', () => {
 	it('lists the servers where the user has either right, by name', async () => {
 		const access = serverAccess(
@@ -195,8 +222,8 @@ describe('serversWithRights', () => {
 		);
 
 		await expect(access.serversWithRights('u1')).resolves.toEqual([
-			{ id: 'g2', name: 'Alpha', manageServer: false, manageBridges: true },
-			{ id: 'g1', name: 'Zeta', manageServer: true, manageBridges: false },
+			{ id: 'g2', name: 'Alpha', manageServer: false, manageBridges: true, owner: true },
+			{ id: 'g1', name: 'Zeta', manageServer: true, manageBridges: false, owner: false },
 		]);
 	});
 
