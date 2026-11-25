@@ -13,8 +13,10 @@ import { DEFAULT_STYLE, chatCommand, type ChatStyle } from './toMinecraft.ts';
 
 /** Into the game at most this many a second, in order: a catch-up after a bot restart hands over up to 20 at once. */
 export const GAME_CHAT_PER_SECOND = 5;
-/** Chat waiting to go in; past it, newer chat is dropped (at 5 a second, 20 s of it). */
-export const MAX_QUEUED_CHAT = 100;
+/** Chat waiting to go in; past it, newer chat is dropped. At 5 a second, 10 s of it: more would be too old by its turn. */
+export const MAX_QUEUED_CHAT = 50;
+/** Chat older than this when its turn comes is dropped: while RCON can't connect, it would go in minutes late, out of context. */
+export const MAX_CHAT_AGE_MS = 10_000;
 export const MIN_PASSWORD_LENGTH = 12;
 const MIN_DISTINCT_CHARACTERS = 5;
 // Letters made only of these, in any case and order, are guessed first.
@@ -30,7 +32,7 @@ export function weakPasswordReason(password: string): string | null {
 	return null;
 }
 
-export type RelayOffReason = RconOffReason | 'unreadable' | 'weak-password' | 'login-refused';
+export type RelayOffReason = RconOffReason | 'unreadable' | 'malformed' | 'weak-password' | 'login-refused';
 
 export interface GameRelayOptions {
 	propertiesPath: string;
@@ -49,10 +51,19 @@ export interface GameRelay {
 	serverDown(): void;
 	/** Chat from Discord: into the game in order, at most 5 a second; dropped while the server is down or RCON is off. */
 	relay(chat: BotChat[], style?: ChatStyle): void;
-	/** Whether chat reaches the game this run: RCON set up and its password accepted. */
+	/**
+	 * Whether two-way chat was set up at the server's last start: RCON enabled
+	 * with a strong password, and not refused since. Kept through serverDown,
+	 * so the stop message can read it either side of it. It doesn't say RCON
+	 * is connected.
+	 */
 	isOn(): boolean;
-	/** `online-mode` as read at the server's last start; true (the server's default) before that. */
-	onlineMode(): boolean;
+	/**
+	 * `online-mode` as read at the server's last start; null before a read
+	 * succeeds, or after one fails. Linking reads null as offline: unclear is
+	 * never proof.
+	 */
+	onlineMode(): boolean | null;
 	/** The helper is stopping. */
 	close(): void;
 }
@@ -65,12 +76,12 @@ export function createGameRelay(options: GameRelayOptions): GameRelay {
 
 	let up = false;
 	let on = false;
-	let onlineMode = true;
+	let onlineMode: boolean | null = null;
 	let rcon: Rcon | null = null;
 	// Each start or stop bumps it, so a read finishing after the server stopped is dropped.
 	let generation = 0;
 	const alerted = new Set<RelayOffReason>();
-	let queue: string[] = [];
+	let queue: { command: string; queuedAt: number }[] = [];
 	let pumping = false;
 	let dropped = 0;
 
@@ -93,9 +104,24 @@ export function createGameRelay(options: GameRelayOptions): GameRelay {
 		pumping = true;
 		try {
 			while (queue.length > 0 && rcon && on) {
-				const command = queue.shift()!;
+				const { command, queuedAt } = queue.shift()!;
 				const startedAt = Date.now();
-				if (!(await rcon.send(command))) dropped++;
+				if (startedAt - queuedAt > MAX_CHAT_AGE_MS) {
+					dropped++;
+					continue;
+				}
+				const run = generation;
+				let sent: boolean;
+				try {
+					sent = await rcon.send(command);
+				} catch (error) {
+					// A command RCON refuses outright (chatCommand keeps within its
+					// limits): dropped, and the helper goes on.
+					log(`skipped a message RCON refused: ${(error as Error).message}`);
+					sent = false;
+				}
+				// One cut off by the server stopping is expected, not a fault.
+				if (!sent && run === generation) dropped++;
 				const rest = 1000 / GAME_CHAT_PER_SECOND - (Date.now() - startedAt);
 				if (rest > 0) await sleep(rest);
 			}
@@ -121,6 +147,7 @@ export function createGameRelay(options: GameRelayOptions): GameRelay {
 				bytes = await readFile(path);
 			} catch (error) {
 				if (run !== generation) return;
+				onlineMode = null;
 				const code = (error as NodeJS.ErrnoException).code ?? String(error);
 				off(
 					'unreadable',
@@ -130,7 +157,18 @@ export function createGameRelay(options: GameRelayOptions): GameRelay {
 			}
 			if (run !== generation) return;
 
-			const settings = serverSettings(parseProperties(decodeServerProperties(bytes)));
+			let settings: ReturnType<typeof serverSettings>;
+			try {
+				settings = serverSettings(parseProperties(decodeServerProperties(bytes)));
+			} catch (error) {
+				// A broken escape, such as `\u12`: the server would read it differently, so nothing is guessed.
+				onlineMode = null;
+				off(
+					'malformed',
+					`mcbridge can't read ${path} (${(error as Error).message}), so messages from Discord can't reach the game. Fix the file, then restart the server.`,
+				);
+				return;
+			}
 			onlineMode = settings.onlineMode;
 			if (!settings.rcon.enabled) {
 				off(settings.rcon.reason, rconOffMessage(settings.rcon.reason));
@@ -140,7 +178,7 @@ export function createGameRelay(options: GameRelayOptions): GameRelay {
 			if (weak) {
 				off(
 					'weak-password',
-					`rcon.password in server.properties is too easy to guess (${weak}). RCON sends it unencrypted, and whoever reaches the port gets the server's console, so messages from Discord don't go in. Set one of ${MIN_PASSWORD_LENGTH} or more characters that isn't common words, then restart the server.`,
+					`rcon.password in server.properties is too easy to guess (${weak}). RCON sends it unencrypted, and whoever reaches the port gets the server's console, so messages from Discord don't go in. Set one of ${MIN_PASSWORD_LENGTH} or more characters, with at least ${MIN_DISTINCT_CHARACTERS} different ones, that isn't made of common words, then restart the server.`,
 				);
 				return;
 			}
@@ -153,7 +191,7 @@ export function createGameRelay(options: GameRelayOptions): GameRelay {
 				onLoginRefused: () =>
 					off(
 						'login-refused',
-						'the server refused rcon.password, so messages from Discord can\'t reach the game. If "rcon" in mcbridge.json points at another server, fix it; then restart mcbridge.',
+						'the server refused rcon.password, so messages from Discord can\'t reach the game. If it was changed while the server ran, restart the server, which reads it only as it starts; if "rcon" in mcbridge.json points at another server, fix it and restart mcbridge.',
 					),
 			});
 			rcon = connection;
@@ -186,7 +224,7 @@ export function createGameRelay(options: GameRelayOptions): GameRelay {
 					dropped++;
 					continue;
 				}
-				queue.push(command);
+				queue.push({ command, queuedAt: Date.now() });
 			}
 			void pump();
 		},

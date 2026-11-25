@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	GAME_CHAT_PER_SECOND,
+	MAX_CHAT_AGE_MS,
 	MAX_QUEUED_CHAT,
 	createGameRelay,
 	weakPasswordReason,
@@ -24,6 +25,8 @@ function setup(properties: string | Error = PROPERTIES, extra: Partial<GameRelay
 	const sent: { command: string; at: number }[] = [];
 	const rcons: { options: RconOptions; start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> }[] = [];
 	let accepts = true;
+	// How RCON answers a command: at once, unless a test makes it slow or refuse.
+	let answer: (command: string) => Promise<boolean> = async () => accepts;
 	const createRcon = vi.fn((rconOptions: RconOptions) => {
 		const rcon = {
 			options: rconOptions,
@@ -31,7 +34,7 @@ function setup(properties: string | Error = PROPERTIES, extra: Partial<GameRelay
 			stop: vi.fn(),
 			send: vi.fn(async (command: string) => {
 				sent.push({ command, at: Date.now() });
-				return accepts;
+				return answer(command);
 			}),
 		};
 		rcons.push(rcon);
@@ -51,7 +54,16 @@ function setup(properties: string | Error = PROPERTIES, extra: Partial<GameRelay
 		createRcon: createRcon as never,
 		...extra,
 	});
-	return { relay, sent, rcons, alert, log, readFile, refuse: () => (accepts = false) };
+	return {
+		relay,
+		sent,
+		rcons,
+		alert,
+		log,
+		readFile,
+		refuse: () => (accepts = false),
+		answerWith: (next: (command: string) => Promise<boolean>) => (answer = next),
+	};
 }
 
 const chat = (n: number) =>
@@ -80,7 +92,8 @@ describe('weakPasswordReason', () => {
 describe('the game relay', () => {
 	it('connects RCON from server.properties at each start, on 127.0.0.1, and reads online-mode', async () => {
 		const { relay, rcons, readFile } = setup();
-		expect(relay.onlineMode()).toBe(true);
+		// Unknown until read: linking takes that as offline.
+		expect(relay.onlineMode()).toBeNull();
 
 		await relay.serverUp();
 
@@ -150,6 +163,7 @@ describe('the game relay', () => {
 			['enable-rcon=false\n', 'disabled'],
 			['enable-rcon=true\nrcon.password=\n', 'no-password'],
 			[`enable-rcon=true\nrcon.port=70000\nrcon.password=${PASSWORD}\n`, 'bad-port'],
+			['enable-rcon=true\nrcon.password=\\u12\n', 'malformed'],
 			['enable-rcon=true\nrcon.password=minecraft\n', 'weak-password'],
 		];
 		for (const [properties, reason] of cases) {
@@ -211,5 +225,101 @@ describe('the game relay', () => {
 		relay.close();
 		expect(rcons[0]!.stop).toHaveBeenCalled();
 		expect(relay.isOn()).toBe(false);
+	});
+
+	it('forgets online-mode when a later read fails, rather than trusting the last one', async () => {
+		const { relay, readFile } = setup();
+		await relay.serverUp();
+		expect(relay.onlineMode()).toBe(false);
+
+		readFile.mockRejectedValueOnce(Object.assign(new Error('gone'), { code: 'ENOENT' }));
+		await relay.serverUp();
+		expect(relay.onlineMode()).toBeNull();
+	});
+
+	it(`drops chat that waited over ${MAX_CHAT_AGE_MS / 1000} s while RCON couldn't connect`, async () => {
+		const { relay, sent, log, answerWith } = setup();
+		await relay.serverUp();
+		// As rcon.ts does while it can't connect: waits 5 s, then gives up on the command.
+		answerWith(() => new Promise((resolve) => setTimeout(() => resolve(false), 5000)));
+
+		relay.relay(chat(10));
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		// Two tries (0 s and 5 s) and one at 10 s on the edge; the rest were too old by their turn.
+		expect(sent.map((s) => s.command.match(/m\d/)![0])).toEqual(['m0', 'm1', 'm2']);
+		expect(log).toHaveBeenCalledWith("10 message(s) from Discord couldn't be sent to the game");
+	});
+
+	it('goes on past a command RCON refuses outright', async () => {
+		const { relay, sent, log, answerWith } = setup();
+		await relay.serverUp();
+		answerWith(async (command) => {
+			if (command.includes('m0')) throw new RangeError('too long');
+			return true;
+		});
+
+		relay.relay(chat(2));
+		await vi.advanceTimersByTimeAsync(1000);
+
+		expect(sent).toHaveLength(2);
+		expect(log).toHaveBeenCalledWith('skipped a message RCON refused: too long');
+	});
+
+	it("doesn't count the message the server's stop cut off as a failure", async () => {
+		const { relay, log, answerWith } = setup();
+		await relay.serverUp();
+		let finish!: (sent: boolean) => void;
+		answerWith(() => new Promise((resolve) => (finish = resolve)));
+
+		relay.relay(chat(1));
+		await vi.advanceTimersByTimeAsync(0);
+		relay.serverDown();
+		finish(false);
+		await vi.advanceTimersByTimeAsync(1000);
+
+		expect(log).not.toHaveBeenCalledWith(expect.stringContaining("couldn't be sent"));
+	});
+
+	it('connects only for the latest of two starts that overlap (the startup scan, then the log)', async () => {
+		let finishFirst!: () => void;
+		const { relay, rcons, readFile } = setup();
+		readFile.mockImplementationOnce(
+			() => new Promise((resolve) => (finishFirst = () => resolve(new TextEncoder().encode(PROPERTIES)))),
+		);
+
+		const first = relay.serverUp();
+		await relay.serverUp();
+		finishFirst();
+		await first;
+
+		expect(rcons).toHaveLength(1);
+		expect(relay.isOn()).toBe(true);
+	});
+
+	it('carries on with the new connection when the server restarts while chat is going in', async () => {
+		const { relay, sent, rcons } = setup();
+		await relay.serverUp();
+		relay.relay(chat(1));
+		await vi.advanceTimersByTimeAsync(50);
+		relay.serverDown();
+		await relay.serverUp();
+		relay.relay(chat(2));
+		await vi.advanceTimersByTimeAsync(2000);
+
+		expect(sent).toHaveLength(3);
+		expect(rcons[1]!.start).toHaveBeenCalledOnce();
+	});
+
+	it('skips chat with nothing left to show, and chat in a style the game would refuse, logging the latter', async () => {
+		const { relay, sent, log } = setup();
+		await relay.serverUp();
+
+		relay.relay([{ kind: 'chat', name: 'Alex', text: '§§ ' }]);
+		relay.relay(chat(1), { prefix: '<fake>', colour: '#5865F2' });
+		await vi.advanceTimersByTimeAsync(1000);
+
+		expect(sent).toHaveLength(0);
+		expect(log).toHaveBeenCalledWith(expect.stringMatching(/^skipped a message from Discord: Not a valid prefix/));
 	});
 });
