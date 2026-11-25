@@ -21,7 +21,7 @@ import {
 import { fakeClient, fakeGuild } from './fakeGuilds.ts';
 import { fakePairing } from './fakePairing.ts';
 import type { BridgePairing, PairAnswer } from '../../src/minecraft/dashboardPairing.ts';
-import { HelperHub } from '../../src/minecraft/helperHub.ts';
+import { HelperHub, LEASE_MS, MAX_HELD_MESSAGES } from '../../src/minecraft/helperHub.ts';
 
 const auth: AuthConfig = { clientId: 'client-1', clientSecret: 'secret-1', origin: 'https://dash.example' };
 const NOW = 1_000_000;
@@ -1048,14 +1048,51 @@ describe("a Minecraft server's settings", () => {
 		expect(await hub.poll(bridge.id, session)).toEqual({ kind: 'messages', messages: [] });
 	});
 
-	it('refuses a form missing a field', async () => {
+	it('refuses a form missing a field, naming it, and sends nothing', async () => {
 		const bridge = pairedBridge();
+		const session = hub.connect(bridge.id);
 		const withoutColour = { serverName: 'Creative', prefix: '[DC]', defaultPicture: 'skin' };
 
 		const response = await settingsApp().request(settingsPath(bridge.id), save(withoutColour));
+		const text = await response.text();
 
 		expect(response.status).toBe(400);
+		expect(text).toContain('The colour must be');
+		expect(text).not.toContain('The prefix must be');
 		expect(getBridge(bridge.id)?.server_name).toBe('Survival');
+		hub.close();
+		expect(await hub.poll(bridge.id, session)).toEqual({ kind: 'messages', messages: [] });
+	});
+
+	// A helper backing off after a failed poll keeps its session for up to
+	// LEASE_MS, and wouldn't connect again to get them.
+	it('holds the settings for a connected helper that polls only after chat would have been dropped', async () => {
+		let time = NOW;
+		hub = new HelperHub(() => time);
+		const bridge = pairedBridge();
+		const session = hub.connect(bridge.id);
+
+		await settingsApp().request(settingsPath(bridge.id), save());
+		time += LEASE_MS - 1000;
+
+		expect(await hub.poll(bridge.id, session)).toMatchObject({
+			kind: 'messages',
+			messages: [{ kind: 'settings', serverName: 'Creative' }],
+		});
+	});
+
+	it('logs settings saved but not queued when too many messages are waiting', async () => {
+		const bridge = pairedBridge();
+		for (let i = 0; i < MAX_HELD_MESSAGES; i++) hub.deliver(bridge.id, { kind: 'chat' });
+		const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+		const response = await settingsApp().request(settingsPath(bridge.id), save());
+
+		expect(response.status).toBe(303);
+		expect(getBridge(bridge.id)?.server_name).toBe('Creative');
+		expect(error).toHaveBeenCalledWith(
+			expect.stringContaining(`bridge ${bridge.id}'s settings were saved but not queued`),
+		);
 	});
 
 	it('asks Discord afresh before saving, so a member who lost the role is refused', async () => {

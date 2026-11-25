@@ -750,7 +750,10 @@ Later item), not a follow-up.
   than at its next connect; this is the "settings message when the
   dashboard changes them" for these four fields. Worked out here: no
   one-time token (saving twice changes nothing) and a redirect after
-  saving; hex colours are lowercased, as named ones must be. Not tried
+  saving; hex colours are lowercased, as named ones must be. From
+  review: the settings are held on the hub for as long as a session can
+  live without polling (110 s), not chat's 30 s, so a helper backing off
+  still gets them, and a full queue is logged. Not tried
   against Discord or a real helper (A8h).
 
 ## Next up

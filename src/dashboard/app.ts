@@ -43,7 +43,7 @@ import { reminderState } from '../reminders/reminderState.ts';
 import type { Announcer } from '../minecraft/announcement.ts';
 import { bridgeSettings, checkSettingsChange } from '../minecraft/bridgeSettings.ts';
 import type { BridgePairing } from '../minecraft/dashboardPairing.ts';
-import { HelperHub } from '../minecraft/helperHub.ts';
+import { HelperHub, LEASE_MS, POLL_HOLD_MS } from '../minecraft/helperHub.ts';
 import { registerHelperRoutes } from '../minecraft/helperRoutes.ts';
 import {
 	MAX_BRIDGES_PER_GUILD,
@@ -507,7 +507,14 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 			if (!updated) return notFound(c);
 			// A connected helper applies them now, not at its next connect, which
 			// may be days away; one not connected gets them when it connects.
-			hub.deliver(bridge.id, bridgeSettings(updated));
+			// Held as long as a session can live without polling (a helper backing
+			// off keeps its session), not chat's 30 s: missed, they'd wait for the
+			// next connect. Each is complete, and the helper keeps only the last.
+			if (!hub.deliver(bridge.id, bridgeSettings(updated), LEASE_MS + POLL_HOLD_MS)) {
+				console.error(
+					`Dashboard: bridge ${bridge.id}'s settings were saved but not queued: too many messages waiting.`,
+				);
+			}
 			return c.redirect(`/servers/${server.id}/minecraft`, 303);
 		},
 	);

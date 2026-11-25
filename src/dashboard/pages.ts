@@ -611,8 +611,9 @@ const REFUSED_TEXT: Record<SettingsField, string> = {
 	serverName:
 		'The name must be 1 to 80 characters, without "clyde" or "discord" (Discord refuses those in a webhook\'s name).',
 	prefix:
-		'The prefix must be 1 to 24 characters: letters, digits, spaces and [ ] ( ) { } - . : | * # ! ~, starting with one of those symbols, and not [Not Secure].',
-	colour: 'The colour must be a hex colour, like #5865F2, or one of Minecraft’s colour names, like gold.',
+		'The prefix must be 1 to 24 characters: letters A to Z, digits, spaces and [ ] ( ) { } - . : | * # ! ~, starting with one of those symbols, and not [Not Secure].',
+	colour:
+		'The colour must be a hex colour, like #5865F2, or one of Minecraft’s colour names, like gold or dark_aqua (with an underscore).',
 	defaultPicture: 'Pick a picture from the list.',
 };
 
@@ -645,8 +646,8 @@ export function bridgeSettingsPage(
 					: ''
 			}
 			<p>
-				Its helper applies these as soon as it's connected to the bot, over what its <code>mcbridge.json</code> says,
-				and keeps them for when the bot is away.
+				Its helper applies these as soon as it's connected to the bot, over its <code>mcbridge.json</code>'s name and
+				picture and the default prefix and colour, and keeps them for when the bot is away.
 			</p>
 			<form method="post" action="/servers/${server.id}/minecraft/bridges/${view.bridge.id}">
 				<p>
@@ -663,8 +664,8 @@ export function bridgeSettingsPage(
 				</p>
 				<p>
 					<label
-						>Colour of that prefix in game: a hex colour, like #5865F2, or a Minecraft colour name, like gold
-						<input name="colour" required maxlength="12" value="${values.colour}"
+						>Colour of that prefix in game: a hex colour, like #5865F2, or a Minecraft colour name, like gold or
+						dark_aqua <input name="colour" required maxlength="12" value="${values.colour}"
 					/></label>
 				</p>
 				<p>
