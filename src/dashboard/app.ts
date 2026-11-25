@@ -447,7 +447,8 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 
 	app.get('/servers/:guildId/minecraft/bridges/:bridgeId/regenerate', requires('bridges'), (c) => {
 		const server = c.get('server');
-		if (!options.pairing) return pairingOff(c);
+		// As its POST: the new config names the dashboard's public origin.
+		if (!options.pairing || !auth) return pairingOff(c);
 		const bridge = bridgeIn(c);
 		if (!bridge) return notFound(c);
 		const token = formTokens.issue(regenerateForm(server.id, c.get('session').user_id, bridge.id));

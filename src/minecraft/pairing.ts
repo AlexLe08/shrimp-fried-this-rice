@@ -434,7 +434,14 @@ async function deleteWebhook(
 		return true;
 	} catch (error) {
 		if ((error as { code?: unknown }).code === RESTJSONErrorCodes.UnknownWebhook) return true;
-		console.error(`Minecraft pairing: couldn't delete webhook ${webhook.webhookId}:`, error);
+		console.error(`Minecraft pairing: couldn't delete webhook ${webhook.webhookId} (${describeFailure(error)})`);
 		return false;
 	}
+}
+
+// Never the error itself: deleting with the token puts it in the request's
+// URL, which @discordjs/rest's errors carry, and the webhook still posts.
+function describeFailure(error: unknown): string {
+	const { status, code, message } = (error ?? {}) as { status?: unknown; code?: unknown; message?: unknown };
+	return [status, code, message].filter((part) => typeof part === 'number' || typeof part === 'string').join(' ');
 }

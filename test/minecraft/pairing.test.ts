@@ -1,3 +1,4 @@
+import { format } from 'node:util';
 import { ChannelType, PermissionFlagsBits, RESTJSONErrorCodes, type Guild, type GuildMember } from 'discord.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { __resetForTests, db } from '../../src/core/database.ts';
@@ -550,6 +551,25 @@ describe('removeBridge', () => {
 		});
 		expect(getBridge(bridge.id)).toBeUndefined();
 		expect(error).toHaveBeenCalledTimes(1);
+	});
+
+	it("logs a refused delete without the webhook's token, which the error's URL holds", async () => {
+		const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const { bridge } = await paired();
+		guild.client.deleteWebhook.mockRejectedValueOnce(
+			Object.assign(new Error('Missing Permissions'), {
+				status: 403,
+				code: RESTJSONErrorCodes.MissingPermissions,
+				url: 'https://discord.com/api/v10/webhooks/901/tok1',
+			}),
+		);
+
+		await remove(bridge.id);
+
+		expect(error).toHaveBeenCalledTimes(1);
+		const logged = format(...error.mock.calls[0]!);
+		expect(logged).toContain("couldn't delete webhook 901 (403 50013 Missing Permissions)");
+		expect(logged).not.toContain('tok1');
 	});
 
 	it('lets an allowed-role manager remove a bridge whose channels they can no longer see', async () => {
