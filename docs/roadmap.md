@@ -598,7 +598,14 @@ Later item), not a follow-up.
   queues them for the helper's next poll for up to 2 minutes. Live
   messages wait meanwhile and follow them; the first live one marks where
   the catch-up stops, and the live relay now skips anything at or before
-  the last relayed id, so nothing goes twice. Checked in Discord's docs
+  the last relayed id, so nothing goes twice. From review: the
+  announcement now also records its own message id as the last relayed,
+  so after a chat moves, a catch-up can't relay what was posted in the new
+  channel before its announcement (decision 0006); held live messages are
+  counted against the 5 a second as they arrive, not all at release, and
+  wait at most 10 s; and each caught-up author's member is asked of
+  Discord once, as API messages come without it and the cache is cold
+  after a restart, so they show under their server nickname. Checked in Discord's docs
   (2026-11-24): `after`, `limit` 1 to 100, an answer listed newest first
   (which messages `after` picks isn't said, so it asks for 100 and sorts),
   and no messages, rather than an error, without Read Message History.
@@ -643,7 +650,8 @@ them ahead of items 5 and 6.
    sealing, endpoint, pairing and dropping the links of members who
    left) is done (Done above); the relay (A8e) is under way: the bot
    reads bridge chat channels, announces the relay and catches up after
-   a restart (Done above); next, the helper's side.
+   a restart (Done above); next, the helper's side (including pacing
+   chat into the game and dropping it while the server is down).
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the
