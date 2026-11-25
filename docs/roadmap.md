@@ -591,6 +591,21 @@ Later item), not a follow-up.
   `allowedMentions`; 10015 is Unknown Webhook in `discord-api-types`. Not
   used yet: nothing pairs a bridge until A8f, and no helper connects
   until its side; not tried against Discord.
+- **Catching up after a restart** (2026-11-24, third part of A8e;
+  decision 0010). Once ready, `src/minecraft/catchUp.ts` asks Discord's
+  API for each relaying bridge's chat since the last relayed message (or
+  5 minutes back, if later), keeps the oldest 20 members' messages, and
+  queues them for the helper's next poll for up to 2 minutes. Live
+  messages wait meanwhile and follow them; the first live one marks where
+  the catch-up stops, and the live relay now skips anything at or before
+  the last relayed id, so nothing goes twice. Checked in Discord's docs
+  (2026-11-24): `after`, `limit` 1 to 100, an answer listed newest first
+  (which messages `after` picks isn't said, so it asks for 100 and sorts),
+  and no messages, rather than an error, without Read Message History.
+  Left to the helper's part: pacing caught-up messages into the game, and
+  dropping them while the server is down (the bot doesn't know yet). Not
+  used yet; not tried against Discord (A8h: a deploy with messages posted
+  during it).
 
 ## Next up
 
@@ -627,8 +642,8 @@ them ahead of items 5 and 6.
    A8i, two-way chat, linking and pictures. A8d (the bot's storage,
    sealing, endpoint, pairing and dropping the links of members who
    left) is done (Done above); the relay (A8e) is under way: the bot
-   reads bridge chat channels and announces the relay (Done above);
-   next, catching up after a restart, then the helper's side.
+   reads bridge chat channels, announces the relay and catches up after
+   a restart (Done above); next, the helper's side.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the
