@@ -83,6 +83,8 @@ export function createGameRelay(options: GameRelayOptions): GameRelay {
 
 	let up = false;
 	let on = false;
+	// Final: nothing reaches RCON once the helper is stopping.
+	let closed = false;
 	let onlineMode: boolean | null = null;
 	let rcon: Rcon | null = null;
 	// Each start or stop bumps it, so a read finishing after the server stopped is dropped.
@@ -147,6 +149,7 @@ export function createGameRelay(options: GameRelayOptions): GameRelay {
 
 	return {
 		async serverUp() {
+			if (closed) return;
 			const run = ++generation;
 			up = true;
 			on = false;
@@ -207,7 +210,7 @@ export function createGameRelay(options: GameRelayOptions): GameRelay {
 						'the server refused rcon.password, so messages from Discord can\'t reach the game. If it was changed while the server ran, restart the server, which reads it only as it starts; if "rcon" in mcbridge.json points at another server, fix it and restart mcbridge.',
 					),
 				onUnreachable: () => {
-					const message = `RCON hasn't answered on ${host}:${port} for 2 minutes, so messages from Discord aren't reaching the game. In Docker, publish the port on 127.0.0.1 and set "rcon" in mcbridge.json to it; with server-ip set, put that address in "rcon". mcbridge keeps trying.`;
+					const message = `RCON hasn't answered on ${host}:${port} for 2 minutes, so messages from Discord aren't reaching the game. If the server is down (a crash logs no stop), that's all it is. If it's running: in Docker, publish the port on 127.0.0.1 and set "rcon" in mcbridge.json to it; with server-ip set, put that address in "rcon". mcbridge keeps trying.`;
 					log(message);
 					alertOnce('unreachable', message);
 				},
@@ -251,6 +254,7 @@ export function createGameRelay(options: GameRelayOptions): GameRelay {
 		onlineMode: () => onlineMode,
 
 		close() {
+			closed = true;
 			generation++;
 			up = false;
 			on = false;

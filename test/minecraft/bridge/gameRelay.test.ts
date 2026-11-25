@@ -335,4 +335,16 @@ describe('the game relay', () => {
 		expect(alert.mock.calls[0]![1]).toContain('127.0.0.1:25599');
 		expect(relay.isOn()).toBe(true);
 	});
+
+	it('connects nothing once closed, as a start flushed during shutdown would otherwise reach RCON', async () => {
+		const { relay, rcons, readFile } = setup();
+
+		relay.close();
+		await relay.serverUp();
+		relay.relay(chat(1));
+
+		expect(readFile).not.toHaveBeenCalled();
+		expect(rcons).toHaveLength(0);
+		expect(relay.isOn()).toBe(false);
+	});
 });

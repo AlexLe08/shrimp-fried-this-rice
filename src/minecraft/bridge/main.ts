@@ -109,8 +109,10 @@ async function shutdown(signal: string): Promise<void> {
 	forceExit.unref();
 	clearInterval(summaries);
 	await Promise.all([tailer.stop(), crashWatcher?.stop(), botClient?.stop()]);
-	game?.close();
+	// After the flush: a start or stop still held by the log's assembler is
+	// handled first, so a stop line still reads whether chat was on.
 	bridge.flush();
+	game?.close();
 	bridge.postSummaries({ final: true });
 	await sender.close(5000);
 	process.exit(0);

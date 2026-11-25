@@ -324,6 +324,8 @@ export function createRcon(options: RconOptions): Rcon {
 				if (error instanceof RconError && error.code === 'login-refused') {
 					refused = true;
 					running = false;
+					// stop() returns early once not running, so the timer is cleared here.
+					stopWatching();
 					log(`${error.message}; RCON stays off until mcbridge restarts`);
 					wake(null);
 					options.onLoginRefused?.();

@@ -207,8 +207,9 @@ export function createBridge(options: BridgeOptions): Bridge {
 					? 'no start or stop in the existing log yet'
 					: `the existing log says ${config.serverName} is ${up ? 'up' : 'stopped'}`,
 			);
-			// When it can't tell, RCON is tried anyway: it waits and retries, so a
-			// server that is in fact stopped costs only some log lines.
+			// When it can't tell, RCON is tried anyway: it retries, and a server that
+			// is in fact stopped (a crash logs no stop) costs retries and, after 2
+			// minutes, the unreachable alert, which says that's all it may be.
 			if (up !== false) gameUp();
 		}),
 		onLines: guarded('reading new lines', (lines: string[]) => {

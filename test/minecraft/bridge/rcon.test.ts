@@ -531,4 +531,19 @@ describe('createRcon', () => {
 
 		expect(onUnreachable).not.toHaveBeenCalled();
 	});
+
+	it('reports nothing unreachable after the server refused the password', async () => {
+		vi.useFakeTimers();
+		const onUnreachable = vi.fn();
+		const connect = vi.fn<typeof connectRcon>(() => Promise.reject(new RconError('login-refused', 'wrong')));
+		const rcon = createRcon({ host: 'h', port: 1, password: PASSWORD, log: () => {}, connect, onUnreachable });
+		clients.push(rcon);
+
+		rcon.start();
+		// Before 2 minutes: a timer still armed would show here, though it would fire harmlessly.
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		expect(onUnreachable).not.toHaveBeenCalled();
+		expect(vi.getTimerCount()).toBe(0);
+	});
 });
