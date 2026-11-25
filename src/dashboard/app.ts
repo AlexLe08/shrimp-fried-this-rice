@@ -50,7 +50,9 @@ import { registerHelperRoutes } from '../minecraft/helperRoutes.ts';
 import {
 	MAX_BRIDGES_PER_GUILD,
 	MAX_PICTURES_PER_BRIDGE,
+	deleteLink,
 	getBridge,
+	getBridgeLinks,
 	getGuildBridges,
 	getMinecraftGuildSettings,
 	getPlayerPictures,
@@ -105,6 +107,7 @@ export const ROUTE_ACCESS = {
 	'GET /servers/:guildId/minecraft/bridges/:bridgeId': 'bridges',
 	'POST /servers/:guildId/minecraft/bridges/:bridgeId': 'bridges',
 	'POST /servers/:guildId/minecraft/bridges/:bridgeId/pictures': 'bridges',
+	'POST /servers/:guildId/minecraft/bridges/:bridgeId/links/remove': 'bridges',
 	'GET /servers/:guildId/minecraft/bridges/:bridgeId/regenerate': 'bridges',
 	'POST /servers/:guildId/minecraft/bridges/:bridgeId/regenerate': 'bridges',
 	'GET /servers/:guildId/minecraft/bridges/:bridgeId/remove': 'bridges',
@@ -472,6 +475,17 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 		pictures: getPlayerPictures(bridge.id).map(({ name, picture }) => ({ name, picture })),
 		maxPictures: MAX_PICTURES_PER_BRIDGE,
 		...(form.pictureForm ? { pictureForm: form.pictureForm } : {}),
+		links: getBridgeLinks(bridge.id).map((link) => {
+			// The cache, not a fetch per link: a page of links would wait on
+			// Discord's rate limit, and the id names the member regardless.
+			const cached = options.client?.guilds.cache.get(bridge.guild_id)?.members.cache.get(link.user_id);
+			return {
+				name: link.name,
+				userId: link.user_id,
+				member: cached ? { displayName: cached.displayName, username: cached.user.username } : null,
+				linkedAt: link.linked_at,
+			};
+		}),
 	});
 	// A connected helper applies them now, not at its next connect, which may
 	// be days away; one not connected gets them when it connects. Held as long
@@ -558,6 +572,23 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 			);
 		}
 		queueSettings(bridge);
+		return c.redirect(`/servers/${server.id}/minecraft/bridges/${bridge.id}`, 303);
+	});
+
+	// Any member's link, by the player's name (the plan's A8 lets a bridge's
+	// managers). No token or page that asks first: removing twice finds
+	// nothing, and the player can link again. Nothing goes to the helper, as
+	// nothing sends it linked players' pictures yet; once something does,
+	// removing a link must tell it too.
+	app.post('/servers/:guildId/minecraft/bridges/:bridgeId/links/remove', requires('bridges'), smallForm, async (c) => {
+		const server = c.get('server');
+		const fresh = access && (await access.rightsIn(server.id, c.get('session').user_id, { fresh: true }));
+		if (!fresh?.manageBridges) return notFound(c);
+		const body = await c.req.parseBody();
+		const bridge = bridgeIn(c);
+		if (!bridge) return notFound(c);
+		const name = body['name'];
+		if (typeof name === 'string') deleteLink(bridge.id, name);
 		return c.redirect(`/servers/${server.id}/minecraft/bridges/${bridge.id}`, 303);
 	});
 

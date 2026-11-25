@@ -8,6 +8,8 @@ export interface FakeGuildPeople {
 	roles?: Record<string, string[]>;
 	/** The server's roles in its cache, by id: a name, or a name and whether an integration manages it. */
 	serverRoles?: Record<string, string | { name: string; managed: boolean }>;
+	/** Members in the bot's cache, by id: their display name and username. */
+	cached?: Record<string, { displayName: string; username: string }>;
 }
 
 /**
@@ -48,11 +50,17 @@ export function fakeGuild(
 			return [roleId, { id: roleId, name: roleName, managed, position: roleEntries.length - index }];
 		}),
 	);
+	const memberCache = new Map(
+		Object.entries(people.cached ?? {}).map(([userId, { displayName, username }]) => [
+			userId,
+			{ displayName, user: { username } },
+		]),
+	);
 	return {
 		id,
 		name,
 		ownerId: people.ownerId ?? 'owner-elsewhere',
-		members: { fetch },
+		members: { fetch, cache: memberCache },
 		channels: { cache: channelCache },
 		roles: { cache: roleCache },
 	} satisfies DashboardGuild;
