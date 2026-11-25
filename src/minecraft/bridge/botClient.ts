@@ -1,3 +1,4 @@
+import type { LinkReport } from './bridge.ts';
 import type { BotConfig } from './config.ts';
 import { deriveKeys, open, parseEnvelope, seal } from './seal.ts';
 
@@ -14,6 +15,10 @@ export const MIN_BACKOFF_MS = 1000;
 export const MAX_BACKOFF_MS = 60_000;
 /** The least time between polls answered with nothing, as a bot shutting down answers each at once. */
 export const MIN_EMPTY_POLL_GAP_MS = 1000;
+/** A report isn't held like a poll, so an answer this late means something's wrong on the way. */
+export const REPORT_TIMEOUT_MS = 15_000;
+/** How long a player waits for the bot's answer to their `!link` line before the helper answers for it. */
+export const REPORT_DEADLINE_MS = 60_000;
 
 /** Chat from Discord, for the game. */
 export interface BotChat {
@@ -41,9 +46,21 @@ export interface BotClientOptions {
 	requestTimeoutMs?: number;
 }
 
+/** The bot's answer to a `!link` report: the text to show that player alone. */
+export interface LinkAnswer {
+	result: string;
+	text: string;
+}
+
 export interface BotClient {
 	start(): void;
-	/** Ends a poll under way and any wait, and resolves once the loop has ended. */
+	/**
+	 * Sends the bot a player's `!link` line and resolves with its answer, or
+	 * null when there's none to show: the bot couldn't be reached in time,
+	 * refused the report, or the helper is stopping.
+	 */
+	report(link: LinkReport): Promise<LinkAnswer | null>;
+	/** Ends a poll or report under way and any wait, and resolves once the loop has ended. */
 	stop(): Promise<void>;
 }
 
@@ -54,7 +71,8 @@ type Answer =
 	| { kind: 'taken-over' }
 	| { kind: 'unauthorized' }
 	| { kind: 'rate-limited'; waitMs: number }
-	| { kind: 'failed'; why: string };
+	/** `byBot` when the bot itself answered no (sealed), so the same request would only be refused again. */
+	| { kind: 'failed'; why: string; byBot?: true };
 
 export function createBotClient(options: BotClientOptions): BotClient {
 	const { bot } = options;
@@ -69,8 +87,9 @@ export function createBotClient(options: BotClientOptions): BotClient {
 
 	let stopped = false;
 	let running: Promise<void> | null = null;
-	let inFlight: AbortController | null = null;
-	let endWait: (() => void) | null = null;
+	// The poll loop's and any `!link` reports': stop ends them all.
+	const inFlight = new Set<AbortController>();
+	const waits = new Set<() => void>();
 	// The bot's clock minus ours, learnt when it refuses our time: it accepts
 	// a sealed time within 5 minutes of its own.
 	let clockOffset = 0;
@@ -80,19 +99,19 @@ export function createBotClient(options: BotClientOptions): BotClient {
 			const timer = setTimeout(done, ms);
 			function done() {
 				clearTimeout(timer);
-				endWait = null;
+				waits.delete(done);
 				resolve();
 			}
-			endWait = done;
+			waits.add(done);
 		});
 	}
 
-	async function request(route: 'connect' | 'poll', message: unknown): Promise<Answer> {
+	async function request(route: 'connect' | 'poll' | 'link', message: unknown, limitMs = timeoutMs): Promise<Answer> {
 		// Sealed again for each try, so each has a new IV: the bot refuses one it has seen.
 		const sent = seal(keys, 'request', { bridgeId: bot.bridge, route }, message, now() + clockOffset);
 		const controller = new AbortController();
-		inFlight = controller;
-		const timer = setTimeout(() => controller.abort(), timeoutMs);
+		inFlight.add(controller);
+		const timer = setTimeout(() => controller.abort(), limitMs);
 		let response: Response;
 		let body: unknown;
 		try {
@@ -117,7 +136,7 @@ export function createBotClient(options: BotClientOptions): BotClient {
 			return { kind: 'failed', why: controller.signal.aborted ? 'no answer in time' : describe(error) };
 		} finally {
 			clearTimeout(timer);
-			inFlight = null;
+			inFlight.delete(controller);
 		}
 
 		// Anything not sealed for this request is someone else's: Cloudflare's
@@ -132,7 +151,11 @@ export function createBotClient(options: BotClientOptions): BotClient {
 		if (response.status === 409) return { kind: 'taken-over' };
 		if (response.status === 410) return { kind: 'session-ended' };
 		if (response.status === 400 && error === 'clock') return { kind: 'clock', botTime: opened.sentAt };
-		return { kind: 'failed', why: `HTTP ${response.status}${typeof error === 'string' ? ` ${error}` : ''}` };
+		return {
+			kind: 'failed',
+			why: `HTTP ${response.status}${typeof error === 'string' ? ` ${error}` : ''}`,
+			byBot: true,
+		};
 	}
 
 	async function run(): Promise<void> {
@@ -220,15 +243,66 @@ export function createBotClient(options: BotClientOptions): BotClient {
 		if (onSettings) call(() => onSettings(settings), 'applying the bridge settings');
 	}
 
+	// Beside the poll loop, not through it: a report mustn't wait for a held
+	// poll. The player is waiting in game, so it's given up on after
+	// REPORT_DEADLINE_MS, well inside the code's 10 minutes.
+	async function report(link: LinkReport): Promise<LinkAnswer | null> {
+		const deadline = now() + REPORT_DEADLINE_MS;
+		let backoffMs = 0;
+		let clockFixed = false;
+		while (!stopped) {
+			const answer = await request('link', link, REPORT_TIMEOUT_MS);
+			if (stopped) return null;
+			let waitMs: number;
+			switch (answer.kind) {
+				case 'ok': {
+					const message = answer.message;
+					if (isObject(message) && typeof message['result'] === 'string' && typeof message['text'] === 'string') {
+						return { result: message['result'], text: message['text'] };
+					}
+					log(`the bot's answer to ${link.player}'s !link had no text`);
+					return null;
+				}
+				case 'clock':
+					clockOffset = answer.botTime - now();
+					// Once is enough unless the clock is jumping.
+					if (clockFixed) return gaveUp(link, 'its clock keeps moving');
+					clockFixed = true;
+					continue;
+				case 'rate-limited':
+					// Polls and reports share the bridge's limit (the plan's A8): wait it out.
+					waitMs = answer.waitMs;
+					break;
+				case 'failed':
+					if (answer.byBot) return gaveUp(link, answer.why);
+					backoffMs = nextBackoff(backoffMs);
+					waitMs = backoffMs;
+					break;
+				default:
+					// 401, or a 409 or 410 that no link answer should get.
+					return gaveUp(link, answer.kind);
+			}
+			if (now() + waitMs > deadline) return gaveUp(link, 'no answer in time');
+			await wait(waitMs);
+		}
+		return null;
+	}
+
+	function gaveUp(link: LinkReport, why: string): null {
+		log(`couldn't check ${link.player}'s !link with the bot (${why})`);
+		return null;
+	}
+
 	return {
 		start() {
 			if (running || stopped) return;
 			running = run().catch((error: unknown) => log(`the connection to the bot stopped: ${describe(error)}`));
 		},
+		report,
 		async stop() {
 			stopped = true;
-			inFlight?.abort();
-			endWait?.();
+			for (const controller of inFlight) controller.abort();
+			for (const done of waits) done();
 			await running;
 		},
 	};

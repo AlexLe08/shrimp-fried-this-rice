@@ -70,21 +70,42 @@ function toSnbt(value: unknown): string {
 	);
 }
 
-function tellraw(style: ChatStyle, sender: string, text: string): string {
+function tellraw(target: string, style: ChatStyle, label: string, text: string): string {
 	// Every list element a compound: the wiki allows mixed lists but contradicts
 	// itself on how they're converted.
 	const component = {
 		text: '',
-		extra: [
-			{ text: style.prefix, color: style.colour.toLowerCase() },
-			{ text: ` ${sender}: ` },
-			{ text, color: 'white' },
-		],
+		extra: [{ text: style.prefix, color: style.colour.toLowerCase() }, { text: label }, { text, color: 'white' }],
 	};
-	return `tellraw @a ${toSnbt(component)}`;
+	return `tellraw ${target} ${toSnbt(component)}`;
 }
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+function checkStyle(style: ChatStyle): void {
+	if (!isPrefix(style.prefix)) throw new TypeError(`Not a valid prefix: ${JSON.stringify(style.prefix)}`);
+	if (!isColour(style.colour)) throw new TypeError(`Not a valid colour: ${JSON.stringify(style.colour)}`);
+}
+
+// The command with as much of the text as fits RCON's limit, cut with `…`
+// (never inside a character or an emoji); null when not even `…` fits.
+function fitted(build: (text: string) => string, body: string): string | null {
+	const whole = build(body);
+	if (whole.length <= MAX_COMMAND_BYTES) return whole;
+
+	const parts = Array.from(graphemes.segment(body), (part) => part.segment);
+	const cut = (count: number) => build(`${parts.slice(0, count).join('').trimEnd()}…`);
+	if (cut(0).length > MAX_COMMAND_BYTES) return null;
+	// The largest count that fits: the command only grows with it.
+	let fits = 0;
+	let tooLong = parts.length;
+	while (tooLong - fits > 1) {
+		const middle = Math.floor((fits + tooLong) / 2);
+		if (cut(middle).length <= MAX_COMMAND_BYTES) fits = middle;
+		else tooLong = middle;
+	}
+	return cut(fits);
+}
 
 /**
  * The `tellraw @a` command showing a Discord message in game, cut with `…`
@@ -96,27 +117,31 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
  * characters, which always fits).
  */
 export function chatCommand(sender: string, text: string, style: ChatStyle = DEFAULT_STYLE): string | null {
-	if (!isPrefix(style.prefix)) throw new TypeError(`Not a valid prefix: ${JSON.stringify(style.prefix)}`);
-	if (!isColour(style.colour)) throw new TypeError(`Not a valid colour: ${JSON.stringify(style.colour)}`);
+	checkStyle(style);
 	// A nickname of nothing but `§` is possible in Discord.
 	const name = cleanText(sender) || '?';
 	const body = cleanText(text);
 	if (!body) return null;
+	const command = fitted((cut) => tellraw('@a', style, ` ${name}: `, cut), body);
+	if (!command) throw new RangeError(`A sender name of ${name.length} characters leaves no room`);
+	return command;
+}
 
-	const whole = tellraw(style, name, body);
-	if (whole.length <= MAX_COMMAND_BYTES) return whole;
+// Minecraft's rule for a name, as settings.ts's isPlayerName (which imports
+// this file): nothing that could end the target and start another argument.
+const PLAYER_NAME = /^[A-Za-z0-9_]{1,16}$/;
 
-	const parts = Array.from(graphemes.segment(body), (part) => part.segment);
-	const cut = (count: number) => tellraw(style, name, `${parts.slice(0, count).join('').trimEnd()}…`);
-	if (cut(0).length > MAX_COMMAND_BYTES)
-		throw new RangeError(`A sender name of ${name.length} characters leaves no room`);
-	// The largest count that fits: the command only grows with it.
-	let fits = 0;
-	let tooLong = parts.length;
-	while (tooLong - fits > 1) {
-		const middle = Math.floor((fits + tooLong) / 2);
-		if (cut(middle).length <= MAX_COMMAND_BYTES) fits = middle;
-		else tooLong = middle;
-	}
-	return cut(fits);
+/**
+ * The `tellraw <player>` command showing that player alone the bot's answer
+ * to their `!link` line, marked with the prefix as chat from Discord is, and
+ * cut to fit like it. Null when nothing is left of the text to show. Throws
+ * for a name that isn't a player's, or a style the dashboard wouldn't accept.
+ */
+export function privateCommand(player: string, text: string, style: ChatStyle = DEFAULT_STYLE): string | null {
+	if (!PLAYER_NAME.test(player)) throw new TypeError(`Not a player name: ${JSON.stringify(player)}`);
+	checkStyle(style);
+	const body = cleanText(text);
+	if (!body) return null;
+	// A name of 16 and the longest prefix leave over a thousand bytes for the text.
+	return fitted((cut) => tellraw(player, style, ' ', cut), body);
 }

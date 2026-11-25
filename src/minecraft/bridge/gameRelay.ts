@@ -3,7 +3,7 @@ import type { BotChat } from './botClient.ts';
 import type { RconOverride } from './config.ts';
 import { createRcon, type Rcon } from './rcon.ts';
 import { decodeServerProperties, parseProperties, serverSettings, type RconOffReason } from './serverProperties.ts';
-import { DEFAULT_STYLE, chatCommand, type ChatStyle } from './toMinecraft.ts';
+import { DEFAULT_STYLE, chatCommand, privateCommand, type ChatStyle } from './toMinecraft.ts';
 
 // Discord to Minecraft, the helper's end (decision 0006; the plan's A8, "The
 // relay"): chat from the bot goes into the game as `tellraw @a` over RCON,
@@ -58,6 +58,12 @@ export interface GameRelay {
 	serverDown(): void;
 	/** Chat from Discord: into the game in order, at most 5 a second; dropped while the server is down or RCON is off. */
 	relay(chat: BotChat[], style?: ChatStyle): void;
+	/**
+	 * Shows one player alone a line marked like chat from Discord (the bot's
+	 * answer to their `!link` line), in turn with chat. False if it can't go
+	 * in: the server is down, RCON is off, or the name isn't a player's.
+	 */
+	tell(player: string, text: string, style?: ChatStyle): boolean;
 	/**
 	 * Whether two-way chat was set up at the server's last start: RCON enabled
 	 * with a strong password, and not refused since. Kept through serverDown,
@@ -248,6 +254,23 @@ export function createGameRelay(options: GameRelayOptions): GameRelay {
 				queue.push({ command, queuedAt: Date.now() });
 			}
 			void pump();
+		},
+
+		tell(player, text, style = DEFAULT_STYLE) {
+			if (!up || !on) return false;
+			let command: string | null;
+			try {
+				command = privateCommand(player, text, style);
+			} catch (error) {
+				log(`couldn't answer ${player} in game: ${(error as Error).message}`);
+				return false;
+			}
+			if (!command) return false;
+			// Past the cap on chat: one answer per `!link` line the bot took, and
+			// the player is waiting for it.
+			queue.push({ command, queuedAt: Date.now() });
+			void pump();
+			return true;
 		},
 
 		isOn: () => on,

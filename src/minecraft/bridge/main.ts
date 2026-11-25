@@ -10,6 +10,7 @@ import { createBridge } from './bridge.ts';
 import { ConfigError, loadConfig, serverPropertiesPathOf, type BridgeConfig } from './config.ts';
 import { createCrashWatcher } from './crashReports.ts';
 import { createGameRelay } from './gameRelay.ts';
+import { createLinkReporter } from './linkReports.ts';
 import { escapeMarkdown } from './messages.ts';
 import {
 	applySettings,
@@ -113,7 +114,25 @@ const botClient =
 				},
 			})
 		: null;
-const bridge = createBridge({ config: live, sender, ...(game ? { game } : {}) });
+// Once paired, a `!link` line goes to the bot rather than to Discord as chat.
+// `online-mode` unknown counts as offline: unclear is never proof.
+const reportLink =
+	botClient && game
+		? createLinkReporter({
+				report: (link) => botClient.report(link),
+				tell: (player, text, linkStyle) => game.tell(player, text, linkStyle),
+				style: () => style,
+				log,
+			})
+		: null;
+const bridge = createBridge({
+	config: live,
+	sender,
+	...(game ? { game } : {}),
+	...(reportLink && game
+		? { link: { report: (link) => void reportLink(link), onlineMode: () => game.onlineMode() ?? false } }
+		: {}),
+});
 const tailer = createTailer({
 	path: config.logPath,
 	onLines: bridge.onLines,

@@ -336,6 +336,34 @@ describe('the game relay', () => {
 		expect(relay.isOn()).toBe(true);
 	});
 
+	it('tells one player a line in turn with chat, even past the cap on chat waiting', async () => {
+		const { relay, sent } = setup();
+		await relay.serverUp();
+
+		relay.relay(chat(MAX_QUEUED_CHAT));
+		expect(relay.tell('Steve', 'Linked Steve.', { prefix: '(DC)', colour: 'gold' })).toBe(true);
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		expect(sent).toHaveLength(MAX_QUEUED_CHAT + 1);
+		expect(sent.at(-1)!.command).toMatch(/^tellraw Steve .*"\(DC\)".*"Linked Steve\."/);
+	});
+
+	it("can't tell a player anything while the server is down or RCON is off, or with a name that isn't a player's", async () => {
+		const down = setup();
+		expect(down.relay.tell('Steve', 'hi')).toBe(false);
+
+		const off = setup('enable-rcon=false\n');
+		await off.relay.serverUp();
+		expect(off.relay.tell('Steve', 'hi')).toBe(false);
+
+		const { relay, sent, log } = setup();
+		await relay.serverUp();
+		expect(relay.tell('@a', 'hi')).toBe(false);
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(sent).toHaveLength(0);
+		expect(log).toHaveBeenCalledWith('couldn\'t answer @a in game: Not a player name: "@a"');
+	});
+
 	it('connects nothing once closed, as a start flushed during shutdown would otherwise reach RCON', async () => {
 		const { relay, rcons, readFile } = setup();
 
