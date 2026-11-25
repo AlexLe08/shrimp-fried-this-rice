@@ -1,7 +1,8 @@
 import { html } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
 import type { ReminderState } from '../reminders/reminderState.ts';
-import type { SettingsField } from '../minecraft/bridgeSettings.ts';
+import type { PictureField, SettingsField } from '../minecraft/bridgeSettings.ts';
+import { GENERATED_AVATARS } from '../minecraft/bridge/avatars.ts';
 import type { ChannelChoice } from '../minecraft/dashboardPairing.ts';
 import type { BotPermission, HelperConfig, PairingRefusal } from '../minecraft/pairing.ts';
 import type { ServerRights } from './access.ts';
@@ -624,14 +625,47 @@ const PICTURE_CHOICES = [
 	['none', "None: the webhook's own picture"],
 ] as const;
 
+// A player's own picture: the generated ones by number, as the helper names them.
+const PLAYER_PICTURE_CHOICES: readonly (readonly [string, string])[] = [
+	['generated', 'A generated picture, picked by their name'],
+	...Array.from({ length: GENERATED_AVATARS }, (_, i) => [`generated:${i}`, `Generated picture ${i + 1}`] as const),
+	['skin', "Their skin's face (a generated picture on an offline-mode server)"],
+	['none', "None: the webhook's own picture"],
+];
+const PLAYER_PICTURE_LABELS: ReadonlyMap<string, string> = new Map(PLAYER_PICTURE_CHOICES);
+
+/** Why a player's picture wasn't saved: a field the helper would refuse, or the bridge has the most. */
+export type PictureProblem = PictureField | 'limit';
+
+export interface BridgeSettingsView {
+	bridge: { id: string; serverName: string };
+	values: SettingsValues;
+	refused?: SettingsField[];
+	/** The pictures set for players, by name. */
+	pictures: { name: string; picture: string }[];
+	maxPictures: number;
+	/** A player's picture as sent, when it wasn't saved. */
+	pictureForm?: { values: { name: string; picture: string }; refused: PictureProblem[] };
+}
+
+function pictureProblemText(problem: PictureProblem, max: number): string {
+	switch (problem) {
+		case 'name':
+			return 'A player’s name is 1 to 16 letters A to Z, digits or underscores, as in Minecraft.';
+		case 'picture':
+			return 'Pick a picture from the list.';
+		case 'limit':
+			return `A Minecraft server can have pictures for at most ${max} players. Remove one to add another.`;
+	}
+}
+
 /** A bridge's settings, which its helper applies when the bot sends them. */
-export function bridgeSettingsPage(
-	server: { id: string; name: string },
-	view: { bridge: { id: string; serverName: string }; values: SettingsValues; refused?: SettingsField[] },
-): Page {
+export function bridgeSettingsPage(server: { id: string; name: string }, view: BridgeSettingsView): Page {
 	const title = `${server.name}: ${view.bridge.serverName}'s settings`;
 	const values = view.values;
 	const refused = view.refused ?? [];
+	const picturesAction = `/servers/${server.id}/minecraft/bridges/${view.bridge.id}/pictures`;
+	const pictureForm = view.pictureForm;
 	return layout(
 		title,
 		html`<h1>${title}</h1>
@@ -680,6 +714,72 @@ export function bridgeSettingsPage(
 					>
 				</p>
 				<p><button type="submit">Save</button></p>
+			</form>
+			<h2>Pictures for players</h2>
+			<p>
+				A player listed here gets their picture instead of the one above, over any the helper's config sets for them,
+				unless they've linked their account and chosen their own. At most ${view.maxPictures} players.
+			</p>
+			${
+				view.pictures.length > 0
+					? html`<table>
+							<thead>
+								<tr>
+									<th>Player</th>
+									<th>Picture</th>
+									<th></th>
+								</tr>
+							</thead>
+							<tbody>
+								${view.pictures.map(
+									({ name, picture }) =>
+										html`<tr>
+											<td>${name}</td>
+											<td>${PLAYER_PICTURE_LABELS.get(picture) ?? picture}</td>
+											<td>
+												<form method="post" action="${picturesAction}">
+													<input type="hidden" name="name" value="${name}" />
+													<input type="hidden" name="picture" value="" />
+													<button type="submit">Remove</button>
+												</form>
+											</td>
+										</tr>`,
+								)}
+							</tbody>
+						</table>`
+					: html`<p>None yet.</p>`
+			}
+			${
+				pictureForm
+					? html`<div role="alert">
+							<p>That picture wasn't saved:</p>
+							<ul>
+								${pictureForm.refused.map((problem) => html`<li>${pictureProblemText(problem, view.maxPictures)}</li>`)}
+							</ul>
+						</div>`
+					: ''
+			}
+			<form method="post" action="${picturesAction}">
+				<p>
+					<label
+						>Player's Minecraft name
+						<input name="name" required maxlength="16" value="${pictureForm?.values.name ?? ''}"
+					/></label>
+				</p>
+				<p>
+					<label
+						>Their picture
+						<select name="picture">
+							${PLAYER_PICTURE_CHOICES.map(
+								([value, label]) =>
+									html`<option value="${value}" ${value === pictureForm?.values.picture ? 'selected' : ''}>
+										${label}
+									</option>`,
+							)}
+						</select></label
+					>
+				</p>
+				<p><button type="submit">Set their picture</button></p>
 			</form>
 			<p><a href="/servers/${server.id}/minecraft">Back to its Minecraft servers</a></p>`,
 	);
