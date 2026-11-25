@@ -564,7 +564,12 @@ Later item), not a follow-up.
   `referenced_message`, so a reply to a relayed game message names the
   player, as its webhook carries their name; and `message.system` counts
   slash command replies as members' messages, so the type is checked
-  instead. README's Local Setup and `ORACLE_CLOUD_DEPLOYMENT.md` now ask
+  instead. From review: the client caches no message
+  (`src/core/clientOptions.ts`), as discord.js would otherwise keep the
+  last 200 of every channel in every server, against the relay's promise
+  to keep nothing; and a message queued just before a restart is recorded
+  as relayed but lost with the queue, so the catch-up skips it (a few
+  milliseconds while a helper polls; accepted). README's Local Setup and `ORACLE_CLOUD_DEPLOYMENT.md` now ask
   for Message Content on both apps (gateway close code 4014 otherwise,
   checked in `discord-api-types`). Not used yet: nothing announces a
   bridge until the dashboard's pages (A8f), and no helper polls until
