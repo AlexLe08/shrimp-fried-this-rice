@@ -10,7 +10,12 @@ import {
 	snoozeGuildReminder,
 	updateGuildReminderLastSent,
 } from '../../src/reminders/storage.ts';
-import { createBridge, markBridgeAnnounced, setAllowedRole } from '../../src/minecraft/storage.ts';
+import {
+	createBridge,
+	getMinecraftGuildSettings,
+	markBridgeAnnounced,
+	setAllowedRole,
+} from '../../src/minecraft/storage.ts';
 import { fakeClient, fakeGuild } from './fakeGuilds.ts';
 import { fakePairing } from './fakePairing.ts';
 import type { BridgePairing, PairAnswer } from '../../src/minecraft/dashboardPairing.ts';
@@ -614,6 +619,132 @@ describe('adding a Minecraft server', () => {
 	});
 });
 
+describe('who may manage Minecraft servers', () => {
+	// u1 owns g1; u2 has r-mc; r-bot is an integration's.
+	const serverRoles = {
+		'r-mods': 'Mods',
+		'r-mc': '<b>Minecraft</b>',
+		'r-bot': { name: 'Shrimp Bot', managed: true },
+		g1: '@everyone',
+	};
+
+	function roleApp(members: Record<string, boolean | 'timed out'> = { u1: false, u2: false }) {
+		return createApp({
+			auth,
+			client: fakeClient([
+				fakeGuild('g1', 'Shrimp Hall', members, {}, { ownerId: 'u1', roles: { u2: ['r-mc'] }, serverRoles }),
+			]),
+			now: () => NOW,
+		});
+	}
+
+	const save = (role: string, userId = 'u1') => ({
+		method: 'POST',
+		headers: { ...signedIn(userId), origin: auth.origin, 'content-type': 'application/x-www-form-urlencoded' },
+		body: new URLSearchParams({ role }).toString(),
+	});
+
+	const minecraftPageOf = async (app: ReturnType<typeof roleApp>, userId = 'u1') =>
+		(await app.request('/servers/g1/minecraft', { headers: signedIn(userId) })).text();
+
+	it('says only the owner manages them while no role is allowed, and offers the owner the change', async () => {
+		const text = await minecraftPageOf(roleApp());
+
+		expect(text).toContain('Only the server&#39;s owner manages them.');
+		expect(text).toContain('<a href="/servers/g1/minecraft/role">Change who may manage them</a>');
+	});
+
+	it('names the allowed role, escaped, and offers the change to the owner alone', async () => {
+		setAllowedRole('g1', 'r-mc');
+		const app = roleApp();
+
+		const owners = await minecraftPageOf(app);
+		const theirs = await minecraftPageOf(app, 'u2');
+
+		expect(owners).toContain('and members with the role @&lt;b&gt;Minecraft&lt;/b&gt;.');
+		expect(theirs).toContain('and members with the role @&lt;b&gt;Minecraft&lt;/b&gt;.');
+		expect(theirs).not.toContain('/minecraft/role');
+	});
+
+	it('says so when the allowed role is no longer in the server', async () => {
+		setAllowedRole('g1', 'r-gone');
+
+		expect(await minecraftPageOf(roleApp())).toContain("a role that's no longer in the server (ID r-gone)");
+	});
+
+	it("offers the server's roles but @everyone and integrations', highest first, with the current one chosen", async () => {
+		setAllowedRole('g1', 'r-mc');
+
+		const response = await roleApp().request('/servers/g1/minecraft/role', { headers: signedIn() });
+		const text = await response.text();
+
+		expect(response.status).toBe(200);
+		expect(text).toMatch(/value="r-mods"[^>]*>\s*@Mods[\s\S]*value="r-mc" selected>\s*@&lt;b&gt;Minecraft/);
+		expect(text).not.toContain('Shrimp Bot');
+		expect(text).not.toContain('value="g1"');
+		expect(text).not.toContain('<b>');
+		expect(text).toContain('Anyone who can give members that role');
+	});
+
+	it('saves a role and goes back to the list, where its members may now manage', async () => {
+		const app = roleApp();
+
+		const response = await app.request('/servers/g1/minecraft/role', save('r-mc'));
+
+		expect(response.status).toBe(303);
+		expect(response.headers.get('location')).toBe('/servers/g1/minecraft');
+		expect(getMinecraftGuildSettings('g1')?.allowed_role_id).toBe('r-mc');
+		expect((await app.request('/servers/g1/minecraft', { headers: signedIn('u2') })).status).toBe(200);
+	});
+
+	it('clears the role, leaving bridges to the owner', async () => {
+		setAllowedRole('g1', 'r-mc');
+
+		const response = await roleApp().request('/servers/g1/minecraft/role', save(''));
+
+		expect(response.status).toBe(303);
+		expect(getMinecraftGuildSettings('g1')?.allowed_role_id).toBeNull();
+	});
+
+	it.each([
+		['@everyone', 'g1'],
+		["an integration's role", 'r-bot'],
+		['a role not in the server', 'r-gone'],
+	])('refuses %s, changing nothing', async (_what, role) => {
+		setAllowedRole('g1', 'r-mods');
+
+		const response = await roleApp().request('/servers/g1/minecraft/role', save(role));
+
+		expect(response.status).toBe(400);
+		expect(await response.text()).toContain("That role can't be chosen.");
+		expect(getMinecraftGuildSettings('g1')?.allowed_role_id).toBe('r-mods');
+	});
+
+	it('asks Discord afresh before saving, so an owner just put in timeout is refused', async () => {
+		const members: Record<string, boolean | 'timed out'> = { u1: false };
+		const app = roleApp(members);
+		expect((await app.request('/servers/g1/minecraft/role', { headers: signedIn() })).status).toBe(200);
+
+		members['u1'] = 'timed out';
+		const response = await app.request('/servers/g1/minecraft/role', save('r-mc'));
+
+		expect(response.status).toBe(404);
+		expect(getMinecraftGuildSettings('g1')).toBeUndefined();
+	});
+
+	it('refuses a form from another site', async () => {
+		const request = save('r-mc');
+
+		const response = await roleApp().request('/servers/g1/minecraft/role', {
+			...request,
+			headers: { ...request.headers, origin: 'https://evil.example' },
+		});
+
+		expect(response.status).toBe(403);
+		expect(getMinecraftGuildSettings('g1')).toBeUndefined();
+	});
+});
+
 // Decision 0009: deny by default. A route missing from ROUTE_ACCESS, or one
 // listed but not served, fails here, and every route behind a login is tried
 // signed out and, for a server's routes, as a manager of another server. The
@@ -703,11 +834,11 @@ describe('route access', () => {
 
 	it('keeps every bridges route under /servers/:guildId, where the guard runs', () => {
 		for (const [route, access] of declared) {
-			if (access === 'bridges') expect(route.split(' ')[1]).toMatch(/^\/servers\/:guildId\//);
+			if (access === 'bridges' || access === 'owner') expect(route.split(' ')[1]).toMatch(/^\/servers\/:guildId\//);
 		}
 	});
 
-	it.each(declared.filter(([, access]) => access === 'bridges').map(([route]) => route))(
+	it.each(declared.filter(([, access]) => access === 'bridges' || access === 'owner').map(([route]) => route))(
 		'sends a signed-out visitor of %s back to the home page, and answers 404 to a manager of another server',
 		async (route) => {
 			const { method, path } = withGuild(route);
@@ -732,23 +863,26 @@ describe('route access', () => {
 				fakeGuild(
 					'g1',
 					'Shrimp Hall',
-					{ 'u-server': true, 'u-bridges': false, 'u-none': false },
+					{ 'u-server': true, 'u-bridges': false, 'u-none': false, 'u-owner': false },
 					{},
-					{ roles: { 'u-bridges': ['r-mc'] } },
+					{ ownerId: 'u-owner', roles: { 'u-bridges': ['r-mc'] } },
 				),
 			]),
 			pairing: fakePairing(),
 			now: () => NOW,
 		});
-		const levels = { server: 'u-server', bridges: 'u-bridges' } as const;
-		const guarded = declared.filter(
-			(entry): entry is [string, keyof typeof levels] => entry[1] === 'server' || entry[1] === 'bridges',
-		);
+		const levels = { server: 'u-server', bridges: 'u-bridges', owner: 'u-owner' } as const;
+		// Someone with a right, but not this one: owner routes are refused to a
+		// bridge manager who isn't the owner.
+		const other = { server: 'bridges', bridges: 'server', owner: 'bridges' } as const;
+		// What a route answers when it's done: the role form saves, then goes back to the list.
+		const success: Record<string, number> = { 'POST /servers/:guildId/minecraft/role': 303 };
+		const guarded = declared.filter((entry): entry is [string, keyof typeof levels] => entry[1] in levels);
 
 		it.each(guarded)('answers %s only to a user with its right (%s)', async (route, level) => {
 			setAllowedRole('g1', 'r-mc');
 			const { method, path } = withGuild(route);
-			const otherLevel = level === 'server' ? 'bridges' : 'server';
+			const otherLevel = other[level];
 
 			// A form's POST carries the token its page gave this user (formTokens.ts).
 			const page =
@@ -759,7 +893,7 @@ describe('route access', () => {
 
 			const none = await rightsApp.request(path, send(method, signedIn('u-none')));
 
-			expect(theirs.status).toBe(200);
+			expect(theirs.status).toBe(success[route] ?? 200);
 			expect(others.status).toBe(404);
 			expect(await others.text()).toContain('<h1>Not found</h1>');
 			expect(none.status).toBe(404);

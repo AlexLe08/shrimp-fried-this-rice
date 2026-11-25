@@ -17,6 +17,17 @@ export interface DashboardGuild {
 	members: { fetch(options: { user: string; force: boolean; cache: boolean }): Promise<DashboardMember> };
 	/** Kept current by the Guilds intent, so reading a channel's name asks Discord nothing. */
 	channels: { cache: { get(id: string): { name: string } | undefined } };
+	/** Kept current by the Guilds intent too. */
+	roles: { cache: { get(id: string): DashboardRole | undefined; values(): Iterable<DashboardRole> } };
+}
+
+/** What the dashboard uses of a role; discord.js's Role fits it. */
+export interface DashboardRole {
+	id: string;
+	name: string;
+	/** Held by an integration (a bot's own role, a booster role): it can't be given to members. */
+	managed: boolean;
+	position: number;
 }
 
 /** What the dashboard uses of the client; discord.js's Client fits it. */
@@ -35,6 +46,8 @@ export interface ServerRights extends ManagedServer {
 	manageServer: boolean;
 	/** The server's owner or the role they allow, not in timeout: its Minecraft bridges (decision 0013). */
 	manageBridges: boolean;
+	/** The server's owner, not in timeout: who else may manage its bridges (the plan's A8). */
+	owner: boolean;
 }
 
 export interface ServerAccess {
@@ -42,8 +55,12 @@ export interface ServerAccess {
 	serverUserManages(guildId: string, userId: string): Promise<ManagedServer | null>;
 	/** Every server the bot is in that the user may manage, by name. */
 	serversUserManages(userId: string): Promise<ManagedServer[]>;
-	/** The user's rights in a server, if the bot is in it and they're a member. */
-	rightsIn(guildId: string, userId: string): Promise<ServerRights | null>;
+	/**
+	 * The user's rights in a server, if the bot is in it and they're a member.
+	 * `fresh` asks Discord even within the cache's 30 s, for a change
+	 * (decision 0012), and keeps the new answer.
+	 */
+	rightsIn(guildId: string, userId: string, options?: { fresh?: boolean }): Promise<ServerRights | null>;
 	/** Every server the bot is in where the user has either right, by name. */
 	serversWithRights(userId: string): Promise<ServerRights[]>;
 }
@@ -72,7 +89,8 @@ async function askDiscord(guild: DashboardGuild, userId: string): Promise<Server
 	try {
 		const member = await guild.members.fetch({ user: userId, force: true, cache: false });
 		const manageServer = member.permissions.has(PermissionFlagsBits.ManageGuild) && !member.isCommunicationDisabled();
-		return { id: guild.id, name: guild.name, manageServer, manageBridges: canManageBridges(guild, member) };
+		const owner = member.id === guild.ownerId && !member.isCommunicationDisabled();
+		return { id: guild.id, name: guild.name, manageServer, manageBridges: canManageBridges(guild, member), owner };
 	} catch (error) {
 		if (!NOT_A_MEMBER.has((error as { code?: unknown }).code)) {
 			console.error(`Dashboard: couldn't check ${userId}'s permissions in ${guild.id}:`, error);
@@ -85,22 +103,26 @@ export function serverAccess(client: DashboardClient, now: () => number = Date.n
 	// Promises, so a check already under way is shared rather than repeated.
 	const answers = new Map<string, { expiresAt: number; answer: Promise<ServerRights | null> }>();
 
-	function check(guild: DashboardGuild, userId: string): Promise<ServerRights | null> {
+	function check(guild: DashboardGuild, userId: string, fresh = false): Promise<ServerRights | null> {
 		const time = now();
 		const key = `${guild.id}:${userId}`;
 		const cached = answers.get(key);
-		if (cached && cached.expiresAt > time) return cached.answer;
+		if (cached && cached.expiresAt > time && !fresh) return cached.answer;
 		for (const [oldKey, old] of answers) if (old.expiresAt <= time) answers.delete(oldKey);
 		const answer = askDiscord(guild, userId);
 		answers.set(key, { expiresAt: time + ACCESS_CACHE_MS, answer });
 		return answer;
 	}
 
-	async function rightsIn(guildId: string, userId: string): Promise<ServerRights | null> {
+	async function rightsIn(
+		guildId: string,
+		userId: string,
+		options?: { fresh?: boolean },
+	): Promise<ServerRights | null> {
 		// A server the bot isn't in answers at once, without asking Discord; the
 		// timing shows only whether the bot is in a server with that id.
 		const guild = client.guilds.cache.get(guildId);
-		return guild ? check(guild, userId) : null;
+		return guild ? check(guild, userId, options?.fresh) : null;
 	}
 
 	async function everyServer(userId: string, keep: (rights: ServerRights) => boolean): Promise<ServerRights[]> {

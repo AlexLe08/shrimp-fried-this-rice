@@ -6,6 +6,8 @@ import type { DashboardClient, DashboardGuild } from '../../src/dashboard/access
 export interface FakeGuildPeople {
 	ownerId?: string;
 	roles?: Record<string, string[]>;
+	/** The server's roles in its cache, by id: a name, or a name and whether an integration manages it. */
+	serverRoles?: Record<string, string | { name: string; managed: boolean }>;
 }
 
 /**
@@ -38,12 +40,21 @@ export function fakeGuild(
 	const channelCache = new Map(
 		Object.entries(channels).map(([channelId, channelName]) => [channelId, { name: channelName }]),
 	);
+	// Listed in the order given, highest first, as Discord's positions go.
+	const roleEntries = Object.entries(people.serverRoles ?? {});
+	const roleCache = new Map(
+		roleEntries.map(([roleId, role], index) => {
+			const { name: roleName, managed } = typeof role === 'string' ? { name: role, managed: false } : role;
+			return [roleId, { id: roleId, name: roleName, managed, position: roleEntries.length - index }];
+		}),
+	);
 	return {
 		id,
 		name,
 		ownerId: people.ownerId ?? 'owner-elsewhere',
 		members: { fetch },
 		channels: { cache: channelCache },
+		roles: { cache: roleCache },
 	} satisfies DashboardGuild;
 }
 
