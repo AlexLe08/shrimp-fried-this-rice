@@ -128,6 +128,15 @@ describe('createSender', () => {
 		expect(log).toHaveBeenCalledWith(expect.stringContaining('"discord_fan"'));
 	});
 
+	it("falls back to the server's current name when it's given as a function (renamed in the dashboard)", async () => {
+		let name = 'Survival';
+		const { sender, bodies } = setup([json(400, { code: 50035 })], { fallbackUsername: () => name });
+		name = 'Creative';
+		sender.send(chat('discord_fan', 'hi'));
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(bodies().at(-1)!.username).toBe('Creative');
+	});
+
 	it("sends a post's picture, and batches only lines with the same name and picture", async () => {
 		const { sender, fetch } = setup();
 		const steve = (content: string, avatarUrl?: string): Post => ({

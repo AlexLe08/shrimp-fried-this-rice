@@ -462,4 +462,27 @@ describe('createBridge', () => {
 			expect(log).toHaveBeenCalledWith('starting two-way chat failed: Error: bug');
 		});
 	});
+
+	it("uses the server's name and pictures as they are at each post, so settings from the bot apply at once", () => {
+		const live: BridgeConfig = { ...config, avatars: { default: { kind: 'none' }, players: new Map() } };
+		const posts: Post[] = [];
+		const bridge = createBridge({ config: live, sender: { send: (post) => posts.push(post) }, log: vi.fn() });
+
+		bridge.onLines(['[12:00:00] [Server thread/INFO]: <Steve> before']);
+		bridge.flush();
+		live.serverName = 'Creative';
+		live.avatars = {
+			default: { kind: 'none' },
+			players: new Map([['steve', { kind: 'url', url: 'https://example.com/s.png' }]]),
+		};
+		bridge.onLines([
+			'[12:00:01] [Server thread/INFO]: <Steve> after',
+			'[12:00:02] [Server thread/INFO]: Stopping server',
+		]);
+		bridge.flush();
+
+		expect(posts[0]!.avatarUrl).toBeUndefined();
+		expect(posts[1]!.avatarUrl).toBe('https://example.com/s.png');
+		expect(posts[2]!.content).toBe('🔴 **Creative** is stopping');
+	});
 });

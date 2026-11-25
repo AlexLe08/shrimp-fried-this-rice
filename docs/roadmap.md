@@ -657,6 +657,16 @@ Later item), not a follow-up.
   reports, which A8f does before issuing any code. Not tried
   against a real server or through the tunnel (A8h); nothing can be
   paired until A8f.
+- **The bridge's settings, cached** (2026-11-25, last part of A8e). The
+  bot answers each helper connect with the bridge's settings (server
+  name, prefix, colour, default and per-player pictures), which the
+  helper checks field by field and puts over its config's (the
+  dashboard's win; a refused field keeps the config's), applying them at
+  once to posts, the fallback sender and `tellraw`. It keeps the last
+  ones in `mcbridge.settings.json` beside the config, tagged with the
+  bridge's id, and reads them at startup, so posts keep their name and
+  pictures while the bot is away. Not tried against a real server (A8h).
+  With this, A8e is done.
 
 ## Next up
 
@@ -694,9 +704,14 @@ them ahead of items 5 and 6.
    sealing, endpoint, pairing and dropping the links of members who
    left) is done (Done above); the relay (A8e) is under way: the bot
    reads bridge chat channels, announces the relay and catches up after
-   a restart, and the helper puts chat into the game (Done above);
-   next, the settings cache (the bridge's name, prefix, colour and
-   pictures from the bot, kept beside the config), then A8f.
+   a restart, the helper puts chat into the game, and it keeps the
+   bridge's settings (Done above): A8e is done. Next, A8f: the dashboard's
+   pages, `/minecraft link` and `/minecraft avatar`, the `!link` reports,
+   and queuing a settings message when the dashboard changes them. Its
+   checks must match the helper's (`serverNameProblem`, `isPrefix`,
+   `isColour`, a player name, `generated:0` to `generated:9`), or the
+   helper ignores the setting; and a bridge's pictures need a cap in
+   `storage.ts`, as they go with every connect answer (from review).
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the

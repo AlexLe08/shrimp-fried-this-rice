@@ -11,6 +11,15 @@ import { ConfigError, loadConfig, serverPropertiesPathOf, type BridgeConfig } fr
 import { createCrashWatcher } from './crashReports.ts';
 import { createGameRelay } from './gameRelay.ts';
 import { escapeMarkdown } from './messages.ts';
+import {
+	applySettings,
+	loadCachedSettings,
+	readSettings,
+	createSettingsSaver,
+	settingsCachePath,
+	type ReceivedSettings,
+} from './settings.ts';
+import { DEFAULT_STYLE, type ChatStyle } from './toMinecraft.ts';
 import { createSender } from './sender.ts';
 import { createTailer } from './tailer.ts';
 
@@ -40,15 +49,34 @@ try {
 	process.exit(1);
 }
 
-const sender = createSender({ fallbackUsername: config.serverName });
+const log = (message: string) => console.error(`[mcbridge] ${message}`);
+
+// The config with the dashboard's settings over it, once paired (the plan's
+// A8). bridge.ts reads the server's name and the pictures from it at each
+// post, so a change the bot sends applies at once.
+const live: BridgeConfig = { ...config };
+let style: ChatStyle = DEFAULT_STYLE;
+const cachePath = settingsCachePath(configPath);
+function useSettings(received: ReceivedSettings | null): void {
+	const applied = applySettings(config, received);
+	live.serverName = applied.serverName;
+	live.avatars = applied.avatars;
+	style = applied.style;
+}
+// The last settings the bot sent, so posts keep their name and pictures
+// while it's away; the config's until it first answers.
+if (config.bot) useSettings(await loadCachedSettings(cachePath, config.bot.bridge, log));
+const saveSettings = config.bot ? createSettingsSaver(cachePath, config.bot.bridge, log) : () => Promise.resolve();
+
+const sender = createSender({ fallbackUsername: () => live.serverName });
 
 // Problems only the server's owner can fix, in the alerts channel like the helper's others.
 function postAlert(text: string): void {
 	sender.send({
 		webhook: config.webhooks.alerts,
-		username: config.serverName,
+		username: live.serverName,
 		droppable: false,
-		content: `⚠️ **${escapeMarkdown(config.serverName)}**: ${text}`,
+		content: `⚠️ **${escapeMarkdown(live.serverName)}**: ${text}`,
 	});
 }
 
@@ -72,14 +100,20 @@ const botClient =
 	config.bot && game
 		? createBotClient({
 				bot: config.bot,
-				onChat: (chat) => game.relay(chat),
+				onChat: (chat) => game.relay(chat, style),
+				onSettings: (sent) => {
+					const received = readSettings(sent, log);
+					if (!received) return;
+					useSettings(received);
+					void saveSettings(sent);
+				},
 				onStopped: (reason) => {
 					console.error(`[mcbridge] two-way chat stopped: ${reason}`);
 					postAlert(STOPPED[reason]);
 				},
 			})
 		: null;
-const bridge = createBridge({ config, sender, ...(game ? { game } : {}) });
+const bridge = createBridge({ config: live, sender, ...(game ? { game } : {}) });
 const tailer = createTailer({
 	path: config.logPath,
 	onLines: bridge.onLines,
@@ -125,7 +159,7 @@ for (const signal of signals) {
 	process.on(signal, () => void shutdown(signal));
 }
 
-console.log(`[mcbridge] watching ${config.logPath} for ${config.serverName}`);
+console.log(`[mcbridge] watching ${config.logPath} for ${live.serverName}`);
 if (!existsSync(config.logPath)) {
 	// Not an error, and not posted: a new server has no log until it first
 	// starts. But a mistyped logPath looks exactly like this, forever.

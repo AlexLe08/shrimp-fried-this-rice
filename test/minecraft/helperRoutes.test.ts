@@ -15,7 +15,7 @@ import {
 	HELPER_VISITOR_REQUESTS_PER_MINUTE,
 	MAX_REQUEST_BYTES,
 } from '../../src/minecraft/helperRoutes.ts';
-import { type BridgeKeys, createBridge } from '../../src/minecraft/storage.ts';
+import { type BridgeKeys, createBridge, setPlayerPicture, updateBridgeSettings } from '../../src/minecraft/storage.ts';
 
 const STARTED = 1_790_000_000_000;
 const ADDRESS = '203.0.113.5';
@@ -104,6 +104,27 @@ describe("the Minecraft helper's endpoint", () => {
 		expect(
 			open(bridge.keys, 'response', { bridgeId: bridge.id, route: 'poll', replyTo: other.iv }, answer.body),
 		).toEqual({ ok: false, reason: 'forged' });
+	});
+
+	it("answers a connect with the bridge's settings, the dashboard's pictures among them", async () => {
+		const { app } = setup();
+		const bridge = pairedBridge();
+		updateBridgeSettings(bridge.id, { prefix: '[DC]', colour: 'gold', defaultPicture: 'skin' });
+		setPlayerPicture(bridge.id, 'Steve', 'generated:3');
+
+		const { message } = await call(app, bridge, 'connect', {});
+
+		expect(message).toEqual({
+			session: expect.any(String),
+			settings: {
+				kind: 'settings',
+				serverName: 'Survival',
+				prefix: '[DC]',
+				colour: 'gold',
+				defaultPicture: 'skin',
+				pictures: [{ name: 'Steve', picture: 'generated:3' }],
+			},
+		});
 	});
 
 	it('holds a poll until a message comes', async () => {

@@ -129,7 +129,12 @@ const connected: Reply = { status: 200, sealed: { session: 's1' } };
 
 function startScripted(
 	replies: Reply[],
-	extra: { url?: string; requestTimeoutMs?: number; onChat?: (chat: BotChat[]) => void } = {},
+	extra: {
+		url?: string;
+		requestTimeoutMs?: number;
+		onChat?: (chat: BotChat[]) => void;
+		onSettings?: (settings: unknown) => void;
+	} = {},
 ) {
 	const scripted = scriptedBot(replies);
 	const onChat = vi.fn<(chat: BotChat[]) => void>(extra.onChat);
@@ -141,6 +146,7 @@ function startScripted(
 		onStopped,
 		fetch: scripted.fetchFn,
 		log,
+		...(extra.onSettings ? { onSettings: extra.onSettings } : {}),
 		...(extra.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: extra.requestTimeoutMs }),
 	});
 	return { ...scripted, onChat, onStopped, log };
@@ -311,5 +317,38 @@ describe("the helper's connection, answer by answer", () => {
 		await vi.advanceTimersByTimeAsync(MAX_BACKOFF_MS * 2);
 
 		expect(requests[1]!.at - requests[0]!.at).toBe(MAX_BACKOFF_MS);
+	});
+
+	it("hands on the settings from the connect answer and the latest in a poll, and doesn't wait after a settings-only answer", async () => {
+		const onSettings = vi.fn();
+		const settings = (serverName: string) => ({ kind: 'settings', serverName });
+		const { requests } = startScripted(
+			[
+				{ status: 200, sealed: { session: 's1', settings: settings('A') } },
+				{ status: 200, sealed: { messages: [settings('B'), { kind: 'chat', name: 'x', text: 'y' }, settings('C')] } },
+				{ status: 200, sealed: { messages: [settings('D')] } },
+			],
+			{ onSettings },
+		);
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(onSettings.mock.calls.map((call) => (call[0] as { serverName: string }).serverName)).toEqual([
+			'A',
+			'C',
+			'D',
+		]);
+		expect(requests).toHaveLength(4);
+	});
+
+	it('keeps polling when applying settings throws, logging it', async () => {
+		const { requests, log } = startScripted([{ status: 200, sealed: { session: 's1', settings: {} } }], {
+			onSettings: () => {
+				throw new Error('bad');
+			},
+		});
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(log).toHaveBeenCalledWith('applying the bridge settings failed: bad');
+		expect(requests).toHaveLength(2);
 	});
 });
