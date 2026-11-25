@@ -98,6 +98,21 @@ export function getGuildBridges(guildId: string): MinecraftBridge[] {
 		.all(guildId) as MinecraftBridge[];
 }
 
+/**
+ * Bridges to catch up after a restart (decision 0010): relaying in their
+ * chat channel, with a message relayed there before. One never relayed has
+ * no point to catch up from.
+ */
+export function getBridgesToCatchUp(): MinecraftBridge[] {
+	return db
+		.prepare(
+			`SELECT * FROM minecraft_bridges
+			 WHERE announced_channel_id = chat_channel_id AND last_relayed_message_id IS NOT NULL
+			 ORDER BY created_at, id`,
+		)
+		.all() as MinecraftBridge[];
+}
+
 /** Saves a newly paired bridge under a new random id, with the default prefix, colour and pictures. */
 export function createBridge(bridge: {
 	guildId: string;

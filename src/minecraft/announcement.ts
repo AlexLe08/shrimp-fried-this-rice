@@ -1,5 +1,5 @@
 import { RESTJSONErrorCodes, WebhookClient, escapeMarkdown } from 'discord.js';
-import { getBridge, markBridgeAnnounced, type MinecraftBridge } from './storage.ts';
+import { getBridge, markBridgeAnnounced, recordRelayedMessage, type MinecraftBridge } from './storage.ts';
 
 // The relay's opt-in (decision 0006): before anything posted in a bridge's
 // chat channel goes into the game, the bot says so there, once per channel.
@@ -34,7 +34,8 @@ export function announcementText(serverName: string): string {
 }
 
 export function createAnnouncer(options: {
-	post: (post: AnnouncementPost) => Promise<void>;
+	/** Resolves with the posted message's id. */
+	post: (post: AnnouncementPost) => Promise<string>;
 	now?: () => number;
 }): Announcer {
 	const now = options.now ?? Date.now;
@@ -53,8 +54,9 @@ export function createAnnouncer(options: {
 			if ((nextTryAt.get(bridge.id) ?? 0) > now()) return;
 
 			inFlight.add(bridge.id);
+			let postedId: string;
 			try {
-				await options.post({
+				postedId = await options.post({
 					webhook: { id: webhookId, token: bridge.chat_webhook_token },
 					username: bridge.server_name,
 					content: announcementText(bridge.server_name),
@@ -79,7 +81,12 @@ export function createAnnouncer(options: {
 				if (closed) return;
 				nextTryAt.delete(bridge.id);
 				// The bridge may have been removed, or its chat moved, while posting.
-				if (getBridge(bridge.id)?.chat_channel_id === channelId) markBridgeAnnounced(bridge.id, channelId);
+				if (getBridge(bridge.id)?.chat_channel_id !== channelId) return;
+				markBridgeAnnounced(bridge.id, channelId);
+				// The catch-up after a restart starts after the last relayed message;
+				// after a move that's one in the old channel, so without this it could
+				// relay what was posted here before the announcement (decision 0006).
+				recordRelayedMessage(bridge.id, postedId);
 			} catch (error) {
 				// Posted but not recorded: the next request posts it again.
 				console.error(`Minecraft bridge ${bridge.id}: the relay was announced, but recording it failed:`, error);
@@ -101,11 +108,12 @@ function describeFailure(error: unknown): string {
 }
 
 /** Posts through the bridge's webhook with its token, which needs no permission of the bot's. */
-export async function postWithWebhook({ webhook, username, content }: AnnouncementPost): Promise<void> {
+export async function postWithWebhook({ webhook, username, content }: AnnouncementPost): Promise<string> {
 	const client = new WebhookClient(webhook);
 	try {
 		// Nothing pings: the server's name is the server owner's text.
-		await client.send({ content, username, allowedMentions: { parse: [] } });
+		const posted = await client.send({ content, username, allowedMentions: { parse: [] } });
+		return posted.id;
 	} finally {
 		client.destroy();
 	}
