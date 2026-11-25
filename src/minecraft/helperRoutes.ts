@@ -5,7 +5,8 @@ import { MINUTE_MS, createRateLimiter } from '../dashboard/rateLimit.ts';
 import type { Announcer } from './announcement.ts';
 import { ReplayGuard, open, parseEnvelope, seal } from './bridge/seal.ts';
 import type { HelperHub, PollResult } from './helperHub.ts';
-import { getBridge, type BridgeKeys } from './storage.ts';
+import { bridgeSettings } from './bridgeSettings.ts';
+import { getBridge, type BridgeKeys, type MinecraftBridge } from './storage.ts';
 
 // The helper's endpoint (decision 0009; the plan's A8, "The helper's
 // connection to the bot"), served beside the dashboard. The helper isn't a
@@ -42,7 +43,7 @@ export interface HelperRouteOptions {
 }
 
 type Reply = { status: ContentfulStatusCode; message: unknown };
-type Handler = (bridgeId: string, message: unknown, signal: AbortSignal) => Reply | Promise<Reply>;
+type Handler = (bridge: MinecraftBridge, message: unknown, signal: AbortSignal) => Reply | Promise<Reply>;
 
 export function registerHelperRoutes<E extends Env>(app: Hono<E>, options: HelperRouteOptions): void {
 	const { hub, now, visitorOf, announcer } = options;
@@ -52,15 +53,16 @@ export function registerHelperRoutes<E extends Env>(app: Hono<E>, options: Helpe
 	const bridgeRequests = createRateLimiter(BRIDGE_REQUESTS_PER_MINUTE, MINUTE_MS, now);
 
 	const handlers: Record<HelperRoute, Handler> = {
-		connect: (bridgeId, message) => {
+		connect: (bridge, message) => {
 			if (!isObject(message)) return { status: 400, message: { error: 'bad-request' } };
-			return { status: 200, message: { session: hub.connect(bridgeId) } };
+			// The settings with every connect: a restart of either end refreshes them.
+			return { status: 200, message: { session: hub.connect(bridge.id), settings: bridgeSettings(bridge) } };
 		},
-		poll: async (bridgeId, message, signal) => {
+		poll: async (bridge, message, signal) => {
 			if (!isObject(message) || typeof message['session'] !== 'string') {
 				return { status: 400, message: { error: 'bad-request' } };
 			}
-			return pollReply(await hub.poll(bridgeId, message['session'], signal));
+			return pollReply(await hub.poll(bridge.id, message['session'], signal));
 		},
 	};
 
@@ -110,7 +112,7 @@ export function registerHelperRoutes<E extends Env>(app: Hono<E>, options: Helpe
 				// Not awaited: the helper's answer doesn't wait on Discord. It's tried
 				// on every request, as a refused post is tried again later.
 				if (announcer) void announcer.ensure(bridge);
-				return reply(await handlers[route](bridge.id, opened.message, c.req.raw.signal));
+				return reply(await handlers[route](bridge, opened.message, c.req.raw.signal));
 			},
 		);
 	}
