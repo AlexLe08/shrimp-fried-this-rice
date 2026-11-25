@@ -772,6 +772,21 @@ Later item), not a follow-up.
   the settings form, so each refusal is about one player, and an empty
   picture removes one, as an empty default hands it to the config. Not
   tried against Discord or a real helper (A8h).
+- **Members' links on a Minecraft server's page** (2026-11-25, seventh
+  part of A8f). A bridge's settings page lists its links (player, the
+  member, their user id, the day they linked), each with a button that
+  removes it through `POST …/bridges/:bridgeId/links/remove`, asking
+  Discord afresh. Worked out here: the member is named from the bot's
+  member cache (filled by their messages and commands, checked in
+  discord.js 14.27's `Message.js`; emptied on a restart), with the id
+  always shown, rather than a fetch per link on every page view, which
+  would wait on Discord's rate limit with links uncapped, or a name
+  stored at linking, which goes stale; no token or page that asks
+  first, as removing twice finds nothing and the player can link again;
+  and nothing is sent to the helper, as nothing sends it linked
+  players' pictures yet (once something does, removing must tell it).
+  Nothing creates links yet, so the list stays empty until linking. Not
+  tried against Discord or on the live dashboard (A8h).
 
 ## Next up
 
@@ -813,10 +828,10 @@ them ahead of items 5 and 6.
    bridge's settings (Done above): A8e is done. A8f is under way: who
    reaches a server's Minecraft pages, a list of its bridges, adding
    one, who may manage them, regenerating and removing one, its
-   settings, and pictures for particular players (Done above). Next:
-   members' links on a bridge's page (removing any member's link), then
-   linking (codes, the `!link` reports, My Minecraft accounts,
-   `/minecraft link`) and `/minecraft avatar`.
+   settings, pictures for particular players, and members' links on a
+   bridge's page (Done above). Next: linking (codes, the `!link`
+   reports, My Minecraft accounts, `/minecraft link`) and
+   `/minecraft avatar`.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the

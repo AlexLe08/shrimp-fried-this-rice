@@ -17,12 +17,14 @@ import {
 	getBridge,
 	getMinecraftGuildSettings,
 	getPlayerPictures,
+	getBridgeLinks,
 	markBridgeAnnounced,
+	saveLink,
 	setAllowedRole,
 	setPlayerPicture,
 	updateBridgeSettings,
 } from '../../src/minecraft/storage.ts';
-import { fakeClient, fakeGuild } from './fakeGuilds.ts';
+import { fakeClient, fakeGuild, type FakeGuildPeople } from './fakeGuilds.ts';
 import { fakePairing } from './fakePairing.ts';
 import type { BridgePairing, PairAnswer } from '../../src/minecraft/dashboardPairing.ts';
 import { HelperHub, LEASE_MS, MAX_HELD_MESSAGES } from '../../src/minecraft/helperHub.ts';
@@ -914,11 +916,11 @@ describe("a Minecraft server's settings", () => {
 		setAllowedRole('g1', 'r-mc');
 	});
 
-	function settingsApp() {
+	function settingsApp(cached: FakeGuildPeople['cached'] = {}) {
 		return createApp({
 			auth,
 			client: fakeClient([
-				fakeGuild('g1', 'Shrimp Hall', members, {}, { ownerId: 'u1', roles: { u2: ['r-mc'] } }),
+				fakeGuild('g1', 'Shrimp Hall', members, {}, { ownerId: 'u1', roles: { u2: ['r-mc'] }, cached }),
 				fakeGuild('g2', 'Other Place', { u1: false }, {}, { ownerId: 'u1' }),
 			]),
 			now: () => NOW,
@@ -1329,6 +1331,112 @@ describe("a Minecraft server's settings", () => {
 			expect(pictures(bridge.id)).toEqual([]);
 		});
 	});
+	describe("members' links", () => {
+		const removePath = (bridgeId: string, guildId = 'g1') => `${settingsPath(bridgeId, guildId)}/links/remove`;
+		const linked = (bridgeId: string) => getBridgeLinks(bridgeId).map(({ name, user_id }) => ({ name, user_id }));
+		const link = (bridgeId: string, name: string, userId: string, now = NOW) =>
+			saveLink({ bridgeId, name, userId, uuid: `uuid-${name}`, now });
+
+		it('says when no one has linked a player', async () => {
+			const bridge = pairedBridge();
+
+			const text = await (await settingsApp().request(settingsPath(bridge.id), { headers: signedIn() })).text();
+
+			expect(text).toContain('<h2>Linked players</h2>');
+			expect(text).toContain('<p>No one has linked a player yet.</p>');
+			expect(text).not.toContain(`action="${removePath(bridge.id)}"`);
+		});
+
+		it('lists each link with its member, named only when the bot has met them, and a button to remove it', async () => {
+			const bridge = pairedBridge();
+			link(bridge.id, 'Steve', '111', Date.UTC(2026, 10, 25, 14, 30));
+			link(bridge.id, 'alex', '222');
+			const cached = { '111': { displayName: '<b>Stevie</b>', username: 'stevie_b' } };
+
+			const response = await settingsApp(cached).request(settingsPath(bridge.id), { headers: signedIn('u2') });
+			const text = await response.text();
+
+			expect(response.status).toBe(200);
+			expect(text).toMatch(
+				/<td>Steve<\/td>\s*<td>\s*&lt;b&gt;Stevie&lt;\/b&gt; \(@stevie_b\)\s*<\/td>\s*<td>111<\/td>\s*<td><time datetime="2026-11-25T14:30:00.000Z" title="2026-11-25 14:30 UTC">2026-11-25<\/time><\/td>/,
+			);
+			expect(text).toMatch(/<td>alex<\/td>\s*<td>\s*Not seen since the bot last restarted\s*<\/td>\s*<td>222<\/td>/);
+			expect(text).toContain(`<form method="post" action="${removePath(bridge.id)}">`);
+			expect(text).toContain('<input type="hidden" name="name" value="alex" />');
+			expect(text).not.toContain('<b>Stevie');
+			expect(text).not.toContain('No one has linked a player yet.');
+		});
+
+		it('removes one link whatever the name’s case, keeping the rest, and goes back to the settings', async () => {
+			const bridge = pairedBridge();
+			link(bridge.id, 'Steve', '111');
+			link(bridge.id, 'alex', '222');
+			const app = settingsApp();
+
+			const response = await app.request(removePath(bridge.id), save({ name: 'STEVE' }, 'u2'));
+			const again = await app.request(removePath(bridge.id), save({ name: 'STEVE' }, 'u2'));
+
+			expect(response.status).toBe(303);
+			expect(response.headers.get('location')).toBe(settingsPath(bridge.id));
+			expect(again.status).toBe(303);
+			expect(linked(bridge.id)).toEqual([{ name: 'alex', user_id: '222' }]);
+		});
+
+		it('changes nothing for a name not linked, a form without one, or the same name on another bridge', async () => {
+			const bridge = pairedBridge();
+			const other = pairedBridge('g1', 'Creative');
+			link(bridge.id, 'Steve', '111');
+			link(other.id, 'Steve', '222');
+			link(other.id, 'alex', '333');
+			const app = settingsApp();
+
+			const unknown = await app.request(removePath(bridge.id), save({ name: 'Nobody' }));
+			const empty = await app.request(removePath(bridge.id), save({}));
+			const removed = await app.request(removePath(bridge.id), save({ name: 'Steve' }));
+
+			expect([unknown.status, empty.status, removed.status]).toEqual([303, 303, 303]);
+			expect(linked(bridge.id)).toEqual([]);
+			expect(linked(other.id)).toEqual([
+				{ name: 'alex', user_id: '333' },
+				{ name: 'Steve', user_id: '222' },
+			]);
+		});
+
+		it('answers 404 for an unknown bridge and for another server’s, though the user manages both', async () => {
+			const theirs = pairedBridge('g2');
+			link(theirs.id, 'Steve', '111');
+			const app = settingsApp();
+
+			for (const path of [removePath('nope'), removePath(theirs.id)]) {
+				expect((await app.request(path, save({ name: 'Steve' }))).status).toBe(404);
+			}
+			expect(linked(theirs.id)).toEqual([{ name: 'Steve', user_id: '111' }]);
+		});
+
+		it('asks Discord afresh before removing, so a member who lost the role is refused', async () => {
+			const bridge = pairedBridge();
+			link(bridge.id, 'Steve', '111');
+			members['u2'] = 'timed out';
+
+			const response = await settingsApp().request(removePath(bridge.id), save({ name: 'Steve' }, 'u2'));
+
+			expect(response.status).toBe(404);
+			expect(linked(bridge.id)).toEqual([{ name: 'Steve', user_id: '111' }]);
+		});
+
+		it('refuses a form from another site, and a body far larger than the form', async () => {
+			const bridge = pairedBridge();
+			link(bridge.id, 'Steve', '111');
+			const app = settingsApp();
+
+			const crossSite = await app.request(removePath(bridge.id), save({ name: 'Steve' }, 'u1', 'https://evil.example'));
+			const large = await app.request(removePath(bridge.id), save({ name: 'Steve', pad: 'x'.repeat(2000) }));
+
+			expect(crossSite.status).toBe(403);
+			expect(large.status).toBe(413);
+			expect(linked(bridge.id)).toEqual([{ name: 'Steve', user_id: '111' }]);
+		});
+	});
 });
 
 describe('who may manage Minecraft servers', () => {
@@ -1610,11 +1718,12 @@ describe('route access', () => {
 		// Someone with a right, but not this one: owner routes are refused to a
 		// bridge manager who isn't the owner.
 		const other = { server: 'bridges', bridges: 'server', owner: 'bridges' } as const;
-		// What a route answers when it's done: the role, settings and pictures forms save, then redirect.
+		// What a route answers when it's done: the role, settings, pictures and links forms save, then redirect.
 		const success: Record<string, number> = {
 			'POST /servers/:guildId/minecraft/role': 303,
 			'POST /servers/:guildId/minecraft/bridges/:bridgeId': 303,
 			'POST /servers/:guildId/minecraft/bridges/:bridgeId/pictures': 303,
+			'POST /servers/:guildId/minecraft/bridges/:bridgeId/links/remove': 303,
 			'POST /servers/:guildId/minecraft/bridges/:bridgeId/remove': 303,
 		};
 		const guarded = declared.filter((entry): entry is [string, keyof typeof levels] => entry[1] in levels);

@@ -646,6 +646,21 @@ export interface BridgeSettingsView {
 	maxPictures: number;
 	/** A player's picture as sent, when it wasn't saved. */
 	pictureForm?: { values: { name: string; picture: string }; refused: PictureProblem[] };
+	/** Members' links to players, by name. */
+	links: LinkView[];
+}
+
+export interface LinkView {
+	name: string;
+	userId: string;
+	/** The member as the bot last saw them, or null when it hasn't since it started. */
+	member: { displayName: string; username: string } | null;
+	linkedAt: number;
+}
+
+function linkedOn(at: number): Page {
+	const iso = new Date(at).toISOString();
+	return html`<time datetime="${iso}" title="${iso.slice(0, 16).replace('T', ' ')} UTC">${iso.slice(0, 10)}</time>`;
 }
 
 function pictureProblemText(problem: PictureProblem, max: number): string {
@@ -666,6 +681,7 @@ export function bridgeSettingsPage(server: { id: string; name: string }, view: B
 	const refused = view.refused ?? [];
 	const picturesAction = `/servers/${server.id}/minecraft/bridges/${view.bridge.id}/pictures`;
 	const pictureForm = view.pictureForm;
+	const linksAction = `/servers/${server.id}/minecraft/bridges/${view.bridge.id}/links/remove`;
 	return layout(
 		title,
 		html`<h1>${title}</h1>
@@ -781,6 +797,45 @@ export function bridgeSettingsPage(server: { id: string; name: string }, view: B
 				</p>
 				<p><button type="submit">Set their picture</button></p>
 			</form>
+			<h2>Linked players</h2>
+			<p>
+				Members who proved a Minecraft name is theirs by typing a code in game. Removing a link puts that player back on
+				the pictures above; they can link again.
+			</p>
+			${
+				view.links.length > 0
+					? html`<table>
+							<thead>
+								<tr>
+									<th>Player</th>
+									<th>Discord member</th>
+									<th>Discord user ID</th>
+									<th>Linked</th>
+									<th></th>
+								</tr>
+							</thead>
+							<tbody>
+								${view.links.map(
+									({ name, userId, member, linkedAt }) =>
+										html`<tr>
+											<td>${name}</td>
+											<td>
+												${member ? `${member.displayName} (@${member.username})` : 'Not seen since the bot last restarted'}
+											</td>
+											<td>${userId}</td>
+											<td>${linkedOn(linkedAt)}</td>
+											<td>
+												<form method="post" action="${linksAction}">
+													<input type="hidden" name="name" value="${name}" />
+													<button type="submit">Remove</button>
+												</form>
+											</td>
+										</tr>`,
+								)}
+							</tbody>
+						</table>`
+					: html`<p>No one has linked a player yet.</p>`
+			}
 			<p><a href="/servers/${server.id}/minecraft">Back to its Minecraft servers</a></p>`,
 	);
 }

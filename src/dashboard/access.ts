@@ -14,11 +14,26 @@ export interface DashboardGuild {
 	id: string;
 	name: string;
 	ownerId: string;
-	members: { fetch(options: { user: string; force: boolean; cache: boolean }): Promise<DashboardMember> };
+	members: {
+		fetch(options: { user: string; force: boolean; cache: boolean }): Promise<DashboardMember>;
+		/**
+		 * Members the bot has met (their messages, their commands), emptied on a
+		 * restart. Without the Server Members intent it isn't told who leaves, so
+		 * it names a member here but never says whether they still are one.
+		 */
+		cache: { get(id: string): CachedMember | undefined };
+	};
 	/** Kept current by the Guilds intent, so reading a channel's name asks Discord nothing. */
 	channels: { cache: { get(id: string): { name: string } | undefined } };
 	/** Kept current by the Guilds intent too. */
 	roles: { cache: { get(id: string): DashboardRole | undefined; values(): Iterable<DashboardRole> } };
+}
+
+/** What the dashboard shows of a member it names; discord.js's GuildMember fits it. */
+export interface CachedMember {
+	/** Their server nickname, then their display name. */
+	displayName: string;
+	user: { username: string };
 }
 
 /** What the dashboard uses of a role; discord.js's Role fits it. */
