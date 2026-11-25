@@ -787,6 +787,30 @@ Later item), not a follow-up.
   players' pictures yet (once something does, removing must tell it).
   Nothing creates links yet, so the list stays empty until linking. Not
   tried against Discord or on the live dashboard (A8h).
+- **`!link` reports** (2026-11-25, first part of linking, A8f). The bot
+  takes a helper's report of a player's `!link` line at a third sealed
+  route, `POST /minecraft/link`, and answers with the text the helper
+  shows that player alone. `LinkCodes` (`minecraft/linking.ts`, memory
+  only, as the plan has it) gives six-digit codes per bridge, name
+  (without case) and member, each for 10 minutes and used once; every
+  code for a name is voided after 5 wrong ones. `answerLinkReport`
+  refuses an offline-mode server before looking at the code, asks a
+  player whose login line the helper missed to log in again (keeping the
+  code), refuses a UUID that isn't Mojang's, and saves the link with the
+  log's spelling of the name. Worked out here: a member asking for a code
+  replaces only their own for that name, not another member's, so asking
+  can't void someone else's, and two members never hold the same code for
+  one name, so a right code names who linked; the report needs no
+  session, as the seal proves the bridge, and counts against its rate
+  limit like any request; and the bot writes the player's answer rather
+  than the helper, so its wording changes with a deploy instead of with
+  every host's helper. From review: a UUID is kept in the log's form,
+  lowercase with dashes, as a link is compared with the login's UUID as a
+  string; and a wrong code counts for the name until its codes are voided,
+  even if a member asks for a new one, so asking gives no more guesses.
+  Whatever gives codes must limit how often a member asks, as `LinkCodes`
+  caps nothing. Nothing gives codes yet and the helper doesn't
+  report yet (next), so nothing changes for users.
 
 ## Next up
 
@@ -828,9 +852,10 @@ them ahead of items 5 and 6.
    bridge's settings (Done above): A8e is done. A8f is under way: who
    reaches a server's Minecraft pages, a list of its bridges, adding
    one, who may manage them, regenerating and removing one, its
-   settings, pictures for particular players, and members' links on a
-   bridge's page (Done above). Next: linking (codes, the `!link`
-   reports, My Minecraft accounts, `/minecraft link`) and
+   settings, pictures for particular players, members' links on a
+   bridge's page, and the bot taking `!link` reports (Done above).
+   Next: linking (the helper reporting `!link` lines and answering the
+   player, My Minecraft accounts, `/minecraft link`) and
    `/minecraft avatar`.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).

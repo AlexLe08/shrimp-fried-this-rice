@@ -10,12 +10,19 @@ import {
 	seal,
 } from '../../src/minecraft/bridge/seal.ts';
 import { HelperHub } from '../../src/minecraft/helperHub.ts';
+import { LinkCodes, MAX_WRONG_TRIES } from '../../src/minecraft/linking.ts';
 import {
 	BRIDGE_REQUESTS_PER_MINUTE,
 	HELPER_VISITOR_REQUESTS_PER_MINUTE,
 	MAX_REQUEST_BYTES,
 } from '../../src/minecraft/helperRoutes.ts';
-import { type BridgeKeys, createBridge, setPlayerPicture, updateBridgeSettings } from '../../src/minecraft/storage.ts';
+import {
+	type BridgeKeys,
+	createBridge,
+	getBridgeLinks,
+	setPlayerPicture,
+	updateBridgeSettings,
+} from '../../src/minecraft/storage.ts';
 
 const STARTED = 1_790_000_000_000;
 const ADDRESS = '203.0.113.5';
@@ -45,8 +52,9 @@ function pairedBridge(keys: BridgeKeys = deriveKeys(newBridgeSecret())) {
 
 function setup() {
 	const hub = new HelperHub(now);
-	const app = createApp({ auth: null, now, helpers: hub });
-	return { hub, app };
+	const linkCodes = new LinkCodes(now);
+	const app = createApp({ auth: null, now, helpers: hub, linkCodes });
+	return { hub, linkCodes, app };
 }
 
 type App = ReturnType<typeof setup>['app'];
@@ -355,6 +363,66 @@ describe("the Minecraft helper's endpoint", () => {
 			const page = await app.request('/', { headers: { 'cf-connecting-ip': ADDRESS } });
 
 			expect(page.status).toBe(200);
+		});
+	});
+
+	describe("a player's `!link` report", () => {
+		const MOJANG_UUID = '069a79f4-44e9-4726-a5be-fca90e38aaf5';
+
+		it('links the player to the member given the code, answering sealed with what to tell them', async () => {
+			const { app, linkCodes } = setup();
+			const bridge = pairedBridge();
+			const code = linkCodes.issue(bridge.id, 'Steve', 'u1');
+
+			// No session needed: the seal is what proves the bridge.
+			const answer = await call(app, bridge, 'link', { player: 'Steve', code, uuid: MOJANG_UUID, onlineMode: true });
+
+			expect(answer.status).toBe(200);
+			expect(answer.message).toEqual({
+				result: 'linked',
+				text: 'Linked Steve to your Discord account. Choose your picture in the dashboard.',
+			});
+			expect(getBridgeLinks(bridge.id)).toEqual([expect.objectContaining({ name: 'Steve', user_id: 'u1' })]);
+		});
+
+		it('checks a code only against the bridge it was given for', async () => {
+			const { app, linkCodes } = setup();
+			const given = pairedBridge();
+			const other = pairedBridge();
+			const code = linkCodes.issue(given.id, 'Steve', 'u1');
+
+			const answer = await call(app, other, 'link', { player: 'Steve', code, uuid: MOJANG_UUID, onlineMode: true });
+
+			expect(answer.message).toMatchObject({ result: 'no-code' });
+			expect(getBridgeLinks(other.id)).toEqual([]);
+		});
+
+		it('answers a report it can’t read 400, sealed, touching no code', async () => {
+			const { app, linkCodes } = setup();
+			const bridge = pairedBridge();
+			const code = linkCodes.issue(bridge.id, 'Steve', 'u1');
+
+			for (let i = 0; i < MAX_WRONG_TRIES; i++) {
+				const answer = await call(app, bridge, 'link', { player: 'Steve', code: 'guess', onlineMode: true });
+				expect(answer).toMatchObject({ status: 400, message: { error: 'bad-request' } });
+			}
+
+			expect(linkCodes.check(bridge.id, 'Steve', code, false)).toEqual({ kind: 'right', userId: 'u1' });
+		});
+
+		it("counts reports against the bridge's rate limit", async () => {
+			const { app } = setup();
+			const bridge = pairedBridge();
+			const report = { player: 'Steve', code: '123456', uuid: MOJANG_UUID, onlineMode: true };
+			for (let i = 0; i < BRIDGE_REQUESTS_PER_MINUTE - 1; i++) {
+				await call(app, bridge, i === 0 ? 'connect' : 'link', i === 0 ? {} : report);
+			}
+			expect((await call(app, bridge, 'link', report)).status).toBe(200);
+
+			const request = seal(bridge.keys, 'request', { bridgeId: bridge.id, route: 'link' }, report, time);
+			const limited = await post(app, 'link', JSON.stringify(request));
+
+			expect(limited.status).toBe(429);
 		});
 	});
 
