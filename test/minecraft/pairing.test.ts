@@ -19,8 +19,8 @@ import {
 	setAllowedRole,
 } from '../../src/minecraft/storage.ts';
 
-// The dashboard will pass discord.js's own objects; checked here by tsc, as
-// nothing in src/ calls pairing yet.
+// The dashboard passes discord.js's own objects (through dashboardPairing.ts);
+// checked here by tsc.
 export const realGuildFits = (guild: Guild): PairingGuild<GuildMember> => guild;
 
 const DASHBOARD = 'https://dash.example';

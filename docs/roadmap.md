@@ -682,6 +682,32 @@ Later item), not a follow-up.
   another prefix, which would split a server's pages and couldn't use
   `/minecraft/` (the helper's, outside the pages' rate limit). Not tried
   on the live dashboard; nothing pairs a bridge until the next part.
+- **Adding a Minecraft server** (2026-11-25, second part of A8f).
+  `/servers/:guildId/minecraft/new` pairs a bridge: a name, and the chat
+  and alerts channels from those where the member can see and manage
+  webhooks, then `pairBridge` as the member fetched fresh; the config
+  for `mcbridge` is shown once, to copy. A refusal brings the form back
+  with what to fix; a member who lost the right on the fresh check gets
+  the guard's 404. The dashboard reaches pairing through
+  `src/minecraft/dashboardPairing.ts` (`BridgePairing`), built from the
+  bot's client in `index.ts`, rather than widening the dashboard's guild
+  type to all of `PairingGuild`. Worked out here: the form asks Discord
+  for the member rather than reusing the access check's cached answer,
+  so the list names no channel they can't see (one call per form view,
+  under the per-account page limit); the config is in a read-only box
+  rather than a download, as the pages run no scripts and a download
+  would need the secret again (a `data:` link with `download` is an
+  option, not checked against browsers). The route tests now send a POST
+  as the dashboard's own form does (`Origin` and a form body), as Hono's
+  CSRF check otherwise answers 403 before the guard. From review: each
+  form carries a one-time token (`dashboard/formTokens.ts`), used up
+  before the POST pairs, so a reload or a double click can't pair twice
+  (redirecting after it can't help, as the secret is in that response
+  only); a refusal names a channel only from the member's own choices,
+  as pairing refuses a voice channel, or one the member lacks rights in,
+  before checking they can see it, which would have told an allowed-role
+  member a hidden channel's name; and the form's body is capped at
+  8 KiB. Not tried against Discord or on the live dashboard (A8h).
 
 ## Next up
 
@@ -721,9 +747,8 @@ them ahead of items 5 and 6.
    reads bridge chat channels, announces the relay and catches up after
    a restart, the helper puts chat into the game, and it keeps the
    bridge's settings (Done above): A8e is done. A8f is under way: who
-   reaches a server's Minecraft pages, and a read-only list of its
-   bridges (Done above). Next: adding a bridge (pairing and the config
-   download), who may manage (the allowed role), the bridge's settings
+   reaches a server's Minecraft pages, a list of its bridges, and adding
+   one (Done above). Next: who may manage (the allowed role), the bridge's settings
    (regenerate, remove), per-player pictures and members' links, then
    linking (codes, the `!link` reports, My Minecraft accounts,
    `/minecraft link`) and `/minecraft avatar`, and queuing a settings
@@ -762,6 +787,11 @@ them ahead of items 5 and 6.
 New tooling waits for a real bug or real friction (CLAUDE.md), and a
 runtime dependency is the owner's decision.
 
+- Two pairings of one server at once (two members, or two browser tabs
+  each with its own form) both pass `pairBridge`'s limit check before
+  their webhooks' `await`, so a server can pass its 10 bridges by a few.
+  Re-checking the count inside `createBridge`'s insert would close it
+  (from A8f's second part's review, 2026-11-25).
 - End the pre-release phase (decision 0003) before the first bridge is
   paired in a server the owner doesn't run: a reset would then delete
   other people's webhooks, keys and links. The owner's call; from
