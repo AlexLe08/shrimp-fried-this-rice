@@ -1,10 +1,12 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
+import { bodyLimit } from 'hono/body-limit';
 import { csrf } from 'hono/csrf';
 import { secureHeaders } from 'hono/secure-headers';
 import { DiscordRateLimitedError, authorizeUrl, discordUserFromCode, type AuthConfig, type Fetch } from './auth.ts';
 import { serverAccess, type DashboardClient, type ServerRights } from './access.ts';
+import { createFormTokens } from './formTokens.ts';
 import { createLoginGate } from './loginGate.ts';
 import {
 	MINUTE_MS,
@@ -100,6 +102,7 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 	const access = options.client ? serverAccess(options.client, now) : null;
 	const app = new Hono<Env>();
 	const loginGate = createLoginGate(now);
+	const formTokens = createFormTokens(now);
 	const visitorRequests = createRateLimiter(VISITOR_REQUESTS_PER_MINUTE, MINUTE_MS, now);
 	const visitorLogins = createRateLimiter(VISITOR_LOGINS_PER_WINDOW, VISITOR_LOGIN_WINDOW_MS, now);
 	const userRequests = createRateLimiter(USER_REQUESTS_PER_MINUTE, MINUTE_MS, now);
@@ -280,6 +283,7 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 	const pairingOff = (c: Context) =>
 		c.html(messagePage('Pairing unavailable', "Minecraft servers can't be paired on this bot."), 503);
 	const atLimit = (guildId: string) => getGuildBridges(guildId).length >= MAX_BRIDGES_PER_GUILD;
+	const pairForm = (guildId: string, userId: string) => `pair:${guildId}:${userId}`;
 
 	app.get('/servers/:guildId/minecraft/new', requires('bridges'), async (c) => {
 		const server = c.get('server');
@@ -287,47 +291,69 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 		if (atLimit(server.id)) return c.html(addBridgePage(server, { kind: 'limit', max: MAX_BRIDGES_PER_GUILD }));
 		// Asked of Discord, not the access cache, so the form offers exactly the
 		// channels pairing would accept from them now.
-		const choices = await options.pairing.channelChoices(server.id, c.get('session').user_id);
-		if (!choices) return notFound(c);
-		return c.html(addBridgePage(server, { kind: 'form', choices }));
-	});
-
-	app.post('/servers/:guildId/minecraft/new', requires('bridges'), async (c) => {
-		const server = c.get('server');
-		const pairing = options.pairing;
-		if (!pairing || !auth) return pairingOff(c);
 		const userId = c.get('session').user_id;
-		const body = await c.req.parseBody();
-		const field = (name: string) => {
-			const value = body[name];
-			return typeof value === 'string' ? value.trim() : '';
-		};
-		const values = { serverName: field('serverName'), chat: field('chat'), alerts: field('alerts') };
-		const channels = options.client?.guilds.cache.get(server.id)?.channels.cache;
-
-		// The form again, with what they sent and what to fix.
-		const again = async (problem: AddBridgeProblem, status: 400 | 502) => {
-			const choices = await pairing.channelChoices(server.id, userId);
-			if (!choices) return notFound(c);
-			const channelName = (id: string) => channels?.get(id)?.name ?? null;
-			return c.html(addBridgePage(server, { kind: 'form', choices, values, problem, channelName }), status);
-		};
-		if (!values.chat || !values.alerts) return again({ reason: 'no-channel' }, 400);
-
-		const answer = await pairing.pair({
-			guildId: server.id,
-			userId,
-			chatChannelId: values.chat,
-			alertsChannelId: values.alerts,
-			serverName: values.serverName,
-			dashboardUrl: auth.origin,
-		});
-		if (answer.ok) return c.html(pairedPage(server, { serverName: answer.bridge.server_name, config: answer.config }));
-		// Checked fresh, they may no longer: the same 404 as the guard's.
-		if (answer.reason === 'not-allowed') return notFound(c);
-		if (answer.reason === 'bridge-limit') return c.html(addBridgePage(server, { kind: 'limit', max: answer.max }), 400);
-		return again(answer, answer.reason === 'error' ? 502 : 400);
+		const choices = await options.pairing.channelChoices(server.id, userId);
+		if (!choices) return notFound(c);
+		const token = formTokens.issue(pairForm(server.id, userId));
+		return c.html(addBridgePage(server, { kind: 'form', token, choices }));
 	});
+
+	app.post(
+		'/servers/:guildId/minecraft/new',
+		requires('bridges'),
+		// The form has three short fields; anything much larger isn't it.
+		bodyLimit({ maxSize: 8 * 1024, onError: (c) => c.html(messagePage('Too large', 'That form was too large.'), 413) }),
+		async (c) => {
+			const server = c.get('server');
+			const pairing = options.pairing;
+			if (!pairing || !auth) return pairingOff(c);
+			const userId = c.get('session').user_id;
+			const body = await c.req.parseBody();
+			const field = (name: string) => {
+				const value = body[name];
+				return typeof value === 'string' ? value.trim() : '';
+			};
+			// Used up before anything else, synchronously, so a second submit of
+			// the same form (a reload, a double click) can't pair a second bridge.
+			if (!formTokens.take(field('form'), pairForm(server.id, userId))) {
+				return c.html(addBridgePage(server, { kind: 'sent' }), 409);
+			}
+			const values = { serverName: field('serverName'), chat: field('chat'), alerts: field('alerts') };
+
+			// Only channels this member may pick are named, from their own choices:
+			// pairing refuses some channels before checking the member can see them.
+			const again = async (problem: AddBridgeProblem, status: 400 | 502) => {
+				const choices = await pairing.channelChoices(server.id, userId);
+				if (!choices) return notFound(c);
+				const token = formTokens.issue(pairForm(server.id, userId));
+				const channelName = (id: string) => choices.find((choice) => choice.id === id)?.name ?? null;
+				return c.html(addBridgePage(server, { kind: 'form', token, choices, values, problem, channelName }), status);
+			};
+			if (!values.chat || !values.alerts) return again({ reason: 'no-channel' }, 400);
+
+			const answer = await pairing.pair({
+				guildId: server.id,
+				userId,
+				chatChannelId: values.chat,
+				alertsChannelId: values.alerts,
+				serverName: values.serverName,
+				dashboardUrl: auth.origin,
+			});
+			if (answer.ok) {
+				return c.html(pairedPage(server, { serverName: answer.bridge.server_name, config: answer.config }));
+			}
+			// Checked fresh, they may no longer: the same 404 as the guard's.
+			if (answer.reason === 'not-allowed') return notFound(c);
+			if (answer.reason === 'bridge-limit') {
+				return c.html(addBridgePage(server, { kind: 'limit', max: answer.max }), 400);
+			}
+			// Only regenerating gives these; pairing never should.
+			if (answer.reason === 'unknown-bridge' || answer.reason === 'bridge-changed') {
+				return again({ reason: 'error' }, 502);
+			}
+			return again(answer, answer.reason === 'error' ? 502 : 400);
+		},
+	);
 
 	app.post('/logout', (c) => {
 		endSession(getCookie(c, SESSION_COOKIE, 'host'));

@@ -226,12 +226,17 @@ export function minecraftPage(
 
 /** Why a bridge wasn't paired, for the form to say what to fix. */
 export type AddBridgeProblem =
-	{ reason: 'no-channel' } | Exclude<PairingRefusal, { reason: 'not-allowed' } | { reason: 'bridge-limit' }>;
+	| { reason: 'no-channel' }
+	| Exclude<PairingRefusal, { reason: 'not-allowed' | 'bridge-limit' | 'unknown-bridge' | 'bridge-changed' }>;
 
 export type AddBridgeView =
 	| { kind: 'limit'; max: number }
+	/** The form's one-time token was already used, or has expired. */
+	| { kind: 'sent' }
 	| {
 			kind: 'form';
+			/** Used up by the POST, so the form pairs once (formTokens.ts). */
+			token: string;
 			choices: ChannelChoice[];
 			/** What was sent, kept when the form comes back with a problem. */
 			values?: { serverName: string; chat: string; alerts: string };
@@ -268,8 +273,6 @@ function problemText(problem: AddBridgeProblem, channelName: (id: string) => str
 				? html`${channel(problem.channelId)} already has 15 webhooks, Discord's most for a channel. Delete one in its
 					settings (Integrations), or pick another channel.`
 				: "This Discord server already has 1000 webhooks, Discord's most for a server. Delete some in Server Settings (Integrations).";
-		case 'unknown-bridge':
-		case 'bridge-changed':
 		case 'error':
 			return 'Discord or the bot failed, and nothing was paired. Please try again.';
 	}
@@ -287,6 +290,17 @@ function channelOptions(choices: ChannelChoice[], selected: string | undefined):
 export function addBridgePage(server: { id: string; name: string }, view: AddBridgeView): Page {
 	const title = `${server.name}: add a Minecraft server`;
 	const back = html`<p><a href="/servers/${server.id}/minecraft">Back to its Minecraft servers</a></p>`;
+	if (view.kind === 'sent') {
+		return layout(
+			title,
+			html`<h1>${title}</h1>
+				<p>
+					That form was already sent, or has expired. If it paired a Minecraft server, it's listed on its Minecraft
+					page; otherwise, load the form again.
+				</p>
+				${back}`,
+		);
+	}
 	if (view.kind === 'limit') {
 		return layout(
 			title,
@@ -306,6 +320,7 @@ export function addBridgePage(server: { id: string; name: string }, view: AddBri
 							There's no channel to pick: you need View Channel and Manage Webhooks in a text or announcement channel.
 						</p>`
 					: html`<form method="post" action="/servers/${server.id}/minecraft/new">
+							<input type="hidden" name="form" value="${view.token}" />
 							<p>
 								<label
 									>Minecraft server's name, shown on its posts in Discord and in game

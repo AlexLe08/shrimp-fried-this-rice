@@ -699,8 +699,15 @@ Later item), not a follow-up.
   would need the secret again (a `data:` link with `download` is an
   option, not checked against browsers). The route tests now send a POST
   as the dashboard's own form does (`Origin` and a form body), as Hono's
-  CSRF check otherwise answers 403 before the guard. Not tried against
-  Discord or on the live dashboard (A8h).
+  CSRF check otherwise answers 403 before the guard. From review: each
+  form carries a one-time token (`dashboard/formTokens.ts`), used up
+  before the POST pairs, so a reload or a double click can't pair twice
+  (redirecting after it can't help, as the secret is in that response
+  only); a refusal names a channel only from the member's own choices,
+  as pairing refuses a voice channel, or one the member lacks rights in,
+  before checking they can see it, which would have told an allowed-role
+  member a hidden channel's name; and the form's body is capped at
+  8 KiB. Not tried against Discord or on the live dashboard (A8h).
 
 ## Next up
 
@@ -780,6 +787,11 @@ them ahead of items 5 and 6.
 New tooling waits for a real bug or real friction (CLAUDE.md), and a
 runtime dependency is the owner's decision.
 
+- Two pairings of one server at once (two members, or two browser tabs
+  each with its own form) both pass `pairBridge`'s limit check before
+  their webhooks' `await`, so a server can pass its 10 bridges by a few.
+  Re-checking the count inside `createBridge`'s insert would close it
+  (from A8f's second part's review, 2026-11-25).
 - End the pre-release phase (decision 0003) before the first bridge is
   paired in a server the owner doesn't run: a reset would then delete
   other people's webhooks, keys and links. The owner's call; from
