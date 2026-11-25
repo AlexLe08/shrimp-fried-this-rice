@@ -7,7 +7,8 @@ import { createBridge, getBridge, markBridgeAnnounced } from '../../src/minecraf
 
 beforeEach(() => {
 	__resetForTests();
-	// The relay's rate limit runs on Date.now, so each test starts in a new second.
+	// The relay's rate limit runs on Date.now and outlives a test; tests stay
+	// apart as each bridge has a new random id, the limit's key.
 	vi.useFakeTimers();
 	vi.setSystemTime(Date.now() + 10_000);
 });
@@ -110,6 +111,7 @@ describe('relayMessage', () => {
 
 		relayMessage(message({ webhookId: 'wh-chat' }), hub);
 		relayMessage(message({ author: { id: 'app', bot: true, displayName: 'App' } }), hub);
+		relayMessage(message({ author: { id: 'discord', bot: false, system: true, displayName: 'Discord' } }), hub);
 		relayMessage(message({ type: MessageType.ChannelPinnedMessage }), hub);
 		relayMessage(message({ type: MessageType.UserJoin }), hub);
 		relayMessage(message({ type: MessageType.ChatInputCommand }), hub);
@@ -180,10 +182,17 @@ describe('relayMessage', () => {
 		const quiet = bridgeIn('g2');
 		const { hub, deliver } = fakeHub();
 
-		for (let i = 0; i < RELAYED_PER_SECOND + 2; i++) relayMessage(message(), hub);
+		const sentIds: string[] = [];
+		for (let i = 0; i < RELAYED_PER_SECOND + 2; i++) {
+			const sent = message();
+			sentIds.push(sent.id);
+			relayMessage(sent, hub);
+		}
 		relayMessage(message({ guildId: 'g2' }), hub);
 		expect(deliver.mock.calls.filter((call) => call[0] === busy.id)).toHaveLength(RELAYED_PER_SECOND);
 		expect(deliver.mock.calls.filter((call) => call[0] === quiet.id)).toHaveLength(1);
+		// The last one let through, not the last one sent.
+		expect(getBridge(busy.id)?.last_relayed_message_id).toBe(sentIds[RELAYED_PER_SECOND - 1]);
 
 		vi.advanceTimersByTime(1000);
 		relayMessage(message(), hub);

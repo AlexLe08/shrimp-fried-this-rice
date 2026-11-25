@@ -9,7 +9,7 @@ import { getGuildBridges, recordRelayedMessage } from './storage.ts';
 // (bridge/toMinecraft.ts), cleaning and cutting the text there. Chat is
 // passed on in memory only: never stored or logged.
 
-/** More than this many a second into one bridge's game are dropped. */
+/** More than this many in a one-second window into one bridge's game are dropped. */
 export const RELAYED_PER_SECOND = 5;
 
 /** A chat message for the helper, as it goes into its poll's answer. */
@@ -43,12 +43,14 @@ export function relayMessage(message: Message, hub: HelperHub): void {
 
 // Webhooks are left out, the bridge's own posts of game chat among them, or
 // each line would echo back into the game; so are apps and Discord's own
-// messages (pins, joins, boosts), and a slash command's reply.
+// messages (pins, joins, boosts, or any from its system user), and a slash
+// command's reply.
 function isMemberChat(message: Message): boolean {
 	return (
 		(message.type === MessageType.Default || message.type === MessageType.Reply) &&
 		message.webhookId === null &&
-		!message.author.bot
+		!message.author.bot &&
+		!message.author.system
 	);
 }
 
@@ -58,7 +60,7 @@ function isMemberChat(message: Message): boolean {
  * `[sticker]` for what can't be shown in game, and `(reply to Name)`. Null
  * when nothing is left to show, as for a poll or a forwarded message.
  */
-export function chatFor(message: Message<true>): RelayedChat | null {
+function chatFor(message: Message<true>): RelayedChat | null {
 	const parts: string[] = [];
 	if (message.cleanContent) parts.push(message.cleanContent);
 	for (const attachment of message.attachments.values()) {

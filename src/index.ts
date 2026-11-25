@@ -1,6 +1,7 @@
-import { Client, Collection, GatewayIntentBits } from 'discord.js';
+import { Client, Collection } from 'discord.js';
 import 'dotenv/config';
 
+import { clientOptions } from './core/clientOptions.ts';
 import { shutdown } from './core/shutdown.ts';
 import { toEventListener } from './core/eventListener.ts';
 import { findAreaModules, loadCommands } from './core/loadCommands.ts';
@@ -8,19 +9,7 @@ import type { Event } from './core/types/event.ts';
 import { dashboardPortFromEnv, startDashboard } from './dashboard/server.ts';
 import { authConfigFromEnv } from './dashboard/auth.ts';
 
-// GuildExpressions keeps each server's emoji current after startup, so an
-// emoji added since then isn't warned about as one the bot can't use.
-// GuildMessages and MessageContent let it read bridges' chat channels for the
-// Minecraft relay (decision 0006). Message Content is privileged: an app
-// without it switched on in the Developer Portal is refused at login.
-const client = new Client({
-	intents: [
-		GatewayIntentBits.Guilds,
-		GatewayIntentBits.GuildExpressions,
-		GatewayIntentBits.GuildMessages,
-		GatewayIntentBits.MessageContent,
-	],
-});
+const client = new Client(clientOptions);
 
 client.commands = new Collection();
 
