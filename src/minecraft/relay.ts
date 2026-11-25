@@ -39,17 +39,19 @@ export function relayMessage(message: Message, hub: HelperHub): void {
 		// The catch-up may have relayed it already, fetched before the gateway brought it.
 		if (!isLaterMessage(message.id, bridge.last_relayed_message_id)) continue;
 		const holding = held.get(bridge.id);
+		if (holding) holding.firstLiveId ??= message.id;
+		// Counted as it arrives, held or not: counted on release instead, a
+		// burst would leave all but the first 5 of what waited.
+		if (relayed.take(bridge.id) > 0) continue;
 		if (holding) {
-			holding.firstLiveId ??= message.id;
 			if (holding.messages.length < MAX_HELD_LIVE) holding.messages.push({ id: message.id, chat });
 			continue;
 		}
-		send(bridge.id, message.id, chat, hub);
+		deliver(bridge.id, message.id, chat, hub);
 	}
 }
 
-function send(bridgeId: string, messageId: string, chat: RelayedChat, hub: HelperHub): void {
-	if (relayed.take(bridgeId) > 0) return;
+function deliver(bridgeId: string, messageId: string, chat: RelayedChat, hub: HelperHub): void {
 	if (hub.deliver(bridgeId, chat)) recordRelayedMessage(bridgeId, messageId);
 }
 
@@ -60,8 +62,8 @@ export function isLaterMessage(id: string, last: string | null): boolean {
 
 // While a bridge catches up after a restart (decision 0010), its live
 // messages wait, so the caught-up ones reach the game first, and the first
-// of them marks where the catch-up stops. A catch-up takes a REST call or
-// two; at the relay's 5 a second, more than this would be dropped anyway.
+// of them marks where the catch-up stops. The catch-up gives up after 10 s
+// (catchUp.ts), which at 5 a second is this many.
 const MAX_HELD_LIVE = 50;
 const held = new Map<string, { firstLiveId: string | null; messages: { id: string; chat: RelayedChat }[] }>();
 
@@ -75,12 +77,12 @@ export function firstLiveMessageId(bridgeId: string): string | null {
 	return held.get(bridgeId)?.firstLiveId ?? null;
 }
 
-/** Sends the bridge's held live messages in order, as relayMessage would have; `hub` null drops them (shutdown). */
+/** Sends the bridge's held live messages in order (already counted against the rate); `hub` null drops them (shutdown). */
 export function releaseLiveMessages(bridgeId: string, hub: HelperHub | null): void {
 	const holding = held.get(bridgeId);
 	held.delete(bridgeId);
 	if (!holding || !hub) return;
-	for (const { id, chat } of holding.messages) send(bridgeId, id, chat, hub);
+	for (const { id, chat } of holding.messages) deliver(bridgeId, id, chat, hub);
 }
 
 // Webhooks are left out, the bridge's own posts of game chat among them, or

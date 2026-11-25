@@ -5,23 +5,33 @@ import {
 	CATCH_UP_HOLD_MS,
 	CATCH_UP_MAX_AGE_MS,
 	CATCH_UP_MAX_MESSAGES,
+	CATCH_UP_TIMEOUT_MS,
 	catchUpBridges,
 	type CatchUpClient,
 } from '../../src/minecraft/catchUp.ts';
+import { createAnnouncer } from '../../src/minecraft/announcement.ts';
 import type { HelperHub } from '../../src/minecraft/helperHub.ts';
-import { relayMessage } from '../../src/minecraft/relay.ts';
+import { RELAYED_PER_SECOND, relayMessage } from '../../src/minecraft/relay.ts';
 import {
 	createBridge,
 	getBridge,
 	getBridgesToCatchUp,
 	markBridgeAnnounced,
 	recordRelayedMessage,
+	replaceBridgeConnection,
 } from '../../src/minecraft/storage.ts';
 
 const NOW = 1_790_000_000_000;
 
+// The server's member cache, which discord.js's Message#member reads; a
+// message from the API brings no member of its own.
+const memberCache = new Map<string, { displayName: string }>();
+// Server nicknames Discord answers a member fetch with; anyone else has left.
+const nicknames = new Map([['u1', 'Alex (nick)']]);
+
 beforeEach(() => {
 	__resetForTests();
+	memberCache.clear();
 	vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
@@ -42,7 +52,9 @@ function message(id: string, overrides: Record<string, unknown> = {}): Message<t
 		type: MessageType.Default,
 		webhookId: null,
 		author: { id: 'u1', bot: false, system: false, displayName: 'alex' },
-		member: { displayName: 'Alex' },
+		get member() {
+			return memberCache.get((this as { author: { id: string } }).author.id) ?? null;
+		},
 		guildId: 'g1',
 		channelId: 'chat',
 		guild: { members: { cache: new Collection() } },
@@ -84,9 +96,20 @@ function fakeClient(messages: Message<true>[], gate?: Promise<void>) {
 			return new Collection([...messages].reverse().map((m) => [m.id, m]));
 		},
 	);
-	const channel = { isTextBased: () => true, isDMBased: () => false, messages: { fetch: fetchMessages } };
+	const fetchMember = vi.fn(async (id: string) => {
+		const nickname = nicknames.get(id);
+		if (!nickname) throw Object.assign(new Error('Unknown Member'), { code: 10007 });
+		memberCache.set(id, { displayName: nickname });
+		return memberCache.get(id);
+	});
+	const channel = {
+		isTextBased: () => true,
+		isDMBased: () => false,
+		messages: { fetch: fetchMessages },
+		guild: { members: { fetch: fetchMember } },
+	};
 	const client = { channels: { fetch: vi.fn(async () => channel) } };
-	return { client: client as unknown as CatchUpClient, fetchMessages };
+	return { client: client as unknown as CatchUpClient, fetchMessages, fetchMember };
 }
 
 const texts = (deliver: ReturnType<typeof fakeHub>['deliver']) =>
@@ -212,5 +235,90 @@ describe('catching up after a restart', () => {
 		markBridgeAnnounced(moved.id, 'old-chat');
 
 		expect(getBridgesToCatchUp().map((bridge) => bridge.id)).toEqual([relaying.id]);
+	});
+
+	it("shows each author under their server nickname, asked of Discord once, or their own name if they've left", async () => {
+		relayingBridge(idAt(100));
+		const { client, fetchMember } = fakeClient([
+			message(idAt(50)),
+			message(idAt(40)),
+			message(idAt(30), { author: { id: 'gone', bot: false, system: false, displayName: 'left_user' } }),
+		]);
+		const { hub, deliver } = fakeHub();
+
+		await catchUpBridges(client, hub, NOW);
+
+		expect(deliver.mock.calls.map((call) => (call[1] as { name: string }).name)).toEqual([
+			'Alex (nick)',
+			'Alex (nick)',
+			'left_user',
+		]);
+		expect(fetchMember.mock.calls.map((call) => call[0]).sort()).toEqual(['gone', 'u1']);
+	});
+
+	it('lets through every live message held that the rate allows as it arrived, not just 5 at release', async () => {
+		vi.useFakeTimers({ now: NOW });
+		try {
+			relayingBridge(idAt(100));
+			let open!: () => void;
+			const { client } = fakeClient([], new Promise((resolve) => (open = resolve)));
+			const { hub, deliver } = fakeHub();
+
+			const catchingUp = catchUpBridges(client, hub, NOW);
+			const live: Message<true>[] = [];
+			for (let i = 0; i < RELAYED_PER_SECOND + 1; i++) live.push(message(idAt(-1 - i)));
+			for (const m of live) relayMessage(m, hub);
+			await vi.advanceTimersByTimeAsync(1000);
+			const later = [message(idAt(-20)), message(idAt(-21))];
+			for (const m of later) relayMessage(m, hub);
+			open();
+			await catchingUp;
+
+			// The sixth in the first second is dropped, as it would be live.
+			expect(texts(deliver)).toEqual([...live.slice(0, RELAYED_PER_SECOND), ...later].map((m) => `text ${m.id}`));
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it(`lets live messages go after ${CATCH_UP_TIMEOUT_MS / 1000} s, and skips a catch-up that answers later`, async () => {
+		vi.useFakeTimers({ now: NOW });
+		try {
+			const bridge = relayingBridge(idAt(100));
+			let open!: () => void;
+			const { client } = fakeClient([message(idAt(50))], new Promise((resolve) => (open = resolve)));
+			const { hub, deliver } = fakeHub();
+
+			const catchingUp = catchUpBridges(client, hub, NOW);
+			const live = message(idAt(-1));
+			relayMessage(live, hub);
+			await vi.advanceTimersByTimeAsync(CATCH_UP_TIMEOUT_MS);
+			expect(texts(deliver)).toEqual([`text ${live.id}`]);
+
+			open();
+			await catchingUp;
+			expect(deliver).toHaveBeenCalledOnce();
+			expect(getBridge(bridge.id)?.last_relayed_message_id).toBe(live.id);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('relays nothing posted in a new chat channel before its announcement (decision 0006)', async () => {
+		const bridge = relayingBridge(idAt(200));
+		replaceBridgeConnection(bridge.id, { chat: { channelId: 'new-chat', webhookId: 'wh-new', token: 'tok-new' } });
+		const beforeAnnouncement = message(idAt(60), { channelId: 'new-chat' });
+		const announcementId = idAt(50);
+		await createAnnouncer({ post: () => Promise.resolve(announcementId), now: () => NOW }).ensure(
+			getBridge(bridge.id)!,
+		);
+		const afterAnnouncement = message(idAt(40), { channelId: 'new-chat' });
+		const { client, fetchMessages } = fakeClient([beforeAnnouncement, afterAnnouncement]);
+		const { hub, deliver } = fakeHub();
+
+		await catchUpBridges(client, hub, NOW);
+
+		expect(fetchMessages.mock.calls[0]![0].after).toBe(announcementId);
+		expect(texts(deliver)).toEqual([`text ${afterAnnouncement.id}`]);
 	});
 });

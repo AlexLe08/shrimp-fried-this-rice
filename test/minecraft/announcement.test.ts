@@ -42,13 +42,16 @@ function paired(): MinecraftBridge {
 
 const fresh = (bridge: MinecraftBridge) => getBridge(bridge.id)!;
 
+// The id Discord gives the posted announcement.
+const POSTED = '1400000000000000000';
+
 function discordError(code: number) {
 	return Object.assign(new Error('refused'), { code });
 }
 
 describe('the relay announcement', () => {
 	it("posts through the chat webhook under the server's name, then records the channel", async () => {
-		const post = vi.fn<(post: AnnouncementPost) => Promise<void>>(() => Promise.resolve());
+		const post = vi.fn<(post: AnnouncementPost) => Promise<string>>(() => Promise.resolve(POSTED));
 		const bridge = paired();
 
 		await createAnnouncer({ post, now }).ensure(bridge);
@@ -59,10 +62,12 @@ describe('the relay announcement', () => {
 			content: announcementText('Survival'),
 		});
 		expect(fresh(bridge).announced_channel_id).toBe('chat');
+		// So a catch-up after a restart starts no earlier than the announcement.
+		expect(fresh(bridge).last_relayed_message_id).toBe(POSTED);
 	});
 
 	it('posts nothing once announced in the chat channel, and again once the chat has moved', async () => {
-		const post = vi.fn(() => Promise.resolve());
+		const post = vi.fn(() => Promise.resolve(POSTED));
 		const announcer = createAnnouncer({ post, now });
 		const bridge = paired();
 		markBridgeAnnounced(bridge.id, 'chat');
@@ -77,7 +82,7 @@ describe('the relay announcement', () => {
 
 	it('posts once when two requests ask at the same time', async () => {
 		let finish!: () => void;
-		const post = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
+		const post = vi.fn(() => new Promise<string>((resolve) => (finish = () => resolve(POSTED))));
 		const announcer = createAnnouncer({ post, now });
 		const bridge = paired();
 
@@ -90,7 +95,7 @@ describe('the relay announcement', () => {
 	});
 
 	it(`tries a refused post again only after ${ANNOUNCEMENT_RETRY_MS / 60_000} minutes`, async () => {
-		const post = vi.fn().mockRejectedValueOnce(discordError(500)).mockResolvedValue(undefined);
+		const post = vi.fn().mockRejectedValueOnce(discordError(500)).mockResolvedValue(POSTED);
 		const announcer = createAnnouncer({ post, now });
 		const bridge = paired();
 
@@ -116,7 +121,7 @@ describe('the relay announcement', () => {
 		await announcer.ensure(bridge);
 		expect(post).toHaveBeenCalledOnce();
 
-		post.mockResolvedValue(undefined);
+		post.mockResolvedValue(POSTED);
 		replaceBridgeConnection(bridge.id, {
 			chat: { channelId: 'chat', webhookId: 'wh-chat-2', token: 'tok-chat-2' },
 			alerts: { channelId: 'alerts', webhookId: 'wh-alerts-2', token: 'tok-alerts-2' },
@@ -129,7 +134,7 @@ describe('the relay announcement', () => {
 
 	it('records nothing for a post that finishes after shutdown began, and posts nothing after it', async () => {
 		let finish!: () => void;
-		const post = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
+		const post = vi.fn(() => new Promise<string>((resolve) => (finish = () => resolve(POSTED))));
 		const announcer = createAnnouncer({ post, now });
 		const bridge = paired();
 
@@ -145,8 +150,8 @@ describe('the relay announcement', () => {
 
 	it('records nothing if the chat moved while posting, and then announces in the new channel', async () => {
 		let finish!: () => void;
-		const post = vi.fn<(post: AnnouncementPost) => Promise<void>>(
-			() => new Promise<void>((resolve) => (finish = resolve)),
+		const post = vi.fn<(post: AnnouncementPost) => Promise<string>>(
+			() => new Promise<string>((resolve) => (finish = () => resolve(POSTED))),
 		);
 		const announcer = createAnnouncer({ post, now });
 		const bridge = paired();
@@ -190,10 +195,12 @@ describe('the relay announcement', () => {
 	});
 
 	it('sends with the webhook’s token and allows no mention to ping', async () => {
-		const send = vi.spyOn(WebhookClient.prototype, 'send').mockResolvedValue({} as never);
+		const send = vi.spyOn(WebhookClient.prototype, 'send').mockResolvedValue({ id: POSTED } as never);
 		const destroy = vi.spyOn(WebhookClient.prototype, 'destroy');
 
-		await postWithWebhook({ webhook: { id: '123', token: 'tok' }, username: 'Survival', content: '@everyone hi' });
+		await expect(
+			postWithWebhook({ webhook: { id: '123', token: 'tok' }, username: 'Survival', content: '@everyone hi' }),
+		).resolves.toBe(POSTED);
 
 		expect(send).toHaveBeenCalledExactlyOnceWith({
 			content: '@everyone hi',
