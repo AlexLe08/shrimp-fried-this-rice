@@ -92,13 +92,15 @@ the workflow, indexed in its `README.md`.
   `dashboard/` holds the web dashboard, served on `127.0.0.1` behind
   `cloudflared` (decisions 0008 and 0009). Every route it serves is
   listed in `ROUTE_ACCESS` (`src/dashboard/app.ts`) as public, signed-in,
-  server, bridges or helper (the Minecraft helper's sealed routes under
+  server, bridges, owner or helper (the Minecraft helper's sealed routes under
   `/minecraft/`, `src/minecraft/helperRoutes.ts`), which a test checks; a page about one server goes under
   `/servers/:guildId`, where the guard admits a member with a right there
   before its handler runs, and the route itself requires its own:
-  `requires('server')` (Manage Server) or `requires('bridges')` (the
+  `requires('server')` (Manage Server), `requires('bridges')` (the
   server's owner or allowed role,
-  [decision 0013](docs/decisions/0013-bridge-pages-by-owner-or-allowed-role.md)).
+  [decision 0013](docs/decisions/0013-bridge-pages-by-owner-or-allowed-role.md))
+  or `requires('owner')` (the owner alone). A route that changes something
+  checks again with `rightsIn(…, { fresh: true })` (decision 0012).
   `src/index.ts` and `src/deploy-commands.ts` stay at the top of `src/`:
   the VM's systemd unit starts `./src/index.ts`, so moving it would leave
   the bot down after the deploy.
