@@ -32,7 +32,14 @@ export function weakPasswordReason(password: string): string | null {
 	return null;
 }
 
-export type RelayOffReason = RconOffReason | 'unreadable' | 'malformed' | 'weak-password' | 'login-refused';
+export type RelayOffReason =
+	| RconOffReason
+	| 'unreadable'
+	| 'malformed'
+	| 'weak-password'
+	| 'login-refused'
+	/** Not off: RCON keeps trying, and chat goes in once it connects. */
+	| 'unreachable';
 
 export interface GameRelayOptions {
 	propertiesPath: string;
@@ -88,6 +95,10 @@ export function createGameRelay(options: GameRelayOptions): GameRelay {
 	function off(reason: RelayOffReason, message: string): void {
 		on = false;
 		log(`two-way chat is off: ${message}`);
+		alertOnce(reason, message);
+	}
+
+	function alertOnce(reason: RelayOffReason, message: string): void {
 		if (alerted.has(reason)) return;
 		alerted.add(reason);
 		options.alert(reason, message);
@@ -183,9 +194,11 @@ export function createGameRelay(options: GameRelayOptions): GameRelay {
 				return;
 			}
 
+			const host = options.rconOverride?.host ?? '127.0.0.1';
+			const port = options.rconOverride?.port ?? settings.rcon.port;
 			const connection = makeRcon({
-				host: options.rconOverride?.host ?? '127.0.0.1',
-				port: options.rconOverride?.port ?? settings.rcon.port,
+				host,
+				port,
 				password: settings.rcon.password,
 				log,
 				onLoginRefused: () =>
@@ -193,6 +206,11 @@ export function createGameRelay(options: GameRelayOptions): GameRelay {
 						'login-refused',
 						'the server refused rcon.password, so messages from Discord can\'t reach the game. If it was changed while the server ran, restart the server, which reads it only as it starts; if "rcon" in mcbridge.json points at another server, fix it and restart mcbridge.',
 					),
+				onUnreachable: () => {
+					const message = `RCON hasn't answered on ${host}:${port} for 2 minutes, so messages from Discord aren't reaching the game. In Docker, publish the port on 127.0.0.1 and set "rcon" in mcbridge.json to it; with server-ip set, put that address in "rcon". mcbridge keeps trying.`;
+					log(message);
+					alertOnce('unreachable', message);
+				},
 			});
 			rcon = connection;
 			on = true;
