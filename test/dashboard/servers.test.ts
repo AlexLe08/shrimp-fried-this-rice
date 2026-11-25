@@ -1382,6 +1382,26 @@ describe("a Minecraft server's settings", () => {
 			expect(linked(bridge.id)).toEqual([{ name: 'alex', user_id: '222' }]);
 		});
 
+		it('changes nothing for a name not linked, a form without one, or the same name on another bridge', async () => {
+			const bridge = pairedBridge();
+			const other = pairedBridge('g1', 'Creative');
+			link(bridge.id, 'Steve', '111');
+			link(other.id, 'Steve', '222');
+			link(other.id, 'alex', '333');
+			const app = settingsApp();
+
+			const unknown = await app.request(removePath(bridge.id), save({ name: 'Nobody' }));
+			const empty = await app.request(removePath(bridge.id), save({}));
+			const removed = await app.request(removePath(bridge.id), save({ name: 'Steve' }));
+
+			expect([unknown.status, empty.status, removed.status]).toEqual([303, 303, 303]);
+			expect(linked(bridge.id)).toEqual([]);
+			expect(linked(other.id)).toEqual([
+				{ name: 'alex', user_id: '333' },
+				{ name: 'Steve', user_id: '222' },
+			]);
+		});
+
 		it('answers 404 for an unknown bridge and for another server’s, though the user manages both', async () => {
 			const theirs = pairedBridge('g2');
 			link(theirs.id, 'Steve', '111');

@@ -575,8 +575,8 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 		return c.redirect(`/servers/${server.id}/minecraft/bridges/${bridge.id}`, 303);
 	});
 
-	// Any member's link, by the player's name (the plan's A8 lets a bridge's
-	// managers). No token or page that asks first: removing twice finds
+	// Any member's link, by the player's name: the plan's A8 lets a bridge's
+	// managers remove any, not only their own. No token or page that asks first: removing twice finds
 	// nothing, and the player can link again. Nothing goes to the helper, as
 	// nothing sends it linked players' pictures yet; once something does,
 	// removing a link must tell it too.

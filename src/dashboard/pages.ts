@@ -809,7 +809,7 @@ export function bridgeSettingsPage(server: { id: string; name: string }, view: B
 								<tr>
 									<th>Player</th>
 									<th>Discord member</th>
-									<th>Discord user id</th>
+									<th>Discord user ID</th>
 									<th>Linked</th>
 									<th></th>
 								</tr>
