@@ -20,6 +20,7 @@ import {
 } from './rateLimit.ts';
 import {
 	addBridgePage,
+	bridgeSettingsPage,
 	homePage,
 	messagePage,
 	minecraftPage,
@@ -40,8 +41,9 @@ import { SESSION_LIFETIME_MS, type DashboardSession } from './storage.ts';
 import { MAX_REMINDERS_PER_GUILD, getGuildReminders, isGuildMasterEnabled } from '../reminders/storage.ts';
 import { reminderState } from '../reminders/reminderState.ts';
 import type { Announcer } from '../minecraft/announcement.ts';
+import { bridgeSettings, checkSettingsChange } from '../minecraft/bridgeSettings.ts';
 import type { BridgePairing } from '../minecraft/dashboardPairing.ts';
-import { HelperHub } from '../minecraft/helperHub.ts';
+import { HelperHub, LEASE_MS, POLL_HOLD_MS } from '../minecraft/helperHub.ts';
 import { registerHelperRoutes } from '../minecraft/helperRoutes.ts';
 import {
 	MAX_BRIDGES_PER_GUILD,
@@ -49,6 +51,7 @@ import {
 	getGuildBridges,
 	getMinecraftGuildSettings,
 	setAllowedRole,
+	updateBridgeSettings,
 } from '../minecraft/storage.ts';
 
 export interface AppOptions {
@@ -93,6 +96,8 @@ export const ROUTE_ACCESS = {
 	'POST /servers/:guildId/minecraft/new': 'bridges',
 	'GET /servers/:guildId/minecraft/role': 'owner',
 	'POST /servers/:guildId/minecraft/role': 'owner',
+	'GET /servers/:guildId/minecraft/bridges/:bridgeId': 'bridges',
+	'POST /servers/:guildId/minecraft/bridges/:bridgeId': 'bridges',
 	'GET /servers/:guildId/minecraft/bridges/:bridgeId/regenerate': 'bridges',
 	'POST /servers/:guildId/minecraft/bridges/:bridgeId/regenerate': 'bridges',
 	'GET /servers/:guildId/minecraft/bridges/:bridgeId/remove': 'bridges',
@@ -444,6 +449,75 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 		maxSize: 1024,
 		onError: (c) => c.html(messagePage('Too large', 'That form was too large.'), 413),
 	});
+
+	app.get('/servers/:guildId/minecraft/bridges/:bridgeId', requires('bridges'), (c) => {
+		const bridge = bridgeIn(c);
+		if (!bridge) return notFound(c);
+		return c.html(
+			bridgeSettingsPage(c.get('server'), {
+				bridge: { id: bridge.id, serverName: bridge.server_name },
+				values: {
+					serverName: bridge.server_name,
+					prefix: bridge.prefix,
+					colour: bridge.colour,
+					defaultPicture: bridge.default_picture ?? '',
+				},
+			}),
+		);
+	});
+
+	// No one-time token: saving the same settings twice changes nothing, and
+	// the answer holds nothing secret.
+	app.post(
+		'/servers/:guildId/minecraft/bridges/:bridgeId',
+		requires('bridges'),
+		// Four short fields; a name of 80 characters percent-encoded is under 1 KiB.
+		bodyLimit({ maxSize: 4 * 1024, onError: (c) => c.html(messagePage('Too large', 'That form was too large.'), 413) }),
+		async (c) => {
+			const server = c.get('server');
+			// A change checks with Discord, not the 30 s answer (decision 0012).
+			const fresh = access && (await access.rightsIn(server.id, c.get('session').user_id, { fresh: true }));
+			if (!fresh?.manageBridges) return notFound(c);
+			// Looked up after that await, as it may have been removed meanwhile.
+			const bridge = bridgeIn(c);
+			if (!bridge) return notFound(c);
+			const body = await c.req.parseBody();
+			const field = (name: string) => {
+				const value = body[name];
+				return typeof value === 'string' ? value : '';
+			};
+			const values = {
+				serverName: field('serverName'),
+				prefix: field('prefix'),
+				colour: field('colour'),
+				defaultPicture: field('defaultPicture'),
+			};
+			const checked = checkSettingsChange(values);
+			if (!checked.ok) {
+				return c.html(
+					bridgeSettingsPage(server, {
+						bridge: { id: bridge.id, serverName: bridge.server_name },
+						values,
+						refused: checked.refused,
+					}),
+					400,
+				);
+			}
+			const updated = updateBridgeSettings(bridge.id, checked.change);
+			if (!updated) return notFound(c);
+			// A connected helper applies them now, not at its next connect, which
+			// may be days away; one not connected gets them when it connects.
+			// Held as long as a session can live without polling (a helper backing
+			// off keeps its session), not chat's 30 s: missed, they'd wait for the
+			// next connect. Each is complete, and the helper keeps only the last.
+			if (!hub.deliver(bridge.id, bridgeSettings(updated), LEASE_MS + POLL_HOLD_MS)) {
+				console.error(
+					`Dashboard: bridge ${bridge.id}'s settings were saved but not queued: too many messages waiting.`,
+				);
+			}
+			return c.redirect(`/servers/${server.id}/minecraft`, 303);
+		},
+	);
 
 	app.get('/servers/:guildId/minecraft/bridges/:bridgeId/regenerate', requires('bridges'), (c) => {
 		const server = c.get('server');
