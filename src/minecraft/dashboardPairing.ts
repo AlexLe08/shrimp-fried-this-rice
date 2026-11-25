@@ -1,5 +1,15 @@
 import { ChannelType, PermissionFlagsBits, RESTJSONErrorCodes } from 'discord.js';
-import { pairBridge, type Paired, type PairingGuild, type PairingMember, type PairingRefusal } from './pairing.ts';
+import {
+	pairBridge,
+	regenerateBridge,
+	removeBridge,
+	type Paired,
+	type PairingGuild,
+	type PairingMember,
+	type PairingRefusal,
+	type Regenerated,
+	type Removed,
+} from './pairing.ts';
 
 // What the dashboard's Minecraft pages need of pairing, from the bot's own
 // client. The dashboard sees only this, so its pages are tested with a fake
@@ -12,6 +22,8 @@ export interface ChannelChoice {
 }
 
 export type PairAnswer = Paired | ({ ok: false } & PairingRefusal);
+export type RegenerateAnswer = Regenerated | ({ ok: false } & PairingRefusal);
+export type RemoveAnswer = Removed | { ok: false; reason: 'not-allowed' | 'unknown-bridge' | 'error' };
 
 export interface BridgePairing {
 	/** Null when the member can't be fetched (gone, or Discord failed). */
@@ -24,6 +36,13 @@ export interface BridgePairing {
 		serverName: string;
 		dashboardUrl: string;
 	}): Promise<PairAnswer>;
+	regenerate(request: {
+		guildId: string;
+		userId: string;
+		bridgeId: string;
+		dashboardUrl: string;
+	}): Promise<RegenerateAnswer>;
+	remove(request: { guildId: string; userId: string; bridgeId: string }): Promise<RemoveAnswer>;
 }
 
 interface Permissions {
@@ -91,6 +110,20 @@ export function bridgePairing<M extends PairingMember>(client: PairingClient<M>)
 			const member = guild && (await freshMember(guild, request.userId));
 			if (!guild || !member) return { ok: false, reason: 'not-allowed' };
 			return pairBridge({ ...request, guild, member });
+		},
+
+		async regenerate(request) {
+			const guild = client.guilds.cache.get(request.guildId);
+			const member = guild && (await freshMember(guild, request.userId));
+			if (!guild || !member) return { ok: false, reason: 'not-allowed' };
+			return regenerateBridge({ ...request, guild, member });
+		},
+
+		async remove(request) {
+			const guild = client.guilds.cache.get(request.guildId);
+			const member = guild && (await freshMember(guild, request.userId));
+			if (!guild || !member) return { ok: false, reason: 'not-allowed' };
+			return removeBridge({ ...request, guild, member });
 		},
 	};
 }

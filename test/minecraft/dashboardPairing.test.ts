@@ -139,3 +139,66 @@ describe('pair', () => {
 		expect(getGuildBridges('g1')).toEqual([]);
 	});
 });
+
+describe('regenerate and remove', () => {
+	const DASHBOARD = 'https://dash.example';
+
+	async function pairedBridge(pairing: ReturnType<typeof bridgePairing>): Promise<string> {
+		const answer = await pairing.pair({
+			guildId: 'g1',
+			userId: OWNER,
+			chatChannelId: 'c1',
+			alertsChannelId: 'c2',
+			serverName: 'Survival',
+			dashboardUrl: DASHBOARD,
+		});
+		if (!answer.ok) throw new Error(answer.reason);
+		return answer.bridge.id;
+	}
+
+	it('regenerates as the freshly fetched member', async () => {
+		const { guild, client: fake } = client([channel('c1', 'chat'), channel('c2', 'alerts')], known);
+		const pairing = bridgePairing(fake);
+		const bridgeId = await pairedBridge(pairing);
+		guild.members.fetch.mockClear();
+
+		const answer = await pairing.regenerate({ guildId: 'g1', userId: OWNER, bridgeId, dashboardUrl: DASHBOARD });
+
+		expect(answer).toMatchObject({ ok: true, bridge: { id: bridgeId }, undeletedWebhooks: [] });
+		expect(guild.members.fetch).toHaveBeenCalledWith({ user: OWNER, force: true, cache: false });
+	});
+
+	it('removes as the freshly fetched member, deleting its webhooks', async () => {
+		const { guild, client: fake } = client([channel('c1', 'chat'), channel('c2', 'alerts')], known);
+		const pairing = bridgePairing(fake);
+		const bridgeId = await pairedBridge(pairing);
+		guild.members.fetch.mockClear();
+
+		const answer = await pairing.remove({ guildId: 'g1', userId: OWNER, bridgeId });
+
+		expect(answer).toMatchObject({ ok: true, undeletedWebhooks: [] });
+		expect(guild.members.fetch).toHaveBeenCalledWith({ user: OWNER, force: true, cache: false });
+		expect(guild.client.deleteWebhook).toHaveBeenCalledTimes(2);
+		expect(getGuildBridges('g1')).toEqual([]);
+	});
+
+	it('refuses both, changing nothing, when the member is gone or the bot is not in the server', async () => {
+		let fetchMember = known;
+		const { guild, client: fake } = client([channel('c1', 'chat'), channel('c2', 'alerts')], (user) =>
+			fetchMember(user),
+		);
+		const pairing = bridgePairing(fake);
+		const bridgeId = await pairedBridge(pairing);
+		fetchMember = unknownMember;
+		const refused = { ok: false, reason: 'not-allowed' };
+
+		for (const guildId of ['g1', 'g9']) {
+			await expect(pairing.regenerate({ guildId, userId: OWNER, bridgeId, dashboardUrl: DASHBOARD })).resolves.toEqual(
+				refused,
+			);
+			await expect(pairing.remove({ guildId, userId: OWNER, bridgeId })).resolves.toEqual(refused);
+		}
+		expect(guild.client.deleteWebhook).not.toHaveBeenCalled();
+		expect(getGuildBridges('g1')).toHaveLength(1);
+	});
+});

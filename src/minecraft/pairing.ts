@@ -3,6 +3,7 @@ import { serverNameProblem } from './bridge/config.ts';
 import { deriveKeys, newBridgeSecret } from './bridge/seal.ts';
 import {
 	createBridge,
+	deleteBridge,
 	getBridge,
 	getGuildBridges,
 	getMinecraftGuildSettings,
@@ -244,6 +245,50 @@ export async function regenerateBridge<M extends PairingMember>(request: {
 	return { ok: true, bridge: saved, config: helperConfig(saved, secret, request.dashboardUrl), undeletedWebhooks };
 }
 
+export type Removed = {
+	ok: true;
+	bridge: MinecraftBridge;
+	/** Webhooks Discord wouldn't delete: they still post, so the manager deletes them by hand. */
+	undeletedWebhooks: { channelId: string; webhookId: string }[];
+};
+
+/**
+ * Removes a bridge with its pictures and links, then deletes its webhooks.
+ * The row goes first, so its keys stop working and its chat stops being
+ * relayed even if Discord won't delete a webhook. Unlike regenerating, it
+ * doesn't check the member's rights in the channels: they get no webhook URL
+ * from it, and a manager must be able to remove a bridge whose channel they
+ * can no longer see.
+ */
+export async function removeBridge<M extends PairingMember>(request: {
+	guild: Pick<PairingGuild<M>, 'id' | 'ownerId' | 'client'>;
+	member: M;
+	bridgeId: string;
+}): Promise<Removed | { ok: false; reason: 'not-allowed' | 'unknown-bridge' | 'error' }> {
+	const { guild, member, bridgeId } = request;
+	if (!canManageBridges(guild, member)) return { ok: false, reason: 'not-allowed' };
+	const bridge = getBridge(bridgeId);
+	if (!bridge || bridge.guild_id !== guild.id) return { ok: false, reason: 'unknown-bridge' };
+	try {
+		deleteBridge(bridgeId);
+	} catch (error) {
+		console.error(`Minecraft pairing: couldn't remove bridge ${bridgeId}:`, error);
+		return { ok: false, reason: 'error' };
+	}
+
+	const reason = `Minecraft bridge "${bridge.server_name}" removed by member ${member.id}`;
+	const undeletedWebhooks: Removed['undeletedWebhooks'] = [];
+	for (const webhook of [
+		{ channelId: bridge.chat_channel_id, webhookId: bridge.chat_webhook_id, token: bridge.chat_webhook_token },
+		{ channelId: bridge.alerts_channel_id, webhookId: bridge.alerts_webhook_id, token: bridge.alerts_webhook_token },
+	]) {
+		if (!(await deleteWebhook(guild, webhook, reason))) {
+			undeletedWebhooks.push({ channelId: webhook.channelId, webhookId: webhook.webhookId });
+		}
+	}
+	return { ok: true, bridge, undeletedWebhooks };
+}
+
 export function helperConfig(bridge: MinecraftBridge, secret: string, dashboardUrl: string): HelperConfig {
 	return {
 		serverName: bridge.server_name,
@@ -389,7 +434,14 @@ async function deleteWebhook(
 		return true;
 	} catch (error) {
 		if ((error as { code?: unknown }).code === RESTJSONErrorCodes.UnknownWebhook) return true;
-		console.error(`Minecraft pairing: couldn't delete webhook ${webhook.webhookId}:`, error);
+		console.error(`Minecraft pairing: couldn't delete webhook ${webhook.webhookId} (${describeFailure(error)})`);
 		return false;
 	}
+}
+
+// Never the error itself: deleting with the token puts it in the request's
+// URL, which @discordjs/rest's errors carry, and the webhook still posts.
+function describeFailure(error: unknown): string {
+	const { status, code, message } = (error ?? {}) as { status?: unknown; code?: unknown; message?: unknown };
+	return [status, code, message].filter((part) => typeof part === 'number' || typeof part === 'string').join(' ');
 }

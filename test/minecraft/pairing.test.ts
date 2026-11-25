@@ -1,3 +1,4 @@
+import { format } from 'node:util';
 import { ChannelType, PermissionFlagsBits, RESTJSONErrorCodes, type Guild, type GuildMember } from 'discord.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { __resetForTests, db } from '../../src/core/database.ts';
@@ -7,16 +8,21 @@ import {
 	canManageBridges,
 	pairBridge,
 	regenerateBridge,
+	removeBridge,
 	type PairingGuild,
 	type PairingMember,
 } from '../../src/minecraft/pairing.ts';
 import {
 	deleteBridge,
 	getBridge,
+	getBridgeLinks,
 	getGuildBridges,
+	getPlayerPictures,
 	MAX_BRIDGES_PER_GUILD,
 	replaceBridgeConnection,
+	saveLink,
 	setAllowedRole,
+	setPlayerPicture,
 } from '../../src/minecraft/storage.ts';
 
 // The dashboard passes discord.js's own objects (through dashboardPairing.ts);
@@ -89,7 +95,7 @@ function fakeGuild(channels: FakeChannel[], options: { id?: string; me?: FakeMem
 }
 
 /** Makes the next insert or update of bridges fail, as a busy or closed database would. */
-function failingBridgeWrites(statement: 'INSERT' | 'UPDATE') {
+function failingBridgeWrites(statement: 'INSERT' | 'UPDATE' | 'DELETE') {
 	db.exec(
 		`CREATE TEMP TRIGGER fail_bridge_writes BEFORE ${statement} ON minecraft_bridges BEGIN SELECT RAISE(ABORT, 'database is locked'); END`,
 	);
@@ -498,5 +504,106 @@ describe('regenerateBridge', () => {
 		const stored = getBridge(bridge.id)!;
 		expect(stored.request_key.equals(deriveKeys(config.bot.secret).request)).toBe(true);
 		expect(stored.chat_webhook_id).toBe('901');
+	});
+});
+
+describe('removeBridge', () => {
+	function remove(
+		bridgeId: string,
+		member: FakeMember = owner,
+		from: Pick<PairingGuild, 'id' | 'ownerId' | 'client'> = guild,
+	) {
+		return removeBridge({ guild: from, member, bridgeId });
+	}
+
+	it('removes the bridge with its links and pictures, then deletes both webhooks with their tokens', async () => {
+		const { bridge } = await paired();
+		saveLink({ bridgeId: bridge.id, name: 'Steve', userId: 'u1', uuid: 'uuid-1', now: 1 });
+		setPlayerPicture(bridge.id, 'Alex', 'skin');
+
+		const result = await remove(bridge.id);
+
+		expect(result).toMatchObject({
+			ok: true,
+			bridge: { id: bridge.id, server_name: 'Survival' },
+			undeletedWebhooks: [],
+		});
+		expect(getBridge(bridge.id)).toBeUndefined();
+		expect(getBridgeLinks(bridge.id)).toEqual([]);
+		expect(getPlayerPictures(bridge.id)).toEqual([]);
+		expect(deleted).toEqual(['901', '902']);
+		expect(guild.client.deleteWebhook).toHaveBeenCalledWith('902', {
+			token: 'tok2',
+			reason: 'Minecraft bridge "Survival" removed by member owner',
+		});
+	});
+
+	it("lists a webhook Discord wouldn't delete, as it still posts, but not one already gone", async () => {
+		const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const { bridge } = await paired();
+		guild.client.deleteWebhook
+			.mockRejectedValueOnce(new Error('503'))
+			.mockRejectedValueOnce(discordError(RESTJSONErrorCodes.UnknownWebhook));
+
+		expect(await remove(bridge.id)).toMatchObject({
+			ok: true,
+			undeletedWebhooks: [{ channelId: 'chat', webhookId: '901' }],
+		});
+		expect(getBridge(bridge.id)).toBeUndefined();
+		expect(error).toHaveBeenCalledTimes(1);
+	});
+
+	it("logs a refused delete without the webhook's token, which the error's URL holds", async () => {
+		const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const { bridge } = await paired();
+		guild.client.deleteWebhook.mockRejectedValueOnce(
+			Object.assign(new Error('Missing Permissions'), {
+				status: 403,
+				code: RESTJSONErrorCodes.MissingPermissions,
+				url: 'https://discord.com/api/v10/webhooks/901/tok1',
+			}),
+		);
+
+		await remove(bridge.id);
+
+		expect(error).toHaveBeenCalledTimes(1);
+		const logged = format(...error.mock.calls[0]!);
+		expect(logged).toContain("couldn't delete webhook 901 (403 50013 Missing Permissions)");
+		expect(logged).not.toContain('tok1');
+	});
+
+	it('lets an allowed-role manager remove a bridge whose channels they can no longer see', async () => {
+		const { bridge } = await paired();
+		setAllowedRole('g1', 'mods');
+		chat.permissionsFor = () => ({ has: () => false });
+
+		expect(await remove(bridge.id, fakeMember('mod', ['mods']))).toMatchObject({ ok: true });
+	});
+
+	it("refuses another server's bridge, an unknown one and a member who may not manage bridges, deleting nothing", async () => {
+		const { bridge } = await paired();
+		const timedOut = fakeMember(OWNER);
+		timedOut.timedOut = true;
+
+		expect(await remove(bridge.id, owner, fakeGuild([chat, alerts], { id: 'g2' }))).toEqual({
+			ok: false,
+			reason: 'unknown-bridge',
+		});
+		expect(await remove('no-such-bridge')).toEqual({ ok: false, reason: 'unknown-bridge' });
+		expect(await remove(bridge.id, fakeMember('someone'))).toEqual({ ok: false, reason: 'not-allowed' });
+		expect(await remove(bridge.id, timedOut)).toEqual({ ok: false, reason: 'not-allowed' });
+		expect(getBridge(bridge.id)).toBeDefined();
+		expect(deleted).toEqual([]);
+	});
+
+	it("keeps the webhooks if the bridge can't be removed, as they're still its own", async () => {
+		const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const { bridge } = await paired();
+		failingBridgeWrites('DELETE');
+
+		expect(await remove(bridge.id)).toEqual({ ok: false, reason: 'error' });
+		expect(getBridge(bridge.id)).toBeDefined();
+		expect(deleted).toEqual([]);
+		expect(error).toHaveBeenCalledTimes(1);
 	});
 });
