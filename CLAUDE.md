@@ -100,7 +100,9 @@ the workflow, indexed in its `README.md`.
   server's owner or allowed role,
   [decision 0013](docs/decisions/0013-bridge-pages-by-owner-or-allowed-role.md))
   or `requires('owner')` (the owner alone). A route that changes something
-  checks again with `rightsIn(…, { fresh: true })` (decision 0012).
+  checks the member afresh, not the 30 s answer (decision 0012):
+  `rightsIn(…, { fresh: true })`, or pairing's own fetch
+  (`minecraft/dashboardPairing.ts`).
   `src/index.ts` and `src/deploy-commands.ts` stay at the top of `src/`:
   the VM's systemd unit starts `./src/index.ts`, so moving it would leave
   the bot down after the deploy.

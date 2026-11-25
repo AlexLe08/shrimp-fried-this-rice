@@ -720,7 +720,19 @@ describe('who may manage Minecraft servers', () => {
 		expect(getMinecraftGuildSettings('g1')?.allowed_role_id).toBe('r-mods');
 	});
 
-	it('asks Discord afresh before saving, so an owner just put in timeout is refused', async () => {
+	it('asks Discord afresh before saving, so a former owner is refused once the server changes hands', async () => {
+		const guild = fakeGuild('g1', 'Shrimp Hall', { u1: false, u2: false }, {}, { ownerId: 'u1', serverRoles });
+		const app = createApp({ auth, client: fakeClient([guild]), now: () => NOW });
+		expect((await app.request('/servers/g1/minecraft/role', { headers: signedIn() })).status).toBe(200);
+
+		guild.ownerId = 'u2';
+		const response = await app.request('/servers/g1/minecraft/role', save('r-mc'));
+
+		expect(response.status).toBe(404);
+		expect(getMinecraftGuildSettings('g1')).toBeUndefined();
+	});
+
+	it('refuses an owner in timeout, asking Discord afresh', async () => {
 		const members: Record<string, boolean | 'timed out'> = { u1: false };
 		const app = roleApp(members);
 		expect((await app.request('/servers/g1/minecraft/role', { headers: signedIn() })).status).toBe(200);
@@ -730,6 +742,15 @@ describe('who may manage Minecraft servers', () => {
 
 		expect(response.status).toBe(404);
 		expect(getMinecraftGuildSettings('g1')).toBeUndefined();
+	});
+
+	it('says when the role saved is no longer in the server, offering none chosen', async () => {
+		setAllowedRole('g1', 'r-gone');
+
+		const text = await (await roleApp().request('/servers/g1/minecraft/role', { headers: signedIn() })).text();
+
+		expect(text).toContain('The role chosen before is no longer in the server (ID r-gone)');
+		expect(text).not.toContain(' selected>');
 	});
 
 	it('refuses a form from another site', async () => {

@@ -437,6 +437,14 @@ export function rolePage(
 				Anyone who can give members that role (Manage Roles, with a higher role of their own) can make themselves a
 				manager, so choose one only trusted members can give.
 			</p>
+			${
+				view.current !== null && !view.choices.some((choice) => choice.id === view.current)
+					? html`<p>
+							The role chosen before is no longer in the server (ID ${view.current}), so nobody but you manages them.
+							Saving without picking another clears it.
+						</p>`
+					: ''
+			}
 			<form method="post" action="/servers/${server.id}/minecraft/role">
 				<p>
 					<label

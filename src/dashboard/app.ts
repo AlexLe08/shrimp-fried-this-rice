@@ -318,8 +318,9 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 		bodyLimit({ maxSize: 1024, onError: (c) => c.html(messagePage('Too large', 'That form was too large.'), 413) }),
 		async (c) => {
 			const server = c.get('server');
-			// A change checks with Discord, not the 30 s answer (decision 0012), so
-			// an owner who has just been put in timeout can't change it.
+			// A change checks with Discord, not the 30 s answer (decision 0012):
+			// after the server changes hands, the cached answer still calls the
+			// former owner its owner for up to 30 s.
 			const fresh = access && (await access.rightsIn(server.id, c.get('session').user_id, { fresh: true }));
 			if (!fresh?.owner) return notFound(c);
 			const body = await c.req.parseBody();

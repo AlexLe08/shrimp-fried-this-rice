@@ -714,8 +714,9 @@ Later item), not a follow-up.
   or clears it; the Minecraft page names it. Offered: the server's roles
   but `@everyone` and integrations', highest first. Saving asks Discord
   afresh (`rightsIn` gains `{ fresh: true }`, skipping and replacing the
-  30 s answer, decision 0012), then redirects, as nothing in the answer
-  is secret. Worked out here: no one-time token, as saving twice changes
+  30 s answer, decision 0012), so a former owner can't in the 30 s after
+  the server changes hands, then redirects, as nothing in the answer is
+  secret. Worked out here: no one-time token, as saving twice changes
   nothing; and the page warns that whoever can give the role can make
   themselves a manager. Not tried against Discord (A8h).
 
