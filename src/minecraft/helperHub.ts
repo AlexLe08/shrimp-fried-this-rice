@@ -121,6 +121,11 @@ export class HelperHub {
 		return true;
 	}
 
+	/** Whether shutdown has closed it: the database may be closing too. */
+	get closed(): boolean {
+		return this.#closed;
+	}
+
 	/**
 	 * For shutdown: answers every open poll now, and any later one at once,
 	 * so the server isn't left waiting on polls held for up to 50 s.

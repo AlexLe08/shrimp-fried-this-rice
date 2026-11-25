@@ -36,16 +36,58 @@ export function relayMessage(message: Message, hub: HelperHub): void {
 	const chat = chatFor(message);
 	if (!chat) return;
 	for (const bridge of bridges) {
-		if (relayed.take(bridge.id) > 0) continue;
-		if (hub.deliver(bridge.id, chat)) recordRelayedMessage(bridge.id, message.id);
+		// The catch-up may have relayed it already, fetched before the gateway brought it.
+		if (!isLaterMessage(message.id, bridge.last_relayed_message_id)) continue;
+		const holding = held.get(bridge.id);
+		if (holding) {
+			holding.firstLiveId ??= message.id;
+			if (holding.messages.length < MAX_HELD_LIVE) holding.messages.push({ id: message.id, chat });
+			continue;
+		}
+		send(bridge.id, message.id, chat, hub);
 	}
+}
+
+function send(bridgeId: string, messageId: string, chat: RelayedChat, hub: HelperHub): void {
+	if (relayed.take(bridgeId) > 0) return;
+	if (hub.deliver(bridgeId, chat)) recordRelayedMessage(bridgeId, messageId);
+}
+
+/** Whether `id` comes after `last`, as snowflakes; anything does when nothing was relayed yet. */
+export function isLaterMessage(id: string, last: string | null): boolean {
+	return last === null || BigInt(id) > BigInt(last);
+}
+
+// While a bridge catches up after a restart (decision 0010), its live
+// messages wait, so the caught-up ones reach the game first, and the first
+// of them marks where the catch-up stops. A catch-up takes a REST call or
+// two; at the relay's 5 a second, more than this would be dropped anyway.
+const MAX_HELD_LIVE = 50;
+const held = new Map<string, { firstLiveId: string | null; messages: { id: string; chat: RelayedChat }[] }>();
+
+/** Holds the bridge's live messages until releaseLiveMessages. */
+export function holdLiveMessages(bridgeId: string): void {
+	held.set(bridgeId, { firstLiveId: null, messages: [] });
+}
+
+/** The first live message held for the bridge since holdLiveMessages, if any. */
+export function firstLiveMessageId(bridgeId: string): string | null {
+	return held.get(bridgeId)?.firstLiveId ?? null;
+}
+
+/** Sends the bridge's held live messages in order, as relayMessage would have; `hub` null drops them (shutdown). */
+export function releaseLiveMessages(bridgeId: string, hub: HelperHub | null): void {
+	const holding = held.get(bridgeId);
+	held.delete(bridgeId);
+	if (!holding || !hub) return;
+	for (const { id, chat } of holding.messages) send(bridgeId, id, chat, hub);
 }
 
 // Webhooks are left out, the bridge's own posts of game chat among them, or
 // each line would echo back into the game; so are apps and Discord's own
 // messages (pins, joins, boosts, or any from its system user), and a slash
 // command's reply.
-function isMemberChat(message: Message): boolean {
+export function isMemberChat(message: Message): boolean {
 	return (
 		(message.type === MessageType.Default || message.type === MessageType.Reply) &&
 		message.webhookId === null &&
@@ -60,7 +102,7 @@ function isMemberChat(message: Message): boolean {
  * `[sticker]` for what can't be shown in game, and `(reply to Name)`. Null
  * when nothing is left to show, as for a poll or a forwarded message.
  */
-function chatFor(message: Message<true>): RelayedChat | null {
+export function chatFor(message: Message<true>): RelayedChat | null {
 	const parts: string[] = [];
 	if (message.cleanContent) parts.push(message.cleanContent);
 	for (const attachment of message.attachments.values()) {
