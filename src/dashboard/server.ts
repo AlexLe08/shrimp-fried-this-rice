@@ -109,6 +109,11 @@ export async function stopDashboard(graceMs = CLOSE_GRACE_MS): Promise<void> {
 	});
 }
 
+/** The helpers' hub of the running dashboard, which the relay queues chat on; null while it's off. */
+export function runningHelperHub(): HelperHub | null {
+	return helpers;
+}
+
 /** Test-only: the running server, if any. Not used in application code. */
 export function __dashboardServerForTests(): Server | null {
 	return server;

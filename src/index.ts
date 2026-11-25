@@ -10,7 +10,17 @@ import { authConfigFromEnv } from './dashboard/auth.ts';
 
 // GuildExpressions keeps each server's emoji current after startup, so an
 // emoji added since then isn't warned about as one the bot can't use.
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildExpressions] });
+// GuildMessages and MessageContent let it read bridges' chat channels for the
+// Minecraft relay (decision 0006). Message Content is privileged: an app
+// without it switched on in the Developer Portal is refused at login.
+const client = new Client({
+	intents: [
+		GatewayIntentBits.Guilds,
+		GatewayIntentBits.GuildExpressions,
+		GatewayIntentBits.GuildMessages,
+		GatewayIntentBits.MessageContent,
+	],
+});
 
 client.commands = new Collection();
 
