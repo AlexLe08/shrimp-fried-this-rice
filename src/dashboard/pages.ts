@@ -1,6 +1,7 @@
 import { html } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
 import type { ReminderState } from '../reminders/reminderState.ts';
+import type { SettingsField } from '../minecraft/bridgeSettings.ts';
 import type { ChannelChoice } from '../minecraft/dashboardPairing.ts';
 import type { BotPermission, HelperConfig, PairingRefusal } from '../minecraft/pairing.ts';
 import type { ServerRights } from './access.ts';
@@ -198,7 +199,10 @@ function bridgeItem(serverId: string, bridge: BridgeView): Page {
 					: "Messages posted in its chat channel don't go into the game yet: the bot announces it there when the server's helper first connects."
 			}
 		</p>
-		<p><a href="${base}/regenerate">Regenerate its config</a> · <a href="${base}/remove">Remove it</a></p>
+		<p>
+			<a href="${base}">Change its settings</a> · <a href="${base}/regenerate">Regenerate its config</a> ·
+			<a href="${base}/remove">Remove it</a>
+		</p>
 	</li>`;
 }
 
@@ -590,6 +594,92 @@ export function regeneratedPage(
 				then restart <code>mcbridge</code>.
 			</p>
 			${configBox(view.config)}
+			<p><a href="/servers/${server.id}/minecraft">Back to its Minecraft servers</a></p>`,
+	);
+}
+
+/** A bridge's settings as its form shows them: saved, or as sent when some were refused. */
+export interface SettingsValues {
+	serverName: string;
+	prefix: string;
+	colour: string;
+	/** '' leaves it to the helper's config. */
+	defaultPicture: string;
+}
+
+const REFUSED_TEXT: Record<SettingsField, string> = {
+	serverName:
+		'The name must be 1 to 80 characters, without "clyde" or "discord" (Discord refuses those in a webhook\'s name).',
+	prefix:
+		'The prefix must be 1 to 24 characters: letters, digits, spaces and [ ] ( ) { } - . : | * # ! ~, starting with one of those symbols, and not [Not Secure].',
+	colour: 'The colour must be a hex colour, like #5865F2, or one of Minecraft’s colour names, like gold.',
+	defaultPicture: 'Pick a picture from the list.',
+};
+
+const PICTURE_CHOICES = [
+	['', "As the helper's config says (a generated picture if it says nothing)"],
+	['generated', 'A generated picture, the same one for a player each time'],
+	['skin', "The player's skin's face (a generated picture on an offline-mode server)"],
+	['none', "None: the webhook's own picture"],
+] as const;
+
+/** A bridge's settings, which its helper applies when the bot sends them. */
+export function bridgeSettingsPage(
+	server: { id: string; name: string },
+	view: { bridge: { id: string; serverName: string }; values: SettingsValues; refused?: SettingsField[] },
+): Page {
+	const title = `${server.name}: ${view.bridge.serverName}'s settings`;
+	const values = view.values;
+	const refused = view.refused ?? [];
+	return layout(
+		title,
+		html`<h1>${title}</h1>
+			${
+				refused.length > 0
+					? html`<div role="alert">
+							<p>Nothing was saved:</p>
+							<ul>
+								${refused.map((field) => html`<li>${REFUSED_TEXT[field]}</li>`)}
+							</ul>
+						</div>`
+					: ''
+			}
+			<p>
+				Its helper applies these as soon as it's connected to the bot, over what its <code>mcbridge.json</code> says,
+				and keeps them for when the bot is away.
+			</p>
+			<form method="post" action="/servers/${server.id}/minecraft/bridges/${view.bridge.id}">
+				<p>
+					<label
+						>Name, shown in its alerts in Discord and as the sender of posts that can't use a player's name
+						<input name="serverName" required maxlength="80" value="${values.serverName}"
+					/></label>
+				</p>
+				<p>
+					<label
+						>Prefix, shown in game before each message from Discord, like [Discord]
+						<input name="prefix" required maxlength="24" value="${values.prefix}"
+					/></label>
+				</p>
+				<p>
+					<label
+						>Colour of that prefix in game: a hex colour, like #5865F2, or a Minecraft colour name, like gold
+						<input name="colour" required maxlength="12" value="${values.colour}"
+					/></label>
+				</p>
+				<p>
+					<label
+						>Players' picture in Discord, for players without one of their own
+						<select name="defaultPicture">
+							${PICTURE_CHOICES.map(
+								([value, label]) =>
+									html`<option value="${value}" ${value === values.defaultPicture ? 'selected' : ''}>${label}</option>`,
+							)}
+						</select></label
+					>
+				</p>
+				<p><button type="submit">Save</button></p>
+			</form>
 			<p><a href="/servers/${server.id}/minecraft">Back to its Minecraft servers</a></p>`,
 	);
 }

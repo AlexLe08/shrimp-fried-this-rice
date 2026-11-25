@@ -12,9 +12,11 @@ import {
 } from '../../src/reminders/storage.ts';
 import {
 	createBridge,
+	getBridge,
 	getMinecraftGuildSettings,
 	markBridgeAnnounced,
 	setAllowedRole,
+	updateBridgeSettings,
 } from '../../src/minecraft/storage.ts';
 import { fakeClient, fakeGuild } from './fakeGuilds.ts';
 import { fakePairing } from './fakePairing.ts';
@@ -896,6 +898,191 @@ describe("regenerating and removing a Minecraft server's config", () => {
 	});
 });
 
+describe("a Minecraft server's settings", () => {
+	// u1 owns g1 and g2; u2 has the allowed role in g1.
+	const members: Record<string, boolean | 'timed out'> = {};
+	let hub: HelperHub;
+
+	beforeEach(() => {
+		hub = new HelperHub(() => NOW);
+		for (const key of Object.keys(members)) delete members[key];
+		Object.assign(members, { u1: false, u2: false });
+		setAllowedRole('g1', 'r-mc');
+	});
+
+	function settingsApp() {
+		return createApp({
+			auth,
+			client: fakeClient([
+				fakeGuild('g1', 'Shrimp Hall', members, {}, { ownerId: 'u1', roles: { u2: ['r-mc'] } }),
+				fakeGuild('g2', 'Other Place', { u1: false }, {}, { ownerId: 'u1' }),
+			]),
+			now: () => NOW,
+			helpers: hub,
+		});
+	}
+
+	function pairedBridge(guildId = 'g1', serverName = 'Survival') {
+		return createBridge({
+			guildId,
+			chat: { channelId: 'c1', webhookId: '901', token: 'tok-chat' },
+			alerts: { channelId: 'c2', webhookId: '902', token: 'tok-alerts' },
+			keys: { request: Buffer.alloc(32, 1), response: Buffer.alloc(32, 2) },
+			serverName,
+			now: NOW,
+		});
+	}
+
+	const settingsPath = (bridgeId: string, guildId = 'g1') => `/servers/${guildId}/minecraft/bridges/${bridgeId}`;
+	const filled = { serverName: 'Creative', prefix: '[DC]', colour: 'gold', defaultPicture: 'skin' };
+	const save = (fields: Record<string, string> = filled, userId = 'u1', origin = auth.origin) => ({
+		method: 'POST',
+		headers: { ...signedIn(userId), origin, 'content-type': 'application/x-www-form-urlencoded' },
+		body: new URLSearchParams(fields).toString(),
+	});
+
+	it('links each bridge’s settings from the Minecraft page', async () => {
+		const bridge = pairedBridge();
+
+		const text = await (await settingsApp().request('/servers/g1/minecraft', { headers: signedIn() })).text();
+
+		expect(text).toContain(`<a href="${settingsPath(bridge.id)}">Change its settings</a>`);
+	});
+
+	it('shows the saved settings in the form, escaped, with the config’s default picture chosen', async () => {
+		const bridge = pairedBridge('g1', '<b>Survival</b>');
+
+		const response = await settingsApp().request(settingsPath(bridge.id), { headers: signedIn('u2') });
+		const text = await response.text();
+
+		expect(response.status).toBe(200);
+		expect(text).toContain('<h1>Shrimp Hall: &lt;b&gt;Survival&lt;/b&gt;&#39;s settings</h1>');
+		expect(text).toContain('name="serverName" required maxlength="80" value="&lt;b&gt;Survival&lt;/b&gt;"');
+		expect(text).toContain('value="[Discord]"');
+		expect(text).toContain('value="#5865F2"');
+		expect(text).toMatch(/<option value="" selected>As the helper/);
+		expect(text).not.toContain('<b>');
+	});
+
+	it('shows a default picture set before as chosen', async () => {
+		const bridge = pairedBridge();
+		updateBridgeSettings(bridge.id, { defaultPicture: 'none' });
+
+		const text = await (await settingsApp().request(settingsPath(bridge.id), { headers: signedIn() })).text();
+
+		expect(text).toMatch(/<option value="none" selected>/);
+		expect(text).not.toMatch(/<option value="" selected>/);
+	});
+
+	it('answers 404 for an unknown bridge and for another server’s, though the user manages both', async () => {
+		const theirs = pairedBridge('g2');
+		const app = settingsApp();
+
+		for (const path of [settingsPath('nope'), settingsPath(theirs.id)]) {
+			expect((await app.request(path, { headers: signedIn() })).status).toBe(404);
+			expect((await app.request(path, save())).status).toBe(404);
+		}
+		expect(getBridge(theirs.id)?.server_name).toBe('Survival');
+	});
+
+	it('saves the settings, trimmed, and goes back to the list', async () => {
+		const bridge = pairedBridge();
+
+		const response = await settingsApp().request(
+			settingsPath(bridge.id),
+			save({ serverName: ' Creative ', prefix: '[DC]', colour: '#00FF00', defaultPicture: '' }, 'u2'),
+		);
+
+		expect(response.status).toBe(303);
+		expect(response.headers.get('location')).toBe('/servers/g1/minecraft');
+		expect(getBridge(bridge.id)).toMatchObject({
+			server_name: 'Creative',
+			prefix: '[DC]',
+			colour: '#00ff00',
+			default_picture: null,
+		});
+	});
+
+	it('sends the new settings to a connected helper at once', async () => {
+		const bridge = pairedBridge();
+		const session = hub.connect(bridge.id);
+		const poll = hub.poll(bridge.id, session);
+
+		await settingsApp().request(settingsPath(bridge.id), save());
+
+		expect(await poll).toEqual({
+			kind: 'messages',
+			messages: [
+				{
+					kind: 'settings',
+					serverName: 'Creative',
+					prefix: '[DC]',
+					colour: 'gold',
+					defaultPicture: 'skin',
+					pictures: [],
+				},
+			],
+		});
+	});
+
+	it('says what to fix, keeping what was sent, and saves and sends nothing', async () => {
+		const bridge = pairedBridge();
+		const session = hub.connect(bridge.id);
+
+		const response = await settingsApp().request(
+			settingsPath(bridge.id),
+			save({ serverName: 'Creative', prefix: '<b>', colour: 'pink', defaultPicture: 'skin' }),
+		);
+		const text = await response.text();
+
+		expect(response.status).toBe(400);
+		expect(text).toContain('Nothing was saved');
+		expect(text).toContain('The prefix must be');
+		expect(text).toContain('The colour must be');
+		expect(text).not.toContain('The name must be');
+		expect(text).toContain('value="&lt;b&gt;"');
+		expect(text).toContain('value="pink"');
+		expect(text).toMatch(/<option value="skin" selected>/);
+		expect(getBridge(bridge.id)).toMatchObject({ server_name: 'Survival', prefix: '[Discord]' });
+		hub.close();
+		expect(await hub.poll(bridge.id, session)).toEqual({ kind: 'messages', messages: [] });
+	});
+
+	it('refuses a form missing a field', async () => {
+		const bridge = pairedBridge();
+		const withoutColour = { serverName: 'Creative', prefix: '[DC]', defaultPicture: 'skin' };
+
+		const response = await settingsApp().request(settingsPath(bridge.id), save(withoutColour));
+
+		expect(response.status).toBe(400);
+		expect(getBridge(bridge.id)?.server_name).toBe('Survival');
+	});
+
+	it('asks Discord afresh before saving, so a member who lost the role is refused', async () => {
+		const bridge = pairedBridge();
+		const app = settingsApp();
+		expect((await app.request(settingsPath(bridge.id), { headers: signedIn('u2') })).status).toBe(200);
+
+		members['u2'] = 'timed out';
+		const response = await app.request(settingsPath(bridge.id), save(filled, 'u2'));
+
+		expect(response.status).toBe(404);
+		expect(getBridge(bridge.id)?.server_name).toBe('Survival');
+	});
+
+	it('refuses a form from another site, and a body far larger than the form', async () => {
+		const bridge = pairedBridge();
+		const app = settingsApp();
+
+		const crossSite = await app.request(settingsPath(bridge.id), save(filled, 'u1', 'https://evil.example'));
+		const large = await app.request(settingsPath(bridge.id), save({ ...filled, serverName: 'x'.repeat(10_000) }));
+
+		expect(crossSite.status).toBe(403);
+		expect(large.status).toBe(413);
+		expect(getBridge(bridge.id)?.server_name).toBe('Survival');
+	});
+});
+
 describe('who may manage Minecraft servers', () => {
 	// u1 owns g1; u2 has r-mc; r-bot is an integration's.
 	const serverRoles = {
@@ -1085,7 +1272,7 @@ describe('route access', () => {
 			: {
 					method,
 					headers: { ...headers, origin: auth.origin, 'content-type': 'application/x-www-form-urlencoded' },
-					body: `serverName=Survival&chat=c1&alerts=c1&form=${form}`,
+					body: `serverName=Survival&chat=c1&alerts=c1&prefix=%5BDC%5D&colour=gold&defaultPicture=&form=${form}`,
 				};
 
 	it("keeps every helper route under /minecraft/, where the pages' rate limit gives way to its own", () => {
@@ -1175,9 +1362,10 @@ describe('route access', () => {
 		// Someone with a right, but not this one: owner routes are refused to a
 		// bridge manager who isn't the owner.
 		const other = { server: 'bridges', bridges: 'server', owner: 'bridges' } as const;
-		// What a route answers when it's done: the role form saves, then goes back to the list.
+		// What a route answers when it's done: the role and settings forms save, then go back to the list.
 		const success: Record<string, number> = {
 			'POST /servers/:guildId/minecraft/role': 303,
+			'POST /servers/:guildId/minecraft/bridges/:bridgeId': 303,
 			'POST /servers/:guildId/minecraft/bridges/:bridgeId/remove': 303,
 		};
 		const guarded = declared.filter((entry): entry is [string, keyof typeof levels] => entry[1] in levels);
