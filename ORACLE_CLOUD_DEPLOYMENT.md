@@ -12,6 +12,8 @@ This document captures every step taken to deploy this bot to a free, permanent 
 
 **The rule going forward:** the VM only ever uses the production Discord Application's token. Any local machine doing development work uses a second, separate Discord Application created just for that purpose (see the project README's Local Setup section for the exact intents/scopes/permissions it needs). Never copy the production `.env` to a local machine for active development use.
 
+**Privileged intents:** both applications need the **Message Content Intent** switched on (Developer Portal → the application → Bot → Privileged Gateway Intents), as the bot reads Minecraft bridges' chat channels for two-way chat ([decision 0006](docs/decisions/0006-discord-to-minecraft-chat.md)). Discord refuses the login of an app that asks for a privileged intent it hasn't switched on (gateway close code 4014), so on the VM the service would restart in a loop and the deploy's login check would fail. Switch it on before deploying a change that first asks for it. Below 10,000 users it's a switch; past that it needs an application and a yearly review (Discord's privileged intent review guide, checked 2026-11-22; see the plan's A8).
+
 ---
 
 ## 1. Account setup

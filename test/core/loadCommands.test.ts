@@ -16,6 +16,7 @@ describe('findAreaModules', () => {
 			'core/events/interactionCreate.ts',
 			'core/events/ready.ts',
 			'minecraft/events/guildDelete.ts',
+			'minecraft/events/messageCreate.ts',
 		]);
 	});
 

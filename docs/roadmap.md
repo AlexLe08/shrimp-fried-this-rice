@@ -548,6 +548,32 @@ Later item), not a follow-up.
   `Guild` fitting is pinned by a type test. Not used yet: A8e looks the
   member up when the helper reports a player joining; not tried against
   Discord.
+- **Reading bridge chat channels** (2026-11-24, first part of A8e).
+  The bot asks for the `GuildMessages` and privileged Message Content
+  intents, and `src/minecraft/relay.ts`, from a `MessageCreate` event,
+  queues a member's message in a bridge's chat channel on the running
+  dashboard's `HelperHub` as their server nickname and plain text
+  (mentions and custom emoji as names through discord.js's
+  `cleanContent`, `[image]`, `[file]`, `[sticker]`, `(reply to Name)`),
+  at most 5 a second per bridge, and records its id as the last relayed.
+  Only once the relay was announced in that channel (decision 0006);
+  webhooks, apps, Discord's own messages and slash command replies are
+  skipped. Checked in discord.js 14.27's source: `cleanContent` names
+  cached members, roles and channels and turns `<:name:id>` into
+  `:name:`; a reply's author comes from the gateway's
+  `referenced_message`, so a reply to a relayed game message names the
+  player, as its webhook carries their name; and `message.system` counts
+  slash command replies as members' messages, so the type is checked
+  instead. From review: the client caches no message
+  (`src/core/clientOptions.ts`), as discord.js would otherwise keep the
+  last 200 of every channel in every server, against the relay's promise
+  to keep nothing; and a message queued just before a restart is recorded
+  as relayed but lost with the queue, so the catch-up skips it (a few
+  milliseconds while a helper polls; accepted). README's Local Setup and `ORACLE_CLOUD_DEPLOYMENT.md` now ask
+  for Message Content on both apps (gateway close code 4014 otherwise,
+  checked in `discord-api-types`). Not used yet: nothing announces a
+  bridge until the dashboard's pages (A8f), and no helper polls until
+  its side; not tried against Discord.
 
 ## Next up
 
@@ -583,7 +609,8 @@ them ahead of items 5 and 6.
    page and rate limits, all tried on the live dashboard. Left: A8e to
    A8i, two-way chat, linking and pictures. A8d (the bot's storage,
    sealing, endpoint, pairing and dropping the links of members who
-   left) is done (Done above); next, the relay (A8e).
+   left) is done (Done above); the relay (A8e) is under way: the bot
+   reads bridge chat channels (Done above); next, the helper's side.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the
