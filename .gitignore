@@ -8,6 +8,8 @@ coverage/
 # mcbridge configs hold webhook URLs, which let anyone post in the channel
 mcbridge*.json
 !mcbridge.example.json
+# A settings cache's temporary file, left by a crash mid-write
+mcbridge*.tmp
 # the Windows loop script and the log it writes (docs/MINECRAFT_BRIDGE.md)
 mcbridge.bat
 mcbridge.log

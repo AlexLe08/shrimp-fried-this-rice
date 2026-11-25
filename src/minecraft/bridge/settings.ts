@@ -47,14 +47,15 @@ export function readSettings(raw: unknown, log: (message: string) => void): Rece
 	const refused: string[] = [];
 
 	const { serverName, prefix, colour, defaultPicture, pictures } = given;
+	// A field that's absent (a bot of another version) isn't refused, only not set.
 	if (serverNameProblem(serverName) === undefined) settings.serverName = serverName as string;
-	else refused.push('serverName');
+	else if (serverName !== undefined) refused.push('serverName');
 	if (typeof prefix === 'string' && isPrefix(prefix)) settings.prefix = prefix;
-	else refused.push('prefix');
+	else if (prefix !== undefined) refused.push('prefix');
 	if (typeof colour === 'string' && isColour(colour)) settings.colour = colour;
-	else refused.push('colour');
+	else if (colour !== undefined) refused.push('colour');
 	if (defaultPicture === null) settings.defaultPicture = null;
-	else {
+	else if (defaultPicture !== undefined) {
 		const choice = picture(defaultPicture);
 		if (choice) settings.defaultPicture = choice;
 		else refused.push('defaultPicture');
@@ -68,7 +69,7 @@ export function readSettings(raw: unknown, log: (message: string) => void): Rece
 			else refused.push('a picture');
 		}
 		settings.pictures = map;
-	} else refused.push('pictures');
+	} else if (pictures !== undefined) refused.push('pictures');
 
 	if (refused.length > 0)
 		log(`kept the config's values for settings the bot sent that aren't valid: ${refused.join(', ')}`);
@@ -120,13 +121,34 @@ export async function loadCachedSettings(
 	return readSettings(settings, log);
 }
 
+let temporaryFiles = 0;
+
 /**
  * Keeps what the bot sent, as it sent it, for the next start. Written to a
- * temporary file and renamed over the old one, so a crash mid-write leaves
- * the old file, not half a new one.
+ * temporary file of its own and renamed over the old one, so a crash
+ * mid-write leaves the old file, not half a new one.
  */
 export async function saveSettings(path: string, bridgeId: string, settings: unknown): Promise<void> {
-	const temporary = `${path}.tmp`;
+	const temporary = `${path}.${process.pid}.${++temporaryFiles}.tmp`;
 	await writeFile(temporary, `${JSON.stringify({ bridge: bridgeId, settings }, null, 2)}\n`);
 	await rename(temporary, path);
+}
+
+/**
+ * Saves one at a time, in the order the bot sent them, so a connect answer
+ * and a settings message close behind it can't finish out of order and
+ * leave the older ones cached.
+ */
+export function createSettingsSaver(
+	path: string,
+	bridgeId: string,
+	log: (message: string) => void,
+): (settings: unknown) => Promise<void> {
+	let last: Promise<void> = Promise.resolve();
+	return (settings) => {
+		last = last
+			.then(() => saveSettings(path, bridgeId, settings))
+			.catch((error: unknown) => log(`can't save the bridge settings to ${path}: ${String(error)}`));
+		return last;
+	};
 }

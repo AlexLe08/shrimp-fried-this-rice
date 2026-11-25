@@ -15,7 +15,7 @@ import {
 	applySettings,
 	loadCachedSettings,
 	readSettings,
-	saveSettings,
+	createSettingsSaver,
 	settingsCachePath,
 	type ReceivedSettings,
 } from './settings.ts';
@@ -66,6 +66,7 @@ function useSettings(received: ReceivedSettings | null): void {
 // The last settings the bot sent, so posts keep their name and pictures
 // while it's away; the config's until it first answers.
 if (config.bot) useSettings(await loadCachedSettings(cachePath, config.bot.bridge, log));
+const saveSettings = config.bot ? createSettingsSaver(cachePath, config.bot.bridge, log) : () => Promise.resolve();
 
 const sender = createSender({ fallbackUsername: () => live.serverName });
 
@@ -104,9 +105,7 @@ const botClient =
 					const received = readSettings(sent, log);
 					if (!received) return;
 					useSettings(received);
-					saveSettings(cachePath, config.bot!.bridge, sent).catch((error: unknown) =>
-						log(`can't save the bridge settings to ${cachePath}: ${String(error)}`),
-					);
+					void saveSettings(sent);
 				},
 				onStopped: (reason) => {
 					console.error(`[mcbridge] two-way chat stopped: ${reason}`);
@@ -160,7 +159,7 @@ for (const signal of signals) {
 	process.on(signal, () => void shutdown(signal));
 }
 
-console.log(`[mcbridge] watching ${config.logPath} for ${config.serverName}`);
+console.log(`[mcbridge] watching ${config.logPath} for ${live.serverName}`);
 if (!existsSync(config.logPath)) {
 	// Not an error, and not posted: a new server has no log until it first
 	// starts. But a mistyped logPath looks exactly like this, forever.

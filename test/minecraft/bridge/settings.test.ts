@@ -7,6 +7,7 @@ import { DEFAULT_IGNORE } from '../../../src/minecraft/bridge/classify.ts';
 import type { BridgeConfig } from '../../../src/minecraft/bridge/config.ts';
 import {
 	applySettings,
+	createSettingsSaver,
 	loadCachedSettings,
 	readSettings,
 	saveSettings,
@@ -56,6 +57,9 @@ describe('readSettings', () => {
 		});
 		expect(log).not.toHaveBeenCalled();
 		expect(readSettings({ ...SENT, defaultPicture: null }, log)?.defaultPicture).toBeNull();
+		// A bot of another version leaving a field out: the config's stands, and it isn't a problem to log.
+		expect(readSettings({ serverName: 'Creative' }, log)).toEqual({ serverName: 'Creative' });
+		expect(log).not.toHaveBeenCalled();
 	});
 
 	it("drops each field the dashboard wouldn't accept, links included, logging which", () => {
@@ -156,5 +160,29 @@ describe('the settings cache', () => {
 		await writeFile(path, '{ not json');
 		expect(await loadCachedSettings(path, BRIDGE, log)).toBeNull();
 		expect(log).toHaveBeenCalledWith(`${path} isn't valid JSON; ignoring it until the bot sends the settings again`);
+	});
+
+	it('saves one at a time in the order sent, so the later settings are the ones kept', async () => {
+		const path = join(dir, 'mcbridge.settings.json');
+		const save = createSettingsSaver(path, BRIDGE, () => {});
+
+		void save({
+			...SENT,
+			serverName: 'First',
+			pictures: Array.from({ length: 50 }, (_, i) => ({ name: `p${i}`, picture: 'skin' })),
+		});
+		await save({ ...SENT, serverName: 'Second' });
+
+		expect((await loadCachedSettings(path, BRIDGE, () => {}))?.serverName).toBe('Second');
+		expect(await readdir(dir)).toEqual(['mcbridge.settings.json']);
+	});
+
+	it('logs a save that fails, and the next still goes', async () => {
+		const log = vi.fn();
+		const save = createSettingsSaver(join(dir, 'missing', 'mcbridge.settings.json'), BRIDGE, log);
+
+		await save(SENT);
+
+		expect(log).toHaveBeenCalledWith(expect.stringMatching(/^can't save the bridge settings to .*ENOENT/));
 	});
 });
