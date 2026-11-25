@@ -47,6 +47,7 @@ import { bridgeSettings, checkPictureChange, checkSettingsChange } from '../mine
 import type { BridgePairing } from '../minecraft/dashboardPairing.ts';
 import { HelperHub, LEASE_MS, POLL_HOLD_MS } from '../minecraft/helperHub.ts';
 import { registerHelperRoutes } from '../minecraft/helperRoutes.ts';
+import { LinkCodes } from '../minecraft/linking.ts';
 import {
 	MAX_BRIDGES_PER_GUILD,
 	MAX_PICTURES_PER_BRIDGE,
@@ -71,6 +72,8 @@ export interface AppOptions {
 	now?: () => number;
 	/** The Minecraft helpers' sessions and waiting messages; a new, empty one if not given. */
 	helpers?: HelperHub;
+	/** The link codes given to members; a new, empty set if not given. */
+	linkCodes?: LinkCodes;
 	/** Announces a bridge's relay when its helper is first active; without it, none is announced. */
 	announcer?: Announcer;
 	/** Pairs Minecraft bridges with the bot's client; without it, none can be added. */
@@ -114,6 +117,7 @@ export const ROUTE_ACCESS = {
 	'POST /servers/:guildId/minecraft/bridges/:bridgeId/remove': 'bridges',
 	'POST /minecraft/connect': 'helper',
 	'POST /minecraft/poll': 'helper',
+	'POST /minecraft/link': 'helper',
 } as const;
 
 // Both __Host-: only this exact hostname can set them, so another site under
@@ -136,6 +140,7 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 	const now = options.now ?? Date.now;
 	const access = options.client ? serverAccess(options.client, now) : null;
 	const hub = options.helpers ?? new HelperHub(now);
+	const linkCodes = options.linkCodes ?? new LinkCodes(now);
 	const app = new Hono<Env>();
 	const loginGate = createLoginGate(now);
 	const formTokens = createFormTokens(now);
@@ -706,6 +711,7 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 
 	registerHelperRoutes(app, {
 		hub,
+		linkCodes,
 		now,
 		visitorOf,
 		...(options.announcer && { announcer: options.announcer }),

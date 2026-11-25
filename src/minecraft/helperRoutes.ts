@@ -6,6 +6,7 @@ import type { Announcer } from './announcement.ts';
 import { ReplayGuard, open, parseEnvelope, seal } from './bridge/seal.ts';
 import type { HelperHub, PollResult } from './helperHub.ts';
 import { bridgeSettings } from './bridgeSettings.ts';
+import { answerLinkReport, readLinkReport, type LinkCodes } from './linking.ts';
 import { getBridge, type BridgeKeys, type MinecraftBridge } from './storage.ts';
 
 // The helper's endpoint (decision 0009; the plan's A8, "The helper's
@@ -19,12 +20,12 @@ import { getBridge, type BridgeKeys, type MinecraftBridge } from './storage.ts';
 // it until it's restarted.
 
 /** The routes, each `POST /minecraft/<route>`, for ROUTE_ACCESS. */
-export const HELPER_ROUTES = ['connect', 'poll'] as const;
+export const HELPER_ROUTES = ['connect', 'poll', 'link'] as const;
 type HelperRoute = (typeof HELPER_ROUTES)[number];
 
-// A poll is a few hundred bytes sealed; this leaves room for the helper's
-// reports to come (A8e) and bounds what's read before the seal is checked,
-// as the rate limits count requests, not bytes.
+// A poll or a `!link` report is a few hundred bytes sealed; this bounds
+// what's read before the seal is checked, as the rate limits count requests,
+// not bytes.
 export const MAX_REQUEST_BYTES = 16 * 1024;
 // A held poll is answered as soon as a message comes, so a busy channel means
 // a poll per message or so: two a second is far more than a few servers' chat.
@@ -35,6 +36,8 @@ export const HELPER_VISITOR_REQUESTS_PER_MINUTE = 240;
 
 export interface HelperRouteOptions {
 	hub: HelperHub;
+	/** The link codes members were given, which a `!link` report is checked against. */
+	linkCodes: LinkCodes;
 	now: () => number;
 	/** The rate-limit key of the request's address (dashboard/rateLimit.ts's visitorKey). */
 	visitorOf: (c: Context) => string;
@@ -46,7 +49,7 @@ type Reply = { status: ContentfulStatusCode; message: unknown };
 type Handler = (bridge: MinecraftBridge, message: unknown, signal: AbortSignal) => Reply | Promise<Reply>;
 
 export function registerHelperRoutes<E extends Env>(app: Hono<E>, options: HelperRouteOptions): void {
-	const { hub, now, visitorOf, announcer } = options;
+	const { hub, linkCodes, now, visitorOf, announcer } = options;
 	// Made with the routes, so nothing sealed before the bot started opens.
 	const replays = new ReplayGuard(now());
 	const visitorRequests = createRateLimiter(HELPER_VISITOR_REQUESTS_PER_MINUTE, MINUTE_MS, now);
@@ -63,6 +66,13 @@ export function registerHelperRoutes<E extends Env>(app: Hono<E>, options: Helpe
 				return { status: 400, message: { error: 'bad-request' } };
 			}
 			return pollReply(await hub.poll(bridge.id, message['session'], signal));
+		},
+		// A player's `!link` line. Needs no session: the seal already proves the
+		// bridge, and the per-bridge rate limit counts these too, as the plan asks.
+		link: (bridge, message) => {
+			const report = readLinkReport(message);
+			if (!report) return { status: 400, message: { error: 'bad-request' } };
+			return { status: 200, message: answerLinkReport(linkCodes, bridge.id, report, now()) };
 		},
 	};
 
