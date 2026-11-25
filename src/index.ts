@@ -8,6 +8,7 @@ import { findAreaModules, loadCommands } from './core/loadCommands.ts';
 import type { Event } from './core/types/event.ts';
 import { dashboardPortFromEnv, startDashboard } from './dashboard/server.ts';
 import { authConfigFromEnv } from './dashboard/auth.ts';
+import { createAnnouncer, postWithWebhook } from './minecraft/announcement.ts';
 
 const client = new Client(clientOptions);
 
@@ -45,7 +46,12 @@ for (const fileUrl of findAreaModules('events')) {
 client.cooldowns = new Collection();
 
 const dashboardPort = dashboardPortFromEnv(process.env);
-if (dashboardPort !== null) void startDashboard(dashboardPort, { auth: authConfigFromEnv(process.env), client });
+if (dashboardPort !== null)
+	void startDashboard(dashboardPort, {
+		auth: authConfigFromEnv(process.env),
+		client,
+		announcer: createAnnouncer({ post: postWithWebhook }),
+	});
 
 // A failed login (bad token, Discord down) exits nonzero; systemd restarts it.
 client.login(process.env['DISCORD_TOKEN']).catch((error: unknown) => {
