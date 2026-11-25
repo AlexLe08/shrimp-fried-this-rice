@@ -24,11 +24,16 @@ import {
 	messagePage,
 	minecraftPage,
 	pairedPage,
+	regeneratePage,
+	regeneratedPage,
+	removePage,
 	rolePage,
 	serverPage,
 	serversPage,
 	type AddBridgeProblem,
+	type RegenerateProblem,
 	type RoleChoice,
+	type UndeletedWebhookView,
 } from './pages.ts';
 import { endSession, sessionFromToken, startSession } from './sessions.ts';
 import { SESSION_LIFETIME_MS, type DashboardSession } from './storage.ts';
@@ -40,6 +45,7 @@ import { HelperHub } from '../minecraft/helperHub.ts';
 import { registerHelperRoutes } from '../minecraft/helperRoutes.ts';
 import {
 	MAX_BRIDGES_PER_GUILD,
+	getBridge,
 	getGuildBridges,
 	getMinecraftGuildSettings,
 	setAllowedRole,
@@ -87,6 +93,10 @@ export const ROUTE_ACCESS = {
 	'POST /servers/:guildId/minecraft/new': 'bridges',
 	'GET /servers/:guildId/minecraft/role': 'owner',
 	'POST /servers/:guildId/minecraft/role': 'owner',
+	'GET /servers/:guildId/minecraft/bridges/:bridgeId/regenerate': 'bridges',
+	'POST /servers/:guildId/minecraft/bridges/:bridgeId/regenerate': 'bridges',
+	'GET /servers/:guildId/minecraft/bridges/:bridgeId/remove': 'bridges',
+	'POST /servers/:guildId/minecraft/bridges/:bridgeId/remove': 'bridges',
 	'POST /minecraft/connect': 'helper',
 	'POST /minecraft/poll': 'helper',
 } as const;
@@ -110,6 +120,7 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 	const fetchFn = options.fetch ?? fetch;
 	const now = options.now ?? Date.now;
 	const access = options.client ? serverAccess(options.client, now) : null;
+	const hub = options.helpers ?? new HelperHub(now);
 	const app = new Hono<Env>();
 	const loginGate = createLoginGate(now);
 	const formTokens = createFormTokens(now);
@@ -281,6 +292,7 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 		const channels = options.client?.guilds.cache.get(server.id)?.channels.cache;
 		const channel = (id: string) => ({ id, name: channels?.get(id)?.name ?? null });
 		const bridges = getGuildBridges(server.id).map((bridge) => ({
+			id: bridge.id,
 			serverName: bridge.server_name,
 			chat: channel(bridge.chat_channel_id),
 			alerts: channel(bridge.alerts_channel_id),
@@ -413,6 +425,131 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 		},
 	);
 
+	// The bridge in the path, if it's this server's: another server's is as
+	// unknown as one that doesn't exist, with the same 404.
+	const bridgeIn = (c: Context<Env>) => {
+		const bridge = getBridge(c.req.param('bridgeId') ?? '');
+		return bridge && bridge.guild_id === c.get('server').id ? bridge : undefined;
+	};
+	const channelNameIn = (guildId: string) => (id: string) =>
+		options.client?.guilds.cache.get(guildId)?.channels.cache.get(id)?.name ?? null;
+	const undeletedIn = (guildId: string, webhooks: { channelId: string; webhookId: string }[]): UndeletedWebhookView[] =>
+		webhooks.map(({ channelId, webhookId }) => ({
+			channel: { id: channelId, name: channelNameIn(guildId)(channelId) },
+			webhookId,
+		}));
+	const regenerateForm = (guildId: string, userId: string, bridgeId: string) =>
+		`regenerate:${guildId}:${userId}:${bridgeId}`;
+	const smallForm = bodyLimit({
+		maxSize: 1024,
+		onError: (c) => c.html(messagePage('Too large', 'That form was too large.'), 413),
+	});
+
+	app.get('/servers/:guildId/minecraft/bridges/:bridgeId/regenerate', requires('bridges'), (c) => {
+		const server = c.get('server');
+		if (!options.pairing) return pairingOff(c);
+		const bridge = bridgeIn(c);
+		if (!bridge) return notFound(c);
+		const token = formTokens.issue(regenerateForm(server.id, c.get('session').user_id, bridge.id));
+		return c.html(
+			regeneratePage(server, { kind: 'confirm', bridge: { id: bridge.id, serverName: bridge.server_name }, token }),
+		);
+	});
+
+	app.post('/servers/:guildId/minecraft/bridges/:bridgeId/regenerate', requires('bridges'), smallForm, async (c) => {
+		const server = c.get('server');
+		const pairing = options.pairing;
+		if (!pairing || !auth) return pairingOff(c);
+		const bridge = bridgeIn(c);
+		if (!bridge) return notFound(c);
+		const userId = c.get('session').user_id;
+		const body = await c.req.parseBody();
+		const token = typeof body['form'] === 'string' ? body['form'] : '';
+		// As with pairing: the new secret is only in this answer, so a second
+		// submit would revoke the config the first one showed.
+		if (!formTokens.take(token, regenerateForm(server.id, userId, bridge.id))) {
+			return c.html(regeneratePage(server, { kind: 'sent' }), 409);
+		}
+
+		const answer = await pairing.regenerate({
+			guildId: server.id,
+			userId,
+			bridgeId: bridge.id,
+			dashboardUrl: auth.origin,
+		});
+		if (answer.ok) {
+			// Its helper's poll held with the old keys would still get chat.
+			hub.end(bridge.id);
+			return c.html(
+				regeneratedPage(server, {
+					serverName: answer.bridge.server_name,
+					config: answer.config,
+					undeleted: undeletedIn(server.id, answer.undeletedWebhooks),
+				}),
+			);
+		}
+		// Checked fresh, they may no longer, or it was removed meanwhile.
+		if (answer.reason === 'not-allowed' || answer.reason === 'unknown-bridge') return notFound(c);
+		// Only pairing gives these; regenerating never should.
+		const problem: RegenerateProblem =
+			answer.reason === 'bad-name' || answer.reason === 'bridge-limit' ? { reason: 'error' } : answer;
+		return c.html(
+			regeneratePage(server, {
+				kind: 'confirm',
+				bridge: { id: bridge.id, serverName: bridge.server_name },
+				token: formTokens.issue(regenerateForm(server.id, userId, bridge.id)),
+				problem,
+				channelName: channelNameIn(server.id),
+			}),
+			problem.reason === 'error' ? 502 : 400,
+		);
+	});
+
+	app.get('/servers/:guildId/minecraft/bridges/:bridgeId/remove', requires('bridges'), (c) => {
+		if (!options.pairing) return pairingOff(c);
+		const bridge = bridgeIn(c);
+		if (!bridge) return notFound(c);
+		return c.html(
+			removePage(c.get('server'), { kind: 'confirm', bridge: { id: bridge.id, serverName: bridge.server_name } }),
+		);
+	});
+
+	// No one-time token: nothing in the answer is secret, and removing twice
+	// finds nothing the second time.
+	app.post('/servers/:guildId/minecraft/bridges/:bridgeId/remove', requires('bridges'), smallForm, async (c) => {
+		const server = c.get('server');
+		if (!options.pairing) return pairingOff(c);
+		const bridge = bridgeIn(c);
+		if (!bridge) return notFound(c);
+		const answer = await options.pairing.remove({
+			guildId: server.id,
+			userId: c.get('session').user_id,
+			bridgeId: bridge.id,
+		});
+		if (answer.ok) {
+			hub.end(bridge.id);
+			if (answer.undeletedWebhooks.length === 0) return c.redirect(`/servers/${server.id}/minecraft`, 303);
+			return c.html(
+				removePage(server, {
+					kind: 'removed',
+					serverName: answer.bridge.server_name,
+					undeleted: undeletedIn(server.id, answer.undeletedWebhooks),
+				}),
+			);
+		}
+		if (answer.reason === 'error') {
+			return c.html(
+				removePage(server, {
+					kind: 'confirm',
+					bridge: { id: bridge.id, serverName: bridge.server_name },
+					problem: 'error',
+				}),
+				502,
+			);
+		}
+		return notFound(c);
+	});
+
 	app.post('/logout', (c) => {
 		endSession(getCookie(c, SESSION_COOKIE, 'host'));
 		deleteCookie(c, SESSION_COOKIE, cookieOptions);
@@ -420,7 +557,7 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 	});
 
 	registerHelperRoutes(app, {
-		hub: options.helpers ?? new HelperHub(now),
+		hub,
 		now,
 		visitorOf,
 		...(options.announcer && { announcer: options.announcer }),

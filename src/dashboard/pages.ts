@@ -174,6 +174,7 @@ export function serverPage(server: { name: string }, view: ServerReminders): Pag
 
 /** A bridge as the Minecraft page shows it. A channel's `name` is null for one the bot can't see. */
 export interface BridgeView {
+	id: string;
 	serverName: string;
 	chat: { id: string; name: string | null };
 	alerts: { id: string; name: string | null };
@@ -185,7 +186,8 @@ function channelText(channel: { id: string; name: string | null }): Page {
 	return channel.name === null ? html`a channel the bot can't see (ID ${channel.id})` : html`#${channel.name}`;
 }
 
-function bridgeItem(bridge: BridgeView): Page {
+function bridgeItem(serverId: string, bridge: BridgeView): Page {
+	const base = `/servers/${serverId}/minecraft/bridges/${bridge.id}`;
 	return html`<li>
 		<h2>${bridge.serverName}</h2>
 		<p>Chat in ${channelText(bridge.chat)}, alerts in ${channelText(bridge.alerts)}.</p>
@@ -196,6 +198,7 @@ function bridgeItem(bridge: BridgeView): Page {
 					: "Messages posted in its chat channel don't go into the game yet: the bot announces it there when the server's helper first connects."
 			}
 		</p>
+		<p><a href="${base}/regenerate">Regenerate its config</a> · <a href="${base}/remove">Remove it</a></p>
 	</li>`;
 }
 
@@ -229,7 +232,7 @@ export function minecraftPage(
 				view.bridges.length === 0
 					? html`<p>No Minecraft servers paired yet.</p>`
 					: html`<ul>
-							${view.bridges.map(bridgeItem)}
+							${view.bridges.map((bridge) => bridgeItem(server.id, bridge))}
 						</ul>`
 			}
 			${
@@ -371,10 +374,16 @@ export function addBridgePage(server: { id: string; name: string }, view: AddBri
 	);
 }
 
+// In a read-only box to copy, as the pages run no scripts.
+function configBox(config: HelperConfig): Page {
+	return html`<p>
+		<label>mcbridge.json <textarea readonly rows="16" cols="80">${JSON.stringify(config, null, 2)}</textarea></label>
+	</p>`;
+}
+
 /**
  * The helper's config, shown once: only the keys derived from its secret are
- * kept, so it can't be shown again. In a read-only box to copy, as the pages
- * run no scripts.
+ * kept, so it can't be shown again.
  */
 export function pairedPage(
 	server: { id: string; name: string },
@@ -390,11 +399,7 @@ export function pairedPage(
 				<code>logPath</code> (the server's <code>logs/latest.log</code>), and keep it private (<code>chmod 600</code>):
 				anyone with it can post in its channels and receive its chat.
 			</p>
-			<p>
-				<label
-					>mcbridge.json <textarea readonly rows="16" cols="80">${JSON.stringify(view.config, null, 2)}</textarea>
-				</label>
-			</p>
+			${configBox(view.config)}
 			<p>
 				Messages posted in the chat channel go into the game once the helper first connects, when the bot announces it
 				there. Consider telling the channel beforehand, and saying so in its topic.
@@ -463,5 +468,161 @@ export function rolePage(
 				<p><button type="submit">Save</button></p>
 			</form>
 			<p><a href="/servers/${server.id}/minecraft">Back to its Minecraft servers</a></p>`,
+	);
+}
+
+/** An old webhook Discord wouldn't delete; `channel.name` is null for a channel the bot can't see. */
+export interface UndeletedWebhookView {
+	channel: { id: string; name: string | null };
+	webhookId: string;
+}
+
+// It still posts for anyone with the old config, so it's named for the
+// manager to delete by hand.
+function undeletedText(webhooks: UndeletedWebhookView[]): Page | string {
+	if (webhooks.length === 0) return '';
+	return html`<p role="alert">
+			Discord wouldn't delete ${webhooks.length === 1 ? 'an old webhook' : 'these old webhooks'}, so anyone with the old
+			config can still post through ${webhooks.length === 1 ? 'it' : 'them'}. Delete
+			${webhooks.length === 1 ? 'it' : 'them'} in the channel's settings, under Integrations, then Webhooks:
+		</p>
+		<ul>
+			${webhooks.map((webhook) => html`<li>ID ${webhook.webhookId} in ${channelText(webhook.channel)}</li>`)}
+		</ul>`;
+}
+
+/** Why a bridge's config wasn't regenerated, for the page to say what to fix. */
+export type RegenerateProblem = Exclude<
+	PairingRefusal,
+	{ reason: 'not-allowed' | 'unknown-bridge' | 'bad-name' | 'bridge-limit' }
+>;
+
+function regenerateProblemText(problem: RegenerateProblem, channelName: (id: string) => string | null): Page | string {
+	const channel = (id: string) => {
+		const name = channelName(id);
+		return name === null ? html`the channel with ID ${id}` : html`#${name}`;
+	};
+	switch (problem.reason) {
+		case 'unusable-channel':
+			return html`${channel(problem.channelId)} is gone, or no longer a text or announcement channel, so nothing was
+			regenerated. Remove this Minecraft server and pair it again with another channel.`;
+		case 'webhook-limit':
+			if (problem.scope === 'server') return problemText(problem, channelName);
+			return html`${channel(problem.channelId)} already has 15 webhooks, Discord's most for a channel, and the new one
+			is made before the old one is deleted. Delete one in its settings (Integrations), then try again.`;
+		case 'bridge-changed':
+			return 'Its channels changed meanwhile, and nothing was regenerated. Please try again.';
+		case 'error':
+			return 'Discord or the bot failed, and nothing was regenerated: the old config still works. Please try again.';
+		default:
+			return problemText(problem, channelName);
+	}
+}
+
+export type RegenerateView =
+	/** The form's one-time token was already used, or has expired. */
+	| { kind: 'sent' }
+	| {
+			kind: 'confirm';
+			bridge: { id: string; serverName: string };
+			/** Used up by the POST, so the form regenerates once (formTokens.ts). */
+			token: string;
+			problem?: RegenerateProblem;
+			/** A channel's name from the bot's cache, null for one it can't see. */
+			channelName?: (id: string) => string | null;
+	  };
+
+/** Asks before regenerating a bridge's config, which stops its helper until the new one is in place. */
+export function regeneratePage(server: { id: string; name: string }, view: RegenerateView): Page {
+	const back = html`<p><a href="/servers/${server.id}/minecraft">Back to its Minecraft servers</a></p>`;
+	if (view.kind === 'sent') {
+		const title = `${server.name}: regenerate a config`;
+		return layout(
+			title,
+			html`<h1>${title}</h1>
+				<p>
+					That form was already sent, or has expired. If it regenerated the config, the old one no longer works and the
+					new one was shown only once: regenerate it again to get a config that works.
+				</p>
+				${back}`,
+		);
+	}
+	const title = `${server.name}: regenerate ${view.bridge.serverName}'s config`;
+	const action = `/servers/${server.id}/minecraft/bridges/${view.bridge.id}/regenerate`;
+	return layout(
+		title,
+		html`<h1>${title}</h1>
+			${
+				view.problem
+					? html`<p role="alert">${regenerateProblemText(view.problem, view.channelName ?? (() => null))}</p>`
+					: ''
+			}
+			<p>
+				Do this if its <code>mcbridge.json</code> may have leaked: anyone with it can post in its channels and receive
+				its chat. Regenerating replaces the config's secret and both webhooks, and deletes the old webhooks, so the old
+				config stops working at once.
+			</p>
+			<p>
+				Its helper stops posting in Discord and reaching the bot until you put the new config in place and restart it.
+				The new config is shown only once.
+			</p>
+			<form method="post" action="${action}">
+				<input type="hidden" name="form" value="${view.token}" />
+				<p><button type="submit">Regenerate</button></p>
+			</form>
+			${back}`,
+	);
+}
+
+/** A bridge's new config, shown once, and any old webhook Discord kept. */
+export function regeneratedPage(
+	server: { id: string; name: string },
+	view: { serverName: string; config: HelperConfig; undeleted: UndeletedWebhookView[] },
+): Page {
+	const title = `${server.name}: ${view.serverName}'s config regenerated`;
+	return layout(
+		title,
+		html`<h1>${title}</h1>
+			${undeletedText(view.undeleted)}
+			<p>
+				The old config no longer works. <strong>This one is shown only this once.</strong> In the helper's
+				<code>mcbridge.json</code>, replace <code>webhooks</code> and <code>bot</code> with these, keeping the rest,
+				then restart <code>mcbridge</code>.
+			</p>
+			${configBox(view.config)}
+			<p><a href="/servers/${server.id}/minecraft">Back to its Minecraft servers</a></p>`,
+	);
+}
+
+export type RemoveView =
+	| { kind: 'confirm'; bridge: { id: string; serverName: string }; problem?: 'error' }
+	/** Removed, but Discord kept a webhook, which the manager deletes by hand. */
+	| { kind: 'removed'; serverName: string; undeleted: UndeletedWebhookView[] };
+
+/** Asks before removing a bridge, or says what Discord left behind. */
+export function removePage(server: { id: string; name: string }, view: RemoveView): Page {
+	const back = html`<p><a href="/servers/${server.id}/minecraft">Back to its Minecraft servers</a></p>`;
+	if (view.kind === 'removed') {
+		const title = `${server.name}: ${view.serverName} removed`;
+		return layout(
+			title,
+			html`<h1>${title}</h1>
+				${undeletedText(view.undeleted)} ${back}`,
+		);
+	}
+	const title = `${server.name}: remove ${view.bridge.serverName}`;
+	return layout(
+		title,
+		html`<h1>${title}</h1>
+			${view.problem ? html`<p role="alert">The bot failed, and nothing was removed. Please try again.</p>` : ''}
+			<p>
+				Removing it deletes its two webhooks, every member's link to a player on it, and the pictures set for its
+				players. Its helper stops posting in Discord and reaching the bot, and messages in its chat channel stop going
+				into the game. This can't be undone: pairing it again makes a new config.
+			</p>
+			<form method="post" action="/servers/${server.id}/minecraft/bridges/${view.bridge.id}/remove">
+				<p><button type="submit">Remove</button></p>
+			</form>
+			${back}`,
 	);
 }

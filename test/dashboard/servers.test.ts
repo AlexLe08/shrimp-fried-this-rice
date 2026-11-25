@@ -19,6 +19,7 @@ import {
 import { fakeClient, fakeGuild } from './fakeGuilds.ts';
 import { fakePairing } from './fakePairing.ts';
 import type { BridgePairing, PairAnswer } from '../../src/minecraft/dashboardPairing.ts';
+import { HelperHub } from '../../src/minecraft/helperHub.ts';
 
 const auth: AuthConfig = { clientId: 'client-1', clientSecret: 'secret-1', origin: 'https://dash.example' };
 const NOW = 1_000_000;
@@ -619,6 +620,282 @@ describe('adding a Minecraft server', () => {
 	});
 });
 
+describe("regenerating and removing a Minecraft server's config", () => {
+	// u1 owns g1; the bot's cache names its channels.
+	const guilds = () => [
+		fakeGuild('g1', 'Shrimp Hall', { u1: false }, { c1: 'mc-chat', c2: '<i>alerts</i>' }, { ownerId: 'u1' }),
+		fakeGuild('g2', 'Other Place', { u1: false }, {}, { ownerId: 'u1' }),
+	];
+	let hub: HelperHub;
+
+	beforeEach(() => {
+		hub = new HelperHub(() => NOW);
+	});
+
+	function bridgeApp(pairing: BridgePairing | null = fakePairing()) {
+		return createApp({ auth, client: fakeClient(guilds()), now: () => NOW, helpers: hub, ...(pairing && { pairing }) });
+	}
+
+	function pairedBridge(guildId = 'g1', serverName = 'Survival') {
+		return createBridge({
+			guildId,
+			chat: { channelId: 'c1', webhookId: '901', token: 'tok-chat' },
+			alerts: { channelId: 'c2', webhookId: '902', token: 'tok-alerts' },
+			keys: { request: Buffer.alloc(32, 1), response: Buffer.alloc(32, 2) },
+			serverName,
+			now: NOW,
+		});
+	}
+
+	const post = (fields: Record<string, string> = {}, origin = auth.origin) => ({
+		method: 'POST',
+		headers: { ...signedIn(), origin, 'content-type': 'application/x-www-form-urlencoded' },
+		body: new URLSearchParams(fields).toString(),
+	});
+	const regeneratePath = (bridgeId: string, guildId = 'g1') =>
+		`/servers/${guildId}/minecraft/bridges/${bridgeId}/regenerate`;
+	const removePath = (bridgeId: string, guildId = 'g1') => `/servers/${guildId}/minecraft/bridges/${bridgeId}/remove`;
+
+	async function regenerateToken(app: ReturnType<typeof bridgeApp>, bridgeId: string): Promise<string> {
+		const text = await (await app.request(regeneratePath(bridgeId), { headers: signedIn() })).text();
+		const token = /name="form" value="([^"]+)"/.exec(text)?.[1];
+		if (!token) throw new Error('the form has no token');
+		return token;
+	}
+
+	it('links each bridge’s regenerate and remove pages from the Minecraft page', async () => {
+		const bridge = pairedBridge();
+
+		const text = await (await bridgeApp().request('/servers/g1/minecraft', { headers: signedIn() })).text();
+
+		expect(text).toContain(`<a href="${regeneratePath(bridge.id)}">Regenerate its config</a>`);
+		expect(text).toContain(`<a href="${removePath(bridge.id)}">Remove it</a>`);
+	});
+
+	it('answers 404 for an unknown bridge and for another server’s, though the user manages both', async () => {
+		const theirs = pairedBridge('g2');
+		const pairing = fakePairing();
+		const app = bridgeApp(pairing);
+
+		for (const path of [regeneratePath('nope'), regeneratePath(theirs.id), removePath('nope'), removePath(theirs.id)]) {
+			expect((await app.request(path, { headers: signedIn() })).status).toBe(404);
+			expect((await app.request(path, post())).status).toBe(404);
+		}
+		expect(pairing.regenerate).not.toHaveBeenCalled();
+		expect(pairing.remove).not.toHaveBeenCalled();
+	});
+
+	it('answers 503 without pairing', async () => {
+		const bridge = pairedBridge();
+		const app = bridgeApp(null);
+
+		for (const path of [regeneratePath(bridge.id), removePath(bridge.id)]) {
+			expect((await app.request(path, { headers: signedIn() })).status).toBe(503);
+			expect((await app.request(path, post())).status).toBe(503);
+		}
+	});
+
+	describe('regenerating', () => {
+		it('asks first, saying the helper stops until the new config is in place', async () => {
+			const bridge = pairedBridge('g1', '<b>Survival</b>');
+
+			const text = await (await bridgeApp().request(regeneratePath(bridge.id), { headers: signedIn() })).text();
+
+			expect(text).toContain('<h1>Shrimp Hall: regenerate &lt;b&gt;Survival&lt;/b&gt;&#39;s config</h1>');
+			expect(text).toContain('stops posting in Discord and reaching the bot');
+			expect(text).toContain(`<form method="post" action="${regeneratePath(bridge.id)}">`);
+		});
+
+		it('regenerates as the member with the public origin, shows the new config once, and ends the old helper’s poll', async () => {
+			const bridge = pairedBridge();
+			const pairing = fakePairing();
+			const app = bridgeApp(pairing);
+			const held = hub.poll(bridge.id, hub.connect(bridge.id));
+
+			const response = await app.request(
+				regeneratePath(bridge.id),
+				post({ form: await regenerateToken(app, bridge.id) }),
+			);
+			const text = await response.text();
+
+			expect(response.status).toBe(200);
+			expect(pairing.regenerate).toHaveBeenCalledWith({
+				guildId: 'g1',
+				userId: 'u1',
+				bridgeId: bridge.id,
+				dashboardUrl: auth.origin,
+			});
+			expect(text).toContain('<h1>Shrimp Hall: Survival&#39;s config regenerated</h1>');
+			expect(text).toContain('shown only this once');
+			expect(text).toContain('&quot;secret&quot;: &quot;the-new-secret&quot;');
+			expect(text).not.toContain('role="alert"');
+			expect(response.headers.get('cache-control')).toBe('no-store');
+			await expect(held).resolves.toEqual({ kind: 'session-ended' });
+		});
+
+		it('names an old webhook Discord kept, as it still posts', async () => {
+			const bridge = pairedBridge();
+			const app = bridgeApp(fakePairing({ undeleted: [{ channelId: 'c2', webhookId: '902' }] }));
+
+			const response = await app.request(
+				regeneratePath(bridge.id),
+				post({ form: await regenerateToken(app, bridge.id) }),
+			);
+
+			expect(await response.text()).toMatch(/can still post through it[\s\S]*ID 902 in #&lt;i&gt;alerts&lt;\/i&gt;/);
+		});
+
+		it('regenerates once for a form sent twice, as by a reload or a double click', async () => {
+			const bridge = pairedBridge();
+			const pairing = fakePairing();
+			const app = bridgeApp(pairing);
+			const request = post({ form: await regenerateToken(app, bridge.id) });
+
+			const [first, second] = await Promise.all([
+				app.request(regeneratePath(bridge.id), request),
+				app.request(regeneratePath(bridge.id), request),
+			]);
+
+			expect([first.status, second.status].sort()).toEqual([200, 409]);
+			expect(pairing.regenerate).toHaveBeenCalledTimes(1);
+			const refused = first.status === 409 ? first : second;
+			expect(await refused.text()).toContain('That form was already sent, or has expired.');
+		});
+
+		it("refuses a form without a token, or with one for another bridge's form", async () => {
+			const bridge = pairedBridge();
+			const other = pairedBridge('g1', 'Creative');
+			const pairing = fakePairing();
+			const app = bridgeApp(pairing);
+
+			expect((await app.request(regeneratePath(bridge.id), post())).status).toBe(409);
+			const token = await regenerateToken(app, other.id);
+			expect((await app.request(regeneratePath(bridge.id), post({ form: token }))).status).toBe(409);
+			expect(pairing.regenerate).not.toHaveBeenCalled();
+		});
+
+		it('says what to fix, naming the channel escaped, with a new token, and leaves the helper connected', async () => {
+			const bridge = pairedBridge();
+			const app = bridgeApp(
+				fakePairing({ regenerateAnswer: { ok: false, reason: 'member-cant-manage-channel', channelId: 'c2' } }),
+			);
+			const session = hub.connect(bridge.id);
+			const first = await regenerateToken(app, bridge.id);
+
+			const response = await app.request(regeneratePath(bridge.id), post({ form: first }));
+			const text = await response.text();
+
+			expect(response.status).toBe(400);
+			expect(text).toContain('You need View Channel and Manage Webhooks in #&lt;i&gt;alerts&lt;/i&gt;.');
+			const again = /name="form" value="([^"]+)"/.exec(text)?.[1];
+			expect(again).toBeDefined();
+			expect(again).not.toBe(first);
+			hub.deliver(bridge.id, 'still connected');
+			await expect(hub.poll(bridge.id, session)).resolves.toEqual({ kind: 'messages', messages: ['still connected'] });
+		});
+
+		it('says a channel that is gone means pairing again, and that a failure kept the old config', async () => {
+			const bridge = pairedBridge();
+			const gone = bridgeApp(
+				fakePairing({ regenerateAnswer: { ok: false, reason: 'unusable-channel', channelId: 'c9' } }),
+			);
+			const failed = bridgeApp(fakePairing({ regenerateAnswer: { ok: false, reason: 'error' } }));
+
+			const goneResponse = await gone.request(
+				regeneratePath(bridge.id),
+				post({ form: await regenerateToken(gone, bridge.id) }),
+			);
+			const failedResponse = await failed.request(
+				regeneratePath(bridge.id),
+				post({ form: await regenerateToken(failed, bridge.id) }),
+			);
+
+			expect(goneResponse.status).toBe(400);
+			expect(await goneResponse.text()).toContain('the channel with ID c9 is gone');
+			expect(failedResponse.status).toBe(502);
+			expect(await failedResponse.text()).toContain('the old config still works');
+		});
+
+		it('answers 404 when the fresh check finds the member may no longer manage bridges', async () => {
+			const bridge = pairedBridge();
+			const app = bridgeApp(fakePairing({ regenerateAnswer: { ok: false, reason: 'not-allowed' } }));
+
+			const response = await app.request(
+				regeneratePath(bridge.id),
+				post({ form: await regenerateToken(app, bridge.id) }),
+			);
+
+			expect(response.status).toBe(404);
+		});
+	});
+
+	describe('removing', () => {
+		it('asks first, saying what goes with it', async () => {
+			const bridge = pairedBridge();
+
+			const text = await (await bridgeApp().request(removePath(bridge.id), { headers: signedIn() })).text();
+
+			expect(text).toContain('<h1>Shrimp Hall: remove Survival</h1>');
+			expect(text).toContain("This can't be undone");
+			expect(text).toContain(`<form method="post" action="${removePath(bridge.id)}">`);
+		});
+
+		it('removes as the member, ends the helper’s poll, and goes back to the list without it', async () => {
+			const bridge = pairedBridge();
+			const pairing = fakePairing();
+			const app = bridgeApp(pairing);
+			const held = hub.poll(bridge.id, hub.connect(bridge.id));
+
+			const response = await app.request(removePath(bridge.id), post());
+
+			expect(response.status).toBe(303);
+			expect(response.headers.get('location')).toBe('/servers/g1/minecraft');
+			expect(pairing.remove).toHaveBeenCalledWith({ guildId: 'g1', userId: 'u1', bridgeId: bridge.id });
+			await expect(held).resolves.toEqual({ kind: 'session-ended' });
+			const list = await (await app.request('/servers/g1/minecraft', { headers: signedIn() })).text();
+			expect(list).toContain('No Minecraft servers paired yet.');
+		});
+
+		it('names a webhook Discord kept instead of going back to the list', async () => {
+			const bridge = pairedBridge();
+			const app = bridgeApp(fakePairing({ undeleted: [{ channelId: 'c1', webhookId: '901' }] }));
+
+			const response = await app.request(removePath(bridge.id), post());
+			const text = await response.text();
+
+			expect(response.status).toBe(200);
+			expect(text).toContain('<h1>Shrimp Hall: Survival removed</h1>');
+			expect(text).toContain('ID 901 in #mc-chat');
+		});
+
+		it('says nothing was removed when the bot failed, and answers 404 when the member may no longer', async () => {
+			const bridge = pairedBridge();
+			const failed = await bridgeApp(fakePairing({ removeAnswer: { ok: false, reason: 'error' } })).request(
+				removePath(bridge.id),
+				post(),
+			);
+			const refused = await bridgeApp(fakePairing({ removeAnswer: { ok: false, reason: 'not-allowed' } })).request(
+				removePath(bridge.id),
+				post(),
+			);
+
+			expect(failed.status).toBe(502);
+			expect(await failed.text()).toContain('nothing was removed');
+			expect(refused.status).toBe(404);
+		});
+
+		it('refuses a form from another site', async () => {
+			const bridge = pairedBridge();
+			const pairing = fakePairing();
+
+			const response = await bridgeApp(pairing).request(removePath(bridge.id), post({}, 'https://evil.example'));
+
+			expect(response.status).toBe(403);
+			expect(pairing.remove).not.toHaveBeenCalled();
+		});
+	});
+});
+
 describe('who may manage Minecraft servers', () => {
 	// u1 owns g1; u2 has r-mc; r-bot is an integration's.
 	const serverRoles = {
@@ -793,9 +1070,11 @@ describe('route access', () => {
 		}
 	});
 
-	const withGuild = (route: string) => {
+	// A bridge's routes look it up after the guard, so where the guard answers
+	// any id will do; the tests that get past it pass a real one.
+	const withGuild = (route: string, bridgeId = 'b1') => {
 		const [method, path] = route.split(' ') as [string, string];
-		return { method, path: path.replace(':guildId', 'g1') };
+		return { method, path: path.replace(':guildId', 'g1').replace(':bridgeId', bridgeId) };
 	};
 
 	// A POST as the dashboard's own form sends it, so the CSRF check lets it
@@ -897,12 +1176,23 @@ describe('route access', () => {
 		// bridge manager who isn't the owner.
 		const other = { server: 'bridges', bridges: 'server', owner: 'bridges' } as const;
 		// What a route answers when it's done: the role form saves, then goes back to the list.
-		const success: Record<string, number> = { 'POST /servers/:guildId/minecraft/role': 303 };
+		const success: Record<string, number> = {
+			'POST /servers/:guildId/minecraft/role': 303,
+			'POST /servers/:guildId/minecraft/bridges/:bridgeId/remove': 303,
+		};
 		const guarded = declared.filter((entry): entry is [string, keyof typeof levels] => entry[1] in levels);
 
 		it.each(guarded)('answers %s only to a user with its right (%s)', async (route, level) => {
 			setAllowedRole('g1', 'r-mc');
-			const { method, path } = withGuild(route);
+			const bridge = createBridge({
+				guildId: 'g1',
+				chat: { channelId: 'c1', webhookId: 'w1', token: 't' },
+				alerts: { channelId: 'c1', webhookId: 'w2', token: 't' },
+				keys: { request: Buffer.alloc(32, 1), response: Buffer.alloc(32, 2) },
+				serverName: 'Survival',
+				now: NOW,
+			});
+			const { method, path } = withGuild(route, bridge.id);
 			const otherLevel = other[level];
 
 			// A form's POST carries the token its page gave this user (formTokens.ts).
