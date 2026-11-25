@@ -251,7 +251,7 @@ src/
     pairing.ts            # pairing and regenerating a bridge: its webhooks, secret and config to download (not used yet)
     helperRoutes.ts       # the helper's endpoint on the dashboard's server (not used yet): POST /minecraft/connect and /minecraft/poll, sealed, with size and rate limits
     helperHub.ts          # each paired helper's session and lease, messages waiting for its next poll (30 s), and its held poll
-    linkedMember.ts       # a link's member, asked of Discord (not used yet); deletes their links on that server's bridges on Unknown Member only
+    linkedMember.ts       # a link's member, asked of Discord (not used yet); deletes their links on that server's bridges on Unknown Member or Unknown User only
     storage.ts            # two-way chat's queries and row types (not used yet): bridges with their webhooks and derived keys, pictures, links, who may manage them
     events/
       guildDelete.ts      # deletes a server's bridges, pictures, links and settings when the bot leaves it (not on an outage)
@@ -335,7 +335,7 @@ test/
     helperHub.test.ts               # with fake timers: held polls, messages kept 30 s and dropped past the cap, taking over, the lease, hanging up, closing
     pairing.test.ts                 # who may pair, the channel and permission checks, cleaning up webhooks on every failure, regenerating (overlapping ones too)
     helperRoutes.test.ts            # the endpoint through app.request, sealed as the helper does: sessions, 409 and 410, each refusal in order, the clock, the rate limits
-    linkedMember.test.ts            # the member asked for uncached, Unknown Member deleting only that server's links, every other failure keeping them, a real Guild fitting
+    linkedMember.test.ts            # the member asked for uncached, Unknown Member and Unknown User deleting only that server's links, every other failure keeping them, a real Guild fitting
     storage.test.ts                 # bridges (random ids, settings, regenerating), the last relayed id moving forward only, pictures, links (replacing, who may change them), deleting
     events/
       guildDelete.test.ts           # leaving a server deletes its Minecraft data and no other server's

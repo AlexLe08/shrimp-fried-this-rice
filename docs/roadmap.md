@@ -533,12 +533,13 @@ Later item), not a follow-up.
 - **Links of members who left** (2026-11-24, last part of A8d).
   `fetchLinkedMember` (`src/minecraft/linkedMember.ts`) asks Discord for a
   link's member, not the cache, as without the Server Members intent the
-  bot isn't told when someone leaves. Only Unknown Member (10007) deletes
-  their links on that server's bridges; a network error, a 5xx, a rate
-  limit or anything else keeps them and is logged, and the caller falls
-  back to the bridge's pictures. Unknown User (10013, a deleted account)
-  keeps them too, as the plan names Unknown Member only. Checked in
-  Discord's docs (2026-11-24): 10007 is Unknown Member, and only listing
+  bot isn't told when someone leaves. Only Unknown Member (10007) and
+  Unknown User (10013, a deleted account; the owner's call, 2026-11-24,
+  as the dashboard's access check reads it the same way) delete their
+  links on that server's bridges; a network error, a 5xx, a rate limit or
+  anything else keeps them and is logged, and the caller falls back to
+  the bridge's pictures. Checked in Discord's docs (2026-11-24): 10007 is
+  Unknown Member, 10013 Unknown User, and only listing
   members needs the Server Members intent, not fetching one (the
   dashboard's access check already does so on the live site). It takes a
   narrow `LinkedMember` (`displayAvatarURL`, the plan's `discord`

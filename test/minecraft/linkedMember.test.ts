@@ -65,17 +65,20 @@ describe('fetchLinkedMember', () => {
 		expect(linkedNames(here)).toEqual(['Alex', 'Steve', 'SteveAlt']);
 	});
 
-	it("deletes a member's links on that server's bridges when Discord answers Unknown Member", async () => {
+	it.each([
+		['Unknown Member, as they left', RESTJSONErrorCodes.UnknownMember],
+		['Unknown User, as the account was deleted', RESTJSONErrorCodes.UnknownUser],
+	])("deletes a member's links on that server's bridges on %s", async (name, code) => {
 		const log = vi.spyOn(console, 'log').mockImplementation(() => {});
 		const guild = fakeGuild('g1', async () => {
-			throw discordError('Unknown Member', { code: RESTJSONErrorCodes.UnknownMember, status: 404 });
+			throw discordError(name, { code, status: 404 });
 		});
 
 		await expect(fetchLinkedMember(guild, 'u1')).resolves.toBeNull();
 		expect(linkedNames(here)).toEqual(['Alex']);
 		// Leaving one server says nothing about another.
 		expect(linkedNames(elsewhere)).toEqual(['Steve']);
-		expect(log).toHaveBeenCalledWith('Minecraft: u1 left g1; deleted their 2 link(s).');
+		expect(log).toHaveBeenCalledWith('Minecraft: u1 is no longer in g1; deleted their 2 link(s).');
 	});
 
 	it('logs nothing when a member who left had no links left to delete', async () => {
@@ -93,7 +96,6 @@ describe('fetchLinkedMember', () => {
 		['a 5xx', discordError('Internal Server Error', { status: 500 })],
 		['a rate limit', discordError('You are being rate limited.', { status: 429 })],
 		['missing access', discordError('Missing Access', { code: RESTJSONErrorCodes.MissingAccess, status: 403 })],
-		['Unknown User', discordError('Unknown User', { code: RESTJSONErrorCodes.UnknownUser, status: 404 })],
 	])('keeps the links and logs on %s, as it proves nothing about membership', async (_case, failure) => {
 		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
 		const guild = fakeGuild('g1', async () => {
