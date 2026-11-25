@@ -121,6 +121,22 @@ export class HelperHub {
 		return true;
 	}
 
+	/**
+	 * For a bridge regenerated or removed: ends its session and drops what's
+	 * waiting. A held poll was opened with the old keys and would be answered
+	 * with them, so without this a leaked config would get chat for up to
+	 * POLL_HOLD_MS more. Answered as ended, its helper connects again and is
+	 * refused.
+	 */
+	end(bridgeId: string): void {
+		const state = this.#bridges.get(bridgeId);
+		if (!state) return;
+		this.#bridges.delete(bridgeId);
+		state.session = null;
+		state.queue = [];
+		state.held?.answer({ kind: 'session-ended' });
+	}
+
 	/** Whether shutdown has closed it: the database may be closing too. */
 	get closed(): boolean {
 		return this.#closed;

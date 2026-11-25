@@ -249,6 +249,42 @@ describe('HelperHub', () => {
 		});
 	});
 
+	describe('end, for a bridge regenerated or removed', () => {
+		it('answers its held poll as ended, and every later poll of that session', async () => {
+			const hub = new HelperHub();
+			const session = hub.connect(BRIDGE);
+			const held = hub.poll(BRIDGE, session);
+
+			hub.end(BRIDGE);
+
+			await expect(held).resolves.toEqual({ kind: 'session-ended' });
+			expect(hub.__isPollHeldForTests(BRIDGE)).toBe(false);
+			expect(await settled(hub.poll(BRIDGE, session))).toEqual({ kind: 'session-ended' });
+		});
+
+		it('drops the messages waiting, so a helper connecting next gets none of them', async () => {
+			const hub = new HelperHub();
+			hub.connect(BRIDGE);
+			hub.deliver(BRIDGE, 'for the old config');
+
+			hub.end(BRIDGE);
+			hub.deliver(BRIDGE, 'after');
+
+			await expect(hub.poll(BRIDGE, hub.connect(BRIDGE))).resolves.toEqual({ kind: 'messages', messages: ['after'] });
+		});
+
+		it('leaves other bridges alone, and does nothing for a bridge it never saw', async () => {
+			const hub = new HelperHub();
+			const other = hub.connect('bridge-2');
+			const held = hub.poll('bridge-2', other);
+
+			hub.end(BRIDGE);
+
+			expect(await settled(held)).toBe('pending');
+			hub.close();
+		});
+	});
+
 	describe('close', () => {
 		it('answers every held poll with nothing, and later polls at once', async () => {
 			const hub = new HelperHub();
