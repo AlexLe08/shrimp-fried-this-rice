@@ -11,11 +11,15 @@ import {
 	updateGuildReminderLastSent,
 } from '../../src/reminders/storage.ts';
 import {
+	MAX_PICTURES_PER_BRIDGE,
 	createBridge,
+	deleteBridge,
 	getBridge,
 	getMinecraftGuildSettings,
+	getPlayerPictures,
 	markBridgeAnnounced,
 	setAllowedRole,
+	setPlayerPicture,
 	updateBridgeSettings,
 } from '../../src/minecraft/storage.ts';
 import { fakeClient, fakeGuild } from './fakeGuilds.ts';
@@ -1118,6 +1122,213 @@ describe("a Minecraft server's settings", () => {
 		expect(large.status).toBe(413);
 		expect(getBridge(bridge.id)?.server_name).toBe('Survival');
 	});
+
+	describe('pictures for players', () => {
+		const picturesPath = (bridgeId: string, guildId = 'g1') => `${settingsPath(bridgeId, guildId)}/pictures`;
+		const pictures = (bridgeId: string) => getPlayerPictures(bridgeId).map(({ name, picture }) => ({ name, picture }));
+
+		it('says when none are set, and offers each picture the helper takes', async () => {
+			const bridge = pairedBridge();
+
+			const text = await (await settingsApp().request(settingsPath(bridge.id), { headers: signedIn() })).text();
+
+			expect(text).toContain('<h2>Pictures for players</h2>');
+			expect(text).toContain('<p>None yet.</p>');
+			expect(text).toContain(`<form method="post" action="${picturesPath(bridge.id)}">`);
+			for (const value of ['generated', 'generated:0', 'generated:9', 'skin', 'none']) {
+				expect(text).toContain(`<option value="${value}"`);
+			}
+			expect(text).not.toContain('<option value="generated:10"');
+			expect(text).not.toContain('<option value="discord"');
+		});
+
+		it('lists the pictures set, each with a button to remove it', async () => {
+			const bridge = pairedBridge();
+			setPlayerPicture(bridge.id, 'Steve', 'generated:3');
+			setPlayerPicture(bridge.id, 'alex', 'skin');
+
+			const text = await (await settingsApp().request(settingsPath(bridge.id), { headers: signedIn('u2') })).text();
+
+			expect(text).toMatch(/<td>alex<\/td>\s*<td>Their skin&#39;s face/);
+			expect(text).toMatch(/<td>Steve<\/td>\s*<td>Generated picture 4<\/td>/);
+			expect(text).toContain('<input type="hidden" name="name" value="Steve" />');
+			expect(text).toContain('<input type="hidden" name="picture" value="" />');
+			expect(text).not.toContain('None yet.');
+		});
+
+		it('sets a picture, trimming the name, sends it to a connected helper, and goes back to the settings', async () => {
+			const bridge = pairedBridge();
+			const session = hub.connect(bridge.id);
+			const poll = hub.poll(bridge.id, session);
+
+			const response = await settingsApp().request(
+				picturesPath(bridge.id),
+				save({ name: ' Steve ', picture: 'generated:9' }, 'u2'),
+			);
+
+			expect(response.status).toBe(303);
+			expect(response.headers.get('location')).toBe(settingsPath(bridge.id));
+			expect(pictures(bridge.id)).toEqual([{ name: 'Steve', picture: 'generated:9' }]);
+			expect(await poll).toEqual({
+				kind: 'messages',
+				messages: [
+					{
+						kind: 'settings',
+						serverName: 'Survival',
+						prefix: '[Discord]',
+						colour: '#5865F2',
+						defaultPicture: null,
+						pictures: [{ name: 'Steve', picture: 'generated:9' }],
+					},
+				],
+			});
+		});
+
+		it('changes a name’s picture whatever its case, and removes it with an empty picture, sending each', async () => {
+			const bridge = pairedBridge();
+			setPlayerPicture(bridge.id, 'Steve', 'skin');
+			const session = hub.connect(bridge.id);
+			const app = settingsApp();
+
+			await app.request(picturesPath(bridge.id), save({ name: 'STEVE', picture: 'none' }));
+			expect(pictures(bridge.id)).toEqual([{ name: 'STEVE', picture: 'none' }]);
+			await app.request(picturesPath(bridge.id), save({ name: 'steve', picture: '' }));
+			expect(pictures(bridge.id)).toEqual([]);
+
+			expect(await hub.poll(bridge.id, session)).toMatchObject({
+				messages: [
+					{ kind: 'settings', pictures: [{ name: 'STEVE', picture: 'none' }] },
+					{ kind: 'settings', pictures: [] },
+				],
+			});
+		});
+
+		it('says what to fix, keeping what was sent, and saves and sends nothing', async () => {
+			const bridge = pairedBridge();
+			const session = hub.connect(bridge.id);
+
+			const response = await settingsApp().request(
+				picturesPath(bridge.id),
+				save({ name: '<b>Steve</b>', picture: 'https://example.com/a.png' }),
+			);
+			const text = await response.text();
+
+			expect(response.status).toBe(400);
+			expect(text).toContain("That picture wasn't saved");
+			expect(text).toContain('A player’s name is 1 to 16 letters');
+			expect(text).toContain('Pick a picture from the list.');
+			expect(text).toContain('name="name" required maxlength="16" value="&lt;b&gt;Steve&lt;/b&gt;"');
+			expect(text).not.toContain('<b>Steve');
+			expect(text).not.toContain('Nothing was saved');
+			expect(pictures(bridge.id)).toEqual([]);
+			hub.close();
+			expect(await hub.poll(bridge.id, session)).toEqual({ kind: 'messages', messages: [] });
+		});
+
+		it('keeps the picture chosen when only the name is refused', async () => {
+			const bridge = pairedBridge();
+
+			const response = await settingsApp().request(picturesPath(bridge.id), save({ name: 'Steve-2', picture: 'skin' }));
+			const text = await response.text();
+
+			expect(response.status).toBe(400);
+			expect(text).toContain('A player’s name is 1 to 16 letters');
+			expect(text).not.toContain('Pick a picture from the list.');
+			expect(text).toMatch(/<option value="skin" selected>/);
+		});
+
+		it('refuses a new name once the bridge has the most, but still changes one it has', async () => {
+			const bridge = pairedBridge();
+			for (let i = 0; i < MAX_PICTURES_PER_BRIDGE; i++) setPlayerPicture(bridge.id, `player${i}`, 'skin');
+			const app = settingsApp();
+
+			const refused = await app.request(picturesPath(bridge.id), save({ name: 'Steve', picture: 'skin' }));
+			const changed = await app.request(picturesPath(bridge.id), save({ name: 'player0', picture: 'none' }));
+
+			expect(refused.status).toBe(400);
+			expect(await refused.text()).toContain(
+				`A Minecraft server can have pictures for at most ${MAX_PICTURES_PER_BRIDGE} players.`,
+			);
+			expect(changed.status).toBe(303);
+			expect(getPlayerPictures(bridge.id)).toHaveLength(MAX_PICTURES_PER_BRIDGE);
+			expect(getPlayerPictures(bridge.id).find((p) => p.name_key === 'player0')?.picture).toBe('none');
+		});
+
+		it('answers 404 for an unknown bridge and for another server’s, though the user manages both', async () => {
+			const theirs = pairedBridge('g2');
+			const app = settingsApp();
+
+			for (const path of [picturesPath('nope'), picturesPath(theirs.id)]) {
+				expect((await app.request(path, save({ name: 'Steve', picture: 'skin' }))).status).toBe(404);
+			}
+			expect(pictures(theirs.id)).toEqual([]);
+		});
+
+		// The body arrives after the fresh check; a bridge removed while it's
+		// read must not get a picture row that nothing would delete.
+		it('saves and sends nothing for a bridge removed while the form was being read', async () => {
+			const bridge = pairedBridge();
+			const session = hub.connect(bridge.id);
+			const form = new TextEncoder().encode('name=Steve&picture=skin');
+			const body = new ReadableStream<Uint8Array>(
+				{
+					pull(controller) {
+						deleteBridge(bridge.id);
+						controller.enqueue(form);
+						controller.close();
+					},
+					// Not before it's read: by default a stream pulls once as it's made.
+				},
+				{ highWaterMark: 0 },
+			);
+
+			const response = await settingsApp().request(picturesPath(bridge.id), {
+				method: 'POST',
+				headers: {
+					...signedIn(),
+					origin: auth.origin,
+					'content-type': 'application/x-www-form-urlencoded',
+					// As a browser sends it: without it, bodyLimit reads the body before the route.
+					'content-length': String(form.length),
+				},
+				body,
+				duplex: 'half',
+			} as RequestInit);
+
+			expect(response.status).toBe(404);
+			expect(getPlayerPictures(bridge.id)).toEqual([]);
+			hub.close();
+			expect(await hub.poll(bridge.id, session)).toEqual({ kind: 'messages', messages: [] });
+		});
+
+		it('asks Discord afresh before saving, so a member who lost the role is refused', async () => {
+			const bridge = pairedBridge();
+			members['u2'] = 'timed out';
+
+			const response = await settingsApp().request(
+				picturesPath(bridge.id),
+				save({ name: 'Steve', picture: 'skin' }, 'u2'),
+			);
+
+			expect(response.status).toBe(404);
+			expect(pictures(bridge.id)).toEqual([]);
+		});
+
+		it('refuses a form from another site, and a body far larger than the form', async () => {
+			const bridge = pairedBridge();
+			const app = settingsApp();
+
+			const crossSite = await app.request(
+				picturesPath(bridge.id),
+				save({ name: 'Steve', picture: 'skin' }, 'u1', 'https://evil.example'),
+			);
+			const large = await app.request(picturesPath(bridge.id), save({ name: 'x'.repeat(2000), picture: 'skin' }));
+
+			expect(crossSite.status).toBe(403);
+			expect(large.status).toBe(413);
+			expect(pictures(bridge.id)).toEqual([]);
+		});
+	});
 });
 
 describe('who may manage Minecraft servers', () => {
@@ -1309,7 +1520,7 @@ describe('route access', () => {
 			: {
 					method,
 					headers: { ...headers, origin: auth.origin, 'content-type': 'application/x-www-form-urlencoded' },
-					body: `serverName=Survival&chat=c1&alerts=c1&prefix=%5BDC%5D&colour=gold&defaultPicture=&form=${form}`,
+					body: `serverName=Survival&chat=c1&alerts=c1&prefix=%5BDC%5D&colour=gold&defaultPicture=&name=Steve&picture=skin&form=${form}`,
 				};
 
 	it("keeps every helper route under /minecraft/, where the pages' rate limit gives way to its own", () => {
@@ -1399,10 +1610,11 @@ describe('route access', () => {
 		// Someone with a right, but not this one: owner routes are refused to a
 		// bridge manager who isn't the owner.
 		const other = { server: 'bridges', bridges: 'server', owner: 'bridges' } as const;
-		// What a route answers when it's done: the role and settings forms save, then go back to the list.
+		// What a route answers when it's done: the role, settings and pictures forms save, then redirect.
 		const success: Record<string, number> = {
 			'POST /servers/:guildId/minecraft/role': 303,
 			'POST /servers/:guildId/minecraft/bridges/:bridgeId': 303,
+			'POST /servers/:guildId/minecraft/bridges/:bridgeId/pictures': 303,
 			'POST /servers/:guildId/minecraft/bridges/:bridgeId/remove': 303,
 		};
 		const guarded = declared.filter((entry): entry is [string, keyof typeof levels] => entry[1] in levels);

@@ -1,4 +1,5 @@
 import { serverNameProblem } from './bridge/config.ts';
+import { isPlayerName, isSettingsPicture } from './bridge/settings.ts';
 import { isColour, isPrefix } from './bridge/toMinecraft.ts';
 import { getPlayerPictures, type DefaultPicture, type MinecraftBridge, type PlayerPicture } from './storage.ts';
 
@@ -72,4 +73,30 @@ export function checkSettingsChange(form: {
 		ok: true,
 		change: { serverName, prefix, colour, defaultPicture: picture === '' ? null : (picture as DefaultPicture) },
 	};
+}
+
+/** A picture a manager sets for one player, or removes (null: the helper's config decides). */
+export interface PictureChange {
+	name: string;
+	picture: PlayerPicture | null;
+}
+
+export type PictureField = keyof PictureChange;
+
+/**
+ * Checks a player's picture by the helper's own rules, as checkSettingsChange
+ * does: a name the helper wouldn't take, or a picture it would refuse, would
+ * show the manager a picture that never applies. An empty picture removes it.
+ */
+export function checkPictureChange(form: {
+	name: string;
+	picture: string;
+}): { ok: true; change: PictureChange } | { ok: false; refused: PictureField[] } {
+	const name = form.name.trim();
+	const picture = form.picture;
+	const refused: PictureField[] = [];
+	if (!isPlayerName(name)) refused.push('name');
+	if (picture !== '' && !isSettingsPicture(picture)) refused.push('picture');
+	if (refused.length > 0) return { ok: false, refused };
+	return { ok: true, change: { name, picture: picture === '' ? null : (picture as PlayerPicture) } };
 }

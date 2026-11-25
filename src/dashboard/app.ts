@@ -32,8 +32,10 @@ import {
 	serverPage,
 	serversPage,
 	type AddBridgeProblem,
+	type BridgeSettingsView,
 	type RegenerateProblem,
 	type RoleChoice,
+	type SettingsValues,
 	type UndeletedWebhookView,
 } from './pages.ts';
 import { endSession, sessionFromToken, startSession } from './sessions.ts';
@@ -41,17 +43,21 @@ import { SESSION_LIFETIME_MS, type DashboardSession } from './storage.ts';
 import { MAX_REMINDERS_PER_GUILD, getGuildReminders, isGuildMasterEnabled } from '../reminders/storage.ts';
 import { reminderState } from '../reminders/reminderState.ts';
 import type { Announcer } from '../minecraft/announcement.ts';
-import { bridgeSettings, checkSettingsChange } from '../minecraft/bridgeSettings.ts';
+import { bridgeSettings, checkPictureChange, checkSettingsChange } from '../minecraft/bridgeSettings.ts';
 import type { BridgePairing } from '../minecraft/dashboardPairing.ts';
 import { HelperHub, LEASE_MS, POLL_HOLD_MS } from '../minecraft/helperHub.ts';
 import { registerHelperRoutes } from '../minecraft/helperRoutes.ts';
 import {
 	MAX_BRIDGES_PER_GUILD,
+	MAX_PICTURES_PER_BRIDGE,
 	getBridge,
 	getGuildBridges,
 	getMinecraftGuildSettings,
+	getPlayerPictures,
 	setAllowedRole,
+	setPlayerPicture,
 	updateBridgeSettings,
+	type MinecraftBridge,
 } from '../minecraft/storage.ts';
 
 export interface AppOptions {
@@ -98,6 +104,7 @@ export const ROUTE_ACCESS = {
 	'POST /servers/:guildId/minecraft/role': 'owner',
 	'GET /servers/:guildId/minecraft/bridges/:bridgeId': 'bridges',
 	'POST /servers/:guildId/minecraft/bridges/:bridgeId': 'bridges',
+	'POST /servers/:guildId/minecraft/bridges/:bridgeId/pictures': 'bridges',
 	'GET /servers/:guildId/minecraft/bridges/:bridgeId/regenerate': 'bridges',
 	'POST /servers/:guildId/minecraft/bridges/:bridgeId/regenerate': 'bridges',
 	'GET /servers/:guildId/minecraft/bridges/:bridgeId/remove': 'bridges',
@@ -450,20 +457,37 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 		onError: (c) => c.html(messagePage('Too large', 'That form was too large.'), 413),
 	});
 
+	const settingsView = (
+		bridge: MinecraftBridge,
+		form: Pick<BridgeSettingsView, 'refused' | 'pictureForm'> & { values?: SettingsValues } = {},
+	): BridgeSettingsView => ({
+		bridge: { id: bridge.id, serverName: bridge.server_name },
+		values: form.values ?? {
+			serverName: bridge.server_name,
+			prefix: bridge.prefix,
+			colour: bridge.colour,
+			defaultPicture: bridge.default_picture ?? '',
+		},
+		...(form.refused ? { refused: form.refused } : {}),
+		pictures: getPlayerPictures(bridge.id).map(({ name, picture }) => ({ name, picture })),
+		maxPictures: MAX_PICTURES_PER_BRIDGE,
+		...(form.pictureForm ? { pictureForm: form.pictureForm } : {}),
+	});
+	// A connected helper applies them now, not at its next connect, which may
+	// be days away; one not connected gets them when it connects. Held as long
+	// as a session can live without polling (a helper backing off keeps its
+	// session), not chat's 30 s: missed, they'd wait for the next connect.
+	// Each is complete, and the helper keeps only the last.
+	const queueSettings = (bridge: MinecraftBridge) => {
+		if (!hub.deliver(bridge.id, bridgeSettings(bridge), LEASE_MS + POLL_HOLD_MS)) {
+			console.error(`Dashboard: bridge ${bridge.id}'s settings were saved but not queued: too many messages waiting.`);
+		}
+	};
+
 	app.get('/servers/:guildId/minecraft/bridges/:bridgeId', requires('bridges'), (c) => {
 		const bridge = bridgeIn(c);
 		if (!bridge) return notFound(c);
-		return c.html(
-			bridgeSettingsPage(c.get('server'), {
-				bridge: { id: bridge.id, serverName: bridge.server_name },
-				values: {
-					serverName: bridge.server_name,
-					prefix: bridge.prefix,
-					colour: bridge.colour,
-					defaultPicture: bridge.default_picture ?? '',
-				},
-			}),
-		);
+		return c.html(bridgeSettingsPage(c.get('server'), settingsView(bridge)));
 	});
 
 	// No one-time token: saving the same settings twice changes nothing, and
@@ -494,30 +518,48 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 			};
 			const checked = checkSettingsChange(values);
 			if (!checked.ok) {
-				return c.html(
-					bridgeSettingsPage(server, {
-						bridge: { id: bridge.id, serverName: bridge.server_name },
-						values,
-						refused: checked.refused,
-					}),
-					400,
-				);
+				return c.html(bridgeSettingsPage(server, settingsView(bridge, { values, refused: checked.refused })), 400);
 			}
 			const updated = updateBridgeSettings(bridge.id, checked.change);
 			if (!updated) return notFound(c);
-			// A connected helper applies them now, not at its next connect, which
-			// may be days away; one not connected gets them when it connects.
-			// Held as long as a session can live without polling (a helper backing
-			// off keeps its session), not chat's 30 s: missed, they'd wait for the
-			// next connect. Each is complete, and the helper keeps only the last.
-			if (!hub.deliver(bridge.id, bridgeSettings(updated), LEASE_MS + POLL_HOLD_MS)) {
-				console.error(
-					`Dashboard: bridge ${bridge.id}'s settings were saved but not queued: too many messages waiting.`,
-				);
-			}
+			queueSettings(updated);
 			return c.redirect(`/servers/${server.id}/minecraft`, 303);
 		},
 	);
+
+	// One player's picture, set or removed (an empty picture). No token, as
+	// for the settings: sending it twice changes nothing.
+	app.post('/servers/:guildId/minecraft/bridges/:bridgeId/pictures', requires('bridges'), smallForm, async (c) => {
+		const server = c.get('server');
+		const fresh = access && (await access.rightsIn(server.id, c.get('session').user_id, { fresh: true }));
+		if (!fresh?.manageBridges) return notFound(c);
+		const body = await c.req.parseBody();
+		// Looked up after the last await: a bridge removed meanwhile would get
+		// a picture row no remove deletes, and settings saved meanwhile would be
+		// overwritten on the helper by the older ones queued here.
+		const bridge = bridgeIn(c);
+		if (!bridge) return notFound(c);
+		const field = (name: string) => {
+			const value = body[name];
+			return typeof value === 'string' ? value : '';
+		};
+		const values = { name: field('name'), picture: field('picture') };
+		const checked = checkPictureChange(values);
+		if (!checked.ok) {
+			return c.html(
+				bridgeSettingsPage(server, settingsView(bridge, { pictureForm: { values, refused: checked.refused } })),
+				400,
+			);
+		}
+		if (!setPlayerPicture(bridge.id, checked.change.name, checked.change.picture)) {
+			return c.html(
+				bridgeSettingsPage(server, settingsView(bridge, { pictureForm: { values, refused: ['limit'] } })),
+				400,
+			);
+		}
+		queueSettings(bridge);
+		return c.redirect(`/servers/${server.id}/minecraft/bridges/${bridge.id}`, 303);
+	});
 
 	app.get('/servers/:guildId/minecraft/bridges/:bridgeId/regenerate', requires('bridges'), (c) => {
 		const server = c.get('server');

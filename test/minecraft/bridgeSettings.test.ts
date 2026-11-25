@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkSettingsChange } from '../../src/minecraft/bridgeSettings.ts';
+import { checkPictureChange, checkSettingsChange } from '../../src/minecraft/bridgeSettings.ts';
 import { readSettings } from '../../src/minecraft/bridge/settings.ts';
 
 const valid = { serverName: 'Survival', prefix: '[Discord]', colour: '#5865F2', defaultPicture: '' };
@@ -48,5 +48,53 @@ describe('checkSettingsChange', () => {
 			});
 		}
 		expect(logs).toEqual([]);
+	});
+});
+
+describe('checkPictureChange', () => {
+	it.each(['generated', 'generated:0', 'generated:9', 'skin', 'none'])(
+		'takes %s for a player, trimming the name',
+		(picture) => {
+			expect(checkPictureChange({ name: ' Steve_2 ', picture })).toEqual({
+				ok: true,
+				change: { name: 'Steve_2', picture },
+			});
+		},
+	);
+
+	it('takes an empty picture as removing it', () => {
+		expect(checkPictureChange({ name: 'Steve', picture: '' })).toEqual({
+			ok: true,
+			change: { name: 'Steve', picture: null },
+		});
+	});
+
+	it.each([
+		['an empty name', { name: '  ' }, ['name']],
+		['a name over 16 characters', { name: 'x'.repeat(17) }, ['name']],
+		['a name with a space', { name: 'Steve Two' }, ['name']],
+		['a name with a hyphen', { name: 'Steve-2' }, ['name']],
+		['a generated picture past the last', { picture: 'generated:10' }, ['picture']],
+		['a link', { picture: 'https://example.com/a.png' }, ['picture']],
+		['a link picture, as linked players choose', { picture: 'discord' }, ['picture']],
+		['both', { name: '<b>', picture: 'default' }, ['name', 'picture']],
+	])('refuses %s', (_what, change, refused) => {
+		expect(checkPictureChange({ name: 'Steve', picture: 'skin', ...change })).toEqual({ ok: false, refused });
+	});
+
+	// As for the settings: the helper drops a picture it would refuse.
+	it('saves only pictures the helper accepts', () => {
+		const logs: string[] = [];
+		const pictures = ['generated', 'generated:0', 'generated:9', 'skin', 'none'].map((picture, i) => {
+			const checked = checkPictureChange({ name: `Steve${i}`, picture });
+			if (!checked.ok) throw new Error('refused');
+			return checked.change;
+		});
+
+		const read = readSettings({ pictures }, (message) => logs.push(message));
+
+		expect(logs).toEqual([]);
+		expect(read?.pictures?.size).toBe(5);
+		expect(read?.pictures?.get('steve1')).toEqual({ kind: 'generated', index: 0 });
 	});
 });
