@@ -613,6 +613,22 @@ Later item), not a follow-up.
   dropping them while the server is down (the bot doesn't know yet). Not
   used yet; not tried against Discord (A8h: a deploy with messages posted
   during it).
+- **The helper's connection to the bot** (2026-11-25, fourth part of
+  A8e). `src/minecraft/bridge/botClient.ts` connects and long-polls the
+  bot's endpoint, sealed, and hands on the chat it gets: on a 410 it
+  connects again, on a sealed 409 or a 401 it stops until restarted with
+  one callback for the alert, it waits out a 429's `Retry-After`, backs off
+  from 1 s doubling to 60 s on anything else (an unsealed 409 or a 403
+  included, as anyone on the way or Cloudflare could send them), and
+  corrects for its clock from the bot's sealed time. From review: a
+  `bot.url` without its slash, a throwing callback (logged, not fatal), a
+  connect without a session (backs off) and empty polls answered at once
+  (1 s apart). Found here: pairing's
+  config didn't name the bridge, which every sealed request carries; it's
+  now `bot.bridge`, required (no config has been handed out yet). Tested
+  against the bot's real routes and a scripted fake bot. Not started by
+  `main.ts` yet, as connecting announces the relay before the helper can
+  run `tellraw` (next: RCON); not tried through the real tunnel.
 
 ## Next up
 
@@ -650,8 +666,9 @@ them ahead of items 5 and 6.
    sealing, endpoint, pairing and dropping the links of members who
    left) is done (Done above); the relay (A8e) is under way: the bot
    reads bridge chat channels, announces the relay and catches up after
-   a restart (Done above); next, the helper's side (including pacing
-   chat into the game and dropping it while the server is down).
+   a restart, and the helper connects (Done above); next, RCON and
+   `tellraw` with pacing, dropping chat while the server is down, the weak
+   password check and the stop line, then the settings cache.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the

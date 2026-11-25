@@ -65,7 +65,7 @@ export interface HelperConfig {
 	serverName: string;
 	logPath: '';
 	webhooks: { chat: string; alerts: string };
-	bot: { url: string; secret: string };
+	bot: { url: string; bridge: string; secret: string };
 }
 
 export type BotPermission = 'ViewChannel' | 'ManageWebhooks' | 'ReadMessageHistory';
@@ -253,7 +253,7 @@ export function helperConfig(bridge: MinecraftBridge, secret: string, dashboardU
 			alerts: webhookUrl(bridge.alerts_webhook_id, bridge.alerts_webhook_token),
 		},
 		// With the slash, so the helper can resolve `connect` and `poll` against it.
-		bot: { url: new URL('/minecraft/', dashboardUrl).href, secret },
+		bot: { url: new URL('/minecraft/', dashboardUrl).href, bridge: bridge.id, secret },
 	};
 }
 

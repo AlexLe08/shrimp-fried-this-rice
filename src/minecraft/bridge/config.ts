@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { parseAvatars, type AvatarConfig } from './avatars.ts';
 import { DEFAULT_IGNORE } from './classify.ts';
-import { deriveKeys } from './seal.ts';
+import { deriveKeys, isBridgeId } from './seal.ts';
 
 export interface BridgeConfig {
 	/** Shown in messages, and the sender name for everything but chat. */
@@ -15,8 +15,15 @@ export interface BridgeConfig {
 	ignore: RegExp[];
 	/** What each player's chat lines show as their picture. */
 	avatars: AvatarConfig;
-	/** The bot's endpoint and the pairing secret, from the dashboard; unset, the bridge is one-way. */
-	bot?: { url: string; secret: string };
+	/** The bot's endpoint, the bridge's id and the pairing secret, from the dashboard; unset, the bridge is one-way. */
+	bot?: BotConfig;
+}
+
+export interface BotConfig {
+	url: string;
+	/** Sent in the clear with each sealed request, naming the bridge's keys. */
+	bridge: string;
+	secret: string;
 }
 
 const KEYS = new Set([
@@ -139,23 +146,28 @@ export function parseConfig(raw: unknown): BridgeConfig {
 
 // What pairing in the dashboard wrote. Nothing reads it yet: the helper
 // connects to the bot only once two-way chat is wired up.
-function parseBot(bot: unknown, problems: string[]): { url: string; secret: string } | undefined {
+function parseBot(bot: unknown, problems: string[]): BotConfig | undefined {
 	if (typeof bot !== 'object' || bot === null || Array.isArray(bot)) {
-		problems.push('"bot" must be an object with "url" and "secret", as the dashboard gave it');
+		problems.push('"bot" must be an object with "url", "bridge" and "secret", as the dashboard gave it');
 		return undefined;
 	}
 	const given = bot as Record<string, unknown>;
 	const before = problems.length;
 	for (const key of Object.keys(given)) {
-		if (key !== 'url' && key !== 'secret') problems.push(`unknown key "bot.${key}"`);
+		if (key !== 'url' && key !== 'bridge' && key !== 'secret') problems.push(`unknown key "bot.${key}"`);
 	}
-	const { url, secret } = given;
+	const { url, bridge, secret } = given;
 	if (!isBotUrl(url)) {
 		problems.push('"bot.url" must be the https address the dashboard gave (http only on 127.0.0.1 or localhost)');
 	}
+	if (typeof bridge !== 'string' || !isBridgeId(bridge)) {
+		problems.push('"bot.bridge" must be the bridge id the dashboard gave, unchanged');
+	}
 	// Never quoted back: it's the bridge's one credential.
 	if (!isSecret(secret)) problems.push('"bot.secret" must be the secret the dashboard gave, unchanged');
-	return problems.length === before ? { url: url as string, secret: secret as string } : undefined;
+	return problems.length === before
+		? { url: url as string, bridge: bridge as string, secret: secret as string }
+		: undefined;
 }
 
 function isBotUrl(url: unknown): boolean {

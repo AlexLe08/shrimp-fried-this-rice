@@ -187,7 +187,7 @@ describe('pairBridge', () => {
 				chat: 'https://discord.com/api/webhooks/901/tok1',
 				alerts: 'https://discord.com/api/webhooks/902/tok2',
 			},
-			bot: { url: 'https://dash.example/minecraft/', secret: config.bot.secret },
+			bot: { url: 'https://dash.example/minecraft/', bridge: bridge.id, secret: config.bot.secret },
 		});
 		expect(bridge).toMatchObject({
 			guild_id: 'g1',
