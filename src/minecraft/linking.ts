@@ -114,6 +114,8 @@ export interface LinkReport {
 	onlineMode: boolean;
 }
 
+const CANONICAL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 /** The report as sent, or null if it isn't one. */
 export function readLinkReport(message: unknown): LinkReport | null {
 	if (typeof message !== 'object' || message === null) return null;
@@ -121,7 +123,12 @@ export function readLinkReport(message: unknown): LinkReport | null {
 	if (!isPlayerName(player) || typeof code !== 'string' || !/^\d{6}$/.test(code)) return null;
 	// Absent or null: the helper didn't see the login line.
 	if (typeof onlineMode !== 'boolean' || (uuid != null && typeof uuid !== 'string')) return null;
-	return { player, code, onlineMode, ...(typeof uuid === 'string' && { uuid }) };
+	// The log's own form, lowercase with dashes: a link is later compared with
+	// the login's UUID as a string, so one account written two ways would
+	// count as two.
+	const canonical = typeof uuid === 'string' ? uuid.toLowerCase() : undefined;
+	if (canonical !== undefined && !CANONICAL_UUID.test(canonical)) return null;
+	return { player, code, onlineMode, ...(canonical !== undefined && { uuid: canonical }) };
 }
 
 export type LinkResult =

@@ -115,7 +115,7 @@ describe('LinkCodes', () => {
 		expect(codes.check('b1', 'Steve', first, false)).toEqual({ kind: 'none' });
 		expect(codes.check('b1', 'Steve', second, false)).toEqual({ kind: 'none' });
 		expect(codes.check('b1', 'Alex', other, false)).toEqual({ kind: 'right', userId: 'u1' });
-		// A new code starts the count again.
+		// After voiding, a new code starts the count again.
 		const fresh = codes.issue('b1', 'Steve', 'u1');
 		expect(codes.check('b1', 'Steve', fresh === wrong ? '555555' : wrong, false)).toEqual({
 			kind: 'wrong',
@@ -146,7 +146,13 @@ describe('readLinkReport', () => {
 		expect(readLinkReport({ ...report, uuid: null })).toEqual({ player: 'Steve_2', code: '012345', onlineMode: true });
 	});
 
+	it('reads a UUID in capitals as the log writes it, lowercase', () => {
+		expect(readLinkReport({ ...report, uuid: MOJANG_UUID.toUpperCase() })).toEqual(report);
+	});
+
 	it.each([
+		['a UUID without dashes', { ...report, uuid: MOJANG_UUID.replaceAll('-', '') }],
+		['a UUID that is not one', { ...report, uuid: 'Steve' }],
 		['no object', null],
 		['a list', [report]],
 		['a name Minecraft refuses', { ...report, player: 'Steve Two' }],

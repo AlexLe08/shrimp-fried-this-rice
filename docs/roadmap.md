@@ -804,7 +804,12 @@ Later item), not a follow-up.
   session, as the seal proves the bridge, and counts against its rate
   limit like any request; and the bot writes the player's answer rather
   than the helper, so its wording changes with a deploy instead of with
-  every host's helper. Nothing gives codes yet and the helper doesn't
+  every host's helper. From review: a UUID is kept in the log's form,
+  lowercase with dashes, as a link is compared with the login's UUID as a
+  string; and a wrong code counts for the name until its codes are voided,
+  even if a member asks for a new one, so asking gives no more guesses.
+  Whatever gives codes must limit how often a member asks, as `LinkCodes`
+  caps nothing. Nothing gives codes yet and the helper doesn't
   report yet (next), so nothing changes for users.
 
 ## Next up
