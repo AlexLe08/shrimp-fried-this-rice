@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_AVATARS } from '../../../src/minecraft/bridge/avatars.ts';
 import { DEFAULT_IGNORE } from '../../../src/minecraft/bridge/classify.ts';
-import { ConfigError, loadConfig, parseConfig } from '../../../src/minecraft/bridge/config.ts';
+import { ConfigError, loadConfig, parseConfig, serverPropertiesPathOf } from '../../../src/minecraft/bridge/config.ts';
 import { newBridgeSecret } from '../../../src/minecraft/bridge/seal.ts';
 
 const CHAT = 'https://discord.com/api/webhooks/123/chat-token';
@@ -170,6 +170,36 @@ describe('parseConfig', () => {
 		expect(problems({ ...valid(), bot: { url: 'not a url', bridge: BRIDGE, secret: 42 } })).toHaveLength(2);
 	});
 
+	it('takes serverPropertiesPath and an rcon host and port for two-way chat', () => {
+		const bot = { url: 'https://example.com/minecraft/', bridge: BRIDGE, secret: newBridgeSecret() };
+		const config = parseConfig({
+			...valid(),
+			bot,
+			serverPropertiesPath: '/srv/mc/server.properties',
+			rcon: { host: '172.17.0.2', port: 25575 },
+		});
+		expect(config.serverPropertiesPath).toBe('/srv/mc/server.properties');
+		expect(config.rcon).toEqual({ host: '172.17.0.2', port: 25575 });
+		expect(parseConfig({ ...valid(), bot, rcon: { port: 25576 } }).rcon).toEqual({ port: 25576 });
+
+		expect(problems({ ...valid(), bot, rcon: { port: 70000, host: '', user: 'x' } })).toEqual([
+			'unknown key "rcon.user"',
+			'"rcon.host" must be a host name or address',
+			'"rcon.port" must be a port number, 1 to 65535',
+		]);
+		expect(problems({ ...valid(), bot, rcon: 25575, serverPropertiesPath: '' })).toEqual([
+			'"serverPropertiesPath" must be the path to the server\'s server.properties',
+			'"rcon" must be an object with "host", "port" or both',
+		]);
+	});
+
+	it('refuses serverPropertiesPath and rcon without bot, as only two-way chat reads them', () => {
+		expect(problems({ ...valid(), serverPropertiesPath: 'server.properties', rcon: { port: 25575 } })).toEqual([
+			'"serverPropertiesPath" is only for two-way chat, with "bot"',
+			'"rcon" is only for two-way chat, with "bot"',
+		]);
+	});
+
 	it('refuses something other than an object', () => {
 		expect(problems([])).toEqual(['the config must be a JSON object']);
 		expect(problems({ ...valid(), webhooks: [CHAT] })).toEqual([
@@ -219,6 +249,21 @@ describe('loadConfig', () => {
 			const path = join(dir, 'mcbridge.json');
 			await writeFile(path, JSON.stringify({ ...valid(), crashReportsDir: 'server/crash-reports' }));
 			expect((await loadConfig(path)).crashReportsDir).toBe(join(dir, 'server/crash-reports'));
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("finds server.properties beside logs/, or reads serverPropertiesPath from the config file's folder", async () => {
+		const dir = await mkdtemp(join(tmpdir(), 'mcbridge-config-'));
+		try {
+			const path = join(dir, 'mcbridge.json');
+			const bot = { url: 'https://example.com/minecraft/', bridge: BRIDGE, secret: newBridgeSecret() };
+			await writeFile(path, JSON.stringify({ ...valid(), logPath: 'server/logs/latest.log', bot }));
+			expect(serverPropertiesPathOf(await loadConfig(path))).toBe(join(dir, 'server/server.properties'));
+
+			await writeFile(path, JSON.stringify({ ...valid(), bot, serverPropertiesPath: 'elsewhere/server.properties' }));
+			expect(serverPropertiesPathOf(await loadConfig(path))).toBe(join(dir, 'elsewhere/server.properties'));
 		} finally {
 			await rm(dir, { recursive: true, force: true });
 		}
