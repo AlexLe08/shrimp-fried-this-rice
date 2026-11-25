@@ -530,6 +530,24 @@ Later item), not a follow-up.
   regenerating returns what it saved rather than reading it again, and
   refuses if the channels changed meanwhile. Not used yet: the
   dashboard's pages (A8f) call it; not tried against Discord.
+- **Links of members who left** (2026-11-24, last part of A8d).
+  `fetchLinkedMember` (`src/minecraft/linkedMember.ts`) asks Discord for a
+  link's member, not the cache, as without the Server Members intent the
+  bot isn't told when someone leaves. Only Unknown Member (10007) and
+  Unknown User (10013, a deleted account; the owner's call, 2026-11-24,
+  as the dashboard's access check reads it the same way) delete their
+  links on that server's bridges; a network error, a 5xx, a rate limit or
+  anything else keeps them and is logged, and the caller falls back to
+  the bridge's pictures. Checked in Discord's docs (2026-11-24): 10007 is
+  Unknown Member, 10013 Unknown User, and only listing
+  members needs the Server Members intent, not fetching one (the
+  dashboard's access check already does so on the live site). It takes a
+  narrow `LinkedMember` (`displayAvatarURL`, the plan's `discord`
+  picture) rather than a generic member type, as `members.fetch` is
+  overloaded and TypeScript would infer its `Collection` overload; a real
+  `Guild` fitting is pinned by a type test. Not used yet: A8e looks the
+  member up when the helper reports a player joining; not tried against
+  Discord.
 
 ## Next up
 
@@ -562,11 +580,10 @@ them ahead of items 5 and 6.
    the tunnel exists (2026-11-23, asking for no payment method). D1 is
    done (Done above): the web server through the tunnel, login with
    Discord, the server list guarded per server, the read-only reminders
-   page and rate limits, all tried on the live dashboard. Left: A8d to
-   A8i, two-way chat, linking and pictures. A8d's storage, the
-   sealing of the helper's messages and its endpoint are done (Done
-   above), and so is pairing; next, deleting a link whose member has
-   left (on Unknown Member only), the rest of A8d.
+   page and rate limits, all tried on the live dashboard. Left: A8e to
+   A8i, two-way chat, linking and pictures. A8d (the bot's storage,
+   sealing, endpoint, pairing and dropping the links of members who
+   left) is done (Done above); next, the relay (A8e).
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the
