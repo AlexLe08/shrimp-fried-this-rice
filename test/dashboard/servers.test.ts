@@ -10,6 +10,7 @@ import {
 	snoozeGuildReminder,
 	updateGuildReminderLastSent,
 } from '../../src/reminders/storage.ts';
+import { createBridge, markBridgeAnnounced, setAllowedRole } from '../../src/minecraft/storage.ts';
 import { fakeClient, fakeGuild } from './fakeGuilds.ts';
 
 const auth: AuthConfig = { clientId: 'client-1', clientSecret: 'secret-1', origin: 'https://dash.example' };
@@ -89,6 +90,25 @@ describe('servers', () => {
 		const bodies = await Promise.all(responses.map((response) => response.text()));
 		expect(bodies[0]).toContain('<h1>Not found</h1>');
 		expect(new Set(bodies).size).toBe(1);
+	});
+
+	it('lists a server where the user manages only Minecraft bridges, linking its Minecraft page', async () => {
+		const app = serversApp([fakeGuild('g1', 'Shrimp Hall', { u1: false }, {}, { ownerId: 'u1' })]);
+
+		const text = await (await app.request('/servers', { headers: signedIn() })).text();
+
+		expect(text).toContain('<a href="/servers/g1/minecraft">Shrimp Hall</a> (Minecraft servers)');
+		expect(text).not.toContain('href="/servers/g1"');
+	});
+
+	it('links both pages of a server where the user has both rights', async () => {
+		setAllowedRole('g1', 'r-mc');
+		const app = serversApp([fakeGuild('g1', 'Shrimp Hall', { u1: true }, {}, { roles: { u1: ['r-mc'] } })]);
+
+		const text = await (await app.request('/servers', { headers: signedIn() })).text();
+
+		expect(text).toContain('<a href="/servers/g1">Shrimp Hall</a>');
+		expect(text).toContain('<a href="/servers/g1/minecraft">Minecraft servers</a>');
 	});
 
 	it('shows no servers without a client', async () => {
@@ -221,6 +241,77 @@ describe("a server's reminders", () => {
 	});
 });
 
+describe("a server's Minecraft servers", () => {
+	// Each paired after the last, as bridges are listed by when they were paired.
+	let paired = 0;
+	function bridge(serverName: string, guildId = 'g1', chat = 'c1') {
+		return createBridge({
+			guildId,
+			chat: { channelId: chat, webhookId: 'wh-chat', token: 'tok-chat' },
+			alerts: { channelId: 'c2', webhookId: 'wh-alerts', token: 'tok-alerts' },
+			keys: { request: Buffer.alloc(32, 1), response: Buffer.alloc(32, 2) },
+			serverName,
+			now: NOW + paired++,
+		});
+	}
+
+	async function page(channels: Record<string, string> = { c1: 'mc-chat', c2: 'mc-alerts' }): Promise<string> {
+		const app = createApp({
+			auth,
+			client: fakeClient([fakeGuild('g1', 'Shrimp Hall', { u1: false }, channels, { ownerId: 'u1' })]),
+			now: () => NOW,
+		});
+		const response = await app.request('/servers/g1/minecraft', { headers: signedIn() });
+		expect(response.status).toBe(200);
+		return response.text();
+	}
+
+	it('says none are paired yet', async () => {
+		const text = await page();
+
+		expect(text).toContain('<h1>Shrimp Hall: Minecraft servers</h1>');
+		expect(text).toContain('0 Minecraft servers of 10 paired');
+		expect(text).toContain('No Minecraft servers paired yet.');
+	});
+
+	it("shows each bridge's name and channels, and whether its chat goes into the game", async () => {
+		bridge('Survival');
+		const creative = bridge('Creative');
+		markBridgeAnnounced(creative.id, 'c1');
+
+		const text = await page();
+
+		expect(text).toContain('2 Minecraft servers of 10 paired');
+		expect(text).toMatch(/<h2>Survival<\/h2>[\s\S]*don&#39;t go into the game yet[\s\S]*<h2>Creative<\/h2>/);
+		expect(text).toContain('Chat in #mc-chat, alerts in #mc-alerts.');
+		expect(text).toMatch(/<h2>Creative<\/h2>[\s\S]*Messages posted in its chat channel go into the game\./);
+	});
+
+	it('counts a relay announced in a channel the chat has since left as not announced', async () => {
+		markBridgeAnnounced(bridge('Survival', 'g1', 'c3').id, 'c1');
+
+		expect(await page()).toContain('don&#39;t go into the game yet');
+	});
+
+	it("names a channel the bot can't see by its id", async () => {
+		bridge('Survival');
+
+		expect(await page({ c2: 'mc-alerts' })).toContain("Chat in a channel the bot can't see (ID c1)");
+	});
+
+	it("shows only this server's bridges, escaping names", async () => {
+		bridge('<b>Survival</b>');
+		bridge('Theirs', 'g2');
+
+		const text = await page({ c1: '<i>chan</i>', c2: 'mc-alerts' });
+
+		expect(text).toContain('&lt;b&gt;Survival&lt;/b&gt;');
+		expect(text).toContain('#&lt;i&gt;chan&lt;/i&gt;');
+		expect(text).not.toContain('Theirs');
+		expect(text).not.toMatch(/<b>|<i>/);
+	});
+});
+
 // Decision 0009: deny by default. A route missing from ROUTE_ACCESS, or one
 // listed but not served, fails here, and every route behind a login is tried
 // signed out and, for a server's routes, as a manager of another server. The
@@ -296,4 +387,60 @@ describe('route access', () => {
 			expect(response.status).toBe(404);
 		},
 	);
+
+	it('keeps every bridges route under /servers/:guildId, where the guard runs', () => {
+		for (const [route, access] of declared) {
+			if (access === 'bridges') expect(route.split(' ')[1]).toMatch(/^\/servers\/:guildId\//);
+		}
+	});
+
+	it.each(declared.filter(([, access]) => access === 'bridges').map(([route]) => route))(
+		'sends a signed-out visitor of %s back to the home page, and answers 404 to a manager of another server',
+		async (route) => {
+			const { method, path } = withGuild(route);
+
+			const signedOut = await app.request(path, { method });
+			const other = await app.request(path, { method, headers: signedIn('u1') });
+
+			expect(signedOut.status).toBe(302);
+			expect(signedOut.headers.get('location')).toBe('/');
+			expect(other.status).toBe(404);
+		},
+	);
+
+	// Decision 0013: requireServer lets in either right, so each route must
+	// check its own. u-server has Manage Server only, u-bridges the allowed
+	// role only; each is refused the other's routes with the same 404.
+	describe('by right', () => {
+		const rightsApp = createApp({
+			auth,
+			client: fakeClient([
+				fakeGuild(
+					'g1',
+					'Shrimp Hall',
+					{ 'u-server': true, 'u-bridges': false },
+					{},
+					{ roles: { 'u-bridges': ['r-mc'] } },
+				),
+			]),
+			now: () => NOW,
+		});
+		const levels = { server: 'u-server', bridges: 'u-bridges' } as const;
+		const guarded = declared.filter(
+			(entry): entry is [string, keyof typeof levels] => entry[1] === 'server' || entry[1] === 'bridges',
+		);
+
+		it.each(guarded)('answers %s only to a user with its right (%s)', async (route, level) => {
+			setAllowedRole('g1', 'r-mc');
+			const { method, path } = withGuild(route);
+			const otherLevel = level === 'server' ? 'bridges' : 'server';
+
+			const theirs = await rightsApp.request(path, { method, headers: signedIn(levels[level]) });
+			const others = await rightsApp.request(path, { method, headers: signedIn(levels[otherLevel]) });
+
+			expect(theirs.status).toBe(200);
+			expect(others.status).toBe(404);
+			expect(await others.text()).toContain('<h1>Not found</h1>');
+		});
+	});
 });

@@ -1,6 +1,7 @@
 import { html } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
 import type { ReminderState } from '../reminders/reminderState.ts';
+import type { ServerRights } from './access.ts';
 
 type Page = HtmlEscapedString | Promise<HtmlEscapedString>;
 
@@ -40,15 +41,30 @@ export function homePage(signedInAs: string | null, loginAvailable: boolean): Pa
 	);
 }
 
-export function serversPage(servers: { id: string; name: string }[]): Page {
+// Its name links to the first page the user may see there; the Minecraft
+// page gets its own link too when both are theirs.
+function serverItem(server: ServerRights): Page {
+	const minecraft = `/servers/${server.id}/minecraft`;
+	if (!server.manageServer) return html`<li><a href="${minecraft}">${server.name}</a> (Minecraft servers)</li>`;
+	return html`<li>
+		<a href="/servers/${server.id}">${server.name}</a>${
+			server.manageBridges ? html` · <a href="${minecraft}">Minecraft servers</a>` : ''
+		}
+	</li>`;
+}
+
+export function serversPage(servers: ServerRights[]): Page {
 	return layout(
 		'Your servers',
 		html`<h1>Your servers</h1>
 			${
 				servers.length === 0
-					? html`<p>No servers to show. This lists the servers the bot is in where you have Manage Server.</p>`
+					? html`<p>
+							No servers to show. This lists the servers the bot is in where you have Manage Server, or may manage its
+							Minecraft servers (the server's owner, or members with the role they allow).
+						</p>`
 					: html`<ul>
-							${servers.map((server) => html`<li><a href="/servers/${server.id}">${server.name}</a></li>`)}
+							${servers.map(serverItem)}
 						</ul>`
 			}
 			<p><a href="/">Back to the dashboard</a></p>`,
@@ -148,6 +164,53 @@ export function serverPage(server: { name: string }, view: ServerReminders): Pag
 					? html`<p>No reminders yet. Use <code>/reminder create</code> in Discord to add one.</p>`
 					: html`<ul>
 							${view.reminders.map((reminder) => reminderItem(reminder, view.now))}
+						</ul>`
+			}
+			<p><a href="/servers">Your servers</a></p>`,
+	);
+}
+
+/** A bridge as the Minecraft page shows it. A channel's `name` is null for one the bot can't see. */
+export interface BridgeView {
+	serverName: string;
+	chat: { id: string; name: string | null };
+	alerts: { id: string; name: string | null };
+	/** The relay was announced in the chat channel, so its chat goes into the game (decision 0006). */
+	announced: boolean;
+}
+
+function channelText(channel: { id: string; name: string | null }): Page {
+	return channel.name === null ? html`a channel the bot can't see (ID ${channel.id})` : html`#${channel.name}`;
+}
+
+function bridgeItem(bridge: BridgeView): Page {
+	return html`<li>
+		<h2>${bridge.serverName}</h2>
+		<p>Chat in ${channelText(bridge.chat)}, alerts in ${channelText(bridge.alerts)}.</p>
+		<p>
+			${
+				bridge.announced
+					? 'Messages posted in its chat channel go into the game.'
+					: "Messages posted in its chat channel don't go into the game yet: the bot announces it there when the server's helper first connects."
+			}
+		</p>
+	</li>`;
+}
+
+/** A server's Minecraft bridges, read-only, for its owner and members with the role they allow. */
+export function minecraftPage(
+	server: { id: string; name: string },
+	view: { bridges: BridgeView[]; max: number },
+): Page {
+	return layout(
+		`${server.name}: Minecraft servers`,
+		html`<h1>${server.name}: Minecraft servers</h1>
+			<p>${plural(view.bridges.length, 'Minecraft server')} of ${view.max} paired with this Discord server.</p>
+			${
+				view.bridges.length === 0
+					? html`<p>No Minecraft servers paired yet.</p>`
+					: html`<ul>
+							${view.bridges.map(bridgeItem)}
 						</ul>`
 			}
 			<p><a href="/servers">Your servers</a></p>`,
