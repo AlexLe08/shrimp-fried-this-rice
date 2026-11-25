@@ -133,7 +133,7 @@ export function parseAvatars(raw: unknown, problems: string[]): AvatarConfig {
 	return { default: fallback, players };
 }
 
-function parseChoice(value: string): AvatarChoice | null {
+export function parseChoice(value: string): AvatarChoice | null {
 	if (value === 'skin' || value === 'none') return { kind: value };
 	if (value === 'generated') return { kind: 'generated' };
 	const picked = /^generated:(\d+)$/.exec(value);

@@ -17,7 +17,7 @@ export interface SenderOptions {
 	 * name, but it refuses `clyde` in a message's username too (the owner's
 	 * end-to-end test, 2026-11-21).
 	 */
-	fallbackUsername: string;
+	fallbackUsername: string | (() => string);
 	fetch?: typeof fetch;
 	log?: (message: string) => void;
 	/** Posts queued within this long of the first are batched. Defaults to 1 s. */
@@ -60,6 +60,9 @@ const MIN_RETRY_AFTER_MS = 100;
 export function createSender(options: SenderOptions): Sender {
 	const doFetch = options.fetch ?? fetch;
 	const log = options.log ?? ((message: string) => console.error(`[mcbridge] ${message}`));
+	// A function when the dashboard can rename the server while the helper runs.
+	const fallbackUsername = () =>
+		typeof options.fallbackUsername === 'function' ? options.fallbackUsername() : options.fallbackUsername;
 	const batchMs = options.batchMs ?? 1000;
 	const maxQueued = options.maxQueued ?? 200;
 	const maxAttempts = options.maxAttempts ?? 5;
@@ -154,14 +157,14 @@ export function createSender(options: SenderOptions): Sender {
 
 	/** The post as the fallback sender, each line naming who said it. */
 	function asFallback(post: Post): Post {
-		if (post.username === options.fallbackUsername) return post;
+		if (post.username === fallbackUsername()) return post;
 		const name = escapeMarkdown(post.username);
 		const content = post.content
 			.split('\n')
 			.map((line) => `**${name}:** ${line}`)
 			.join('\n');
 		// The picture was the player's; under the server's name it would mislead.
-		const fallback: Post = { ...post, username: options.fallbackUsername, content };
+		const fallback: Post = { ...post, username: fallbackUsername(), content };
 		delete fallback.avatarUrl;
 		return fallback;
 	}
@@ -231,9 +234,9 @@ export function createSender(options: SenderOptions): Sender {
 				queue.notBefore = Math.max(queue.notBefore, Date.now() + Math.max(seconds * 1000, MIN_RETRY_AFTER_MS));
 				continue;
 			}
-			if (response.status === 400 && post.username !== options.fallbackUsername) {
+			if (response.status === 400 && post.username !== fallbackUsername()) {
 				await discard(response);
-				log(`Discord refused a post as ${JSON.stringify(post.username)}; sending it as ${options.fallbackUsername}`);
+				log(`Discord refused a post as ${JSON.stringify(post.username)}; sending it as ${fallbackUsername()}`);
 				refusedNames.add(post.username);
 				post = asFallback(post);
 				continue;

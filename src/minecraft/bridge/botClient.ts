@@ -33,6 +33,8 @@ export interface BotClientOptions {
 	bot: BotConfig;
 	onChat: (chat: BotChat[]) => void;
 	onStopped: (reason: StopReason) => void;
+	/** The bridge's settings as the bot sent them, unchecked (settings.ts checks them): with each connect, and when they change. */
+	onSettings?: (settings: unknown) => void;
 	fetch?: typeof fetch;
 	now?: () => number;
 	log?: (message: string) => void;
@@ -156,13 +158,17 @@ export function createBotClient(options: BotClientOptions): BotClient {
 						backoffMs = 0;
 						session = given;
 						log('connected to the bot');
+						const settings = isObject(answer.message) ? answer.message['settings'] : undefined;
+						if (settings !== undefined) giveSettings(settings);
 						break;
 					}
 					backoffMs = 0;
+					const latest = settingsIn(answer.message);
+					if (latest !== undefined) giveSettings(latest);
 					const chat = chatIn(answer.message);
 					if (chat.length > 0) {
 						call(() => options.onChat(chat), 'handling chat from the bot');
-					} else if (now() - askedAt < MIN_EMPTY_POLL_GAP_MS) {
+					} else if (latest === undefined && now() - askedAt < MIN_EMPTY_POLL_GAP_MS) {
 						// A poll is held until there's something, so nothing at once means the bot is closing.
 						await wait(MIN_EMPTY_POLL_GAP_MS - (now() - askedAt));
 					}
@@ -209,6 +215,11 @@ export function createBotClient(options: BotClientOptions): BotClient {
 		}
 	}
 
+	function giveSettings(settings: unknown): void {
+		const onSettings = options.onSettings;
+		if (onSettings) call(() => onSettings(settings), 'applying the bridge settings');
+	}
+
 	return {
 		start() {
 			if (running || stopped) return;
@@ -231,6 +242,13 @@ function nextBackoff(previous: number): number {
 function retryAfterMs(response: Response): number {
 	const seconds = Number(response.headers.get('Retry-After'));
 	return Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds * 1000, MAX_BACKOFF_MS) : MAX_BACKOFF_MS;
+}
+
+// The last settings message in an answer: each is complete, so only the latest matters.
+function settingsIn(message: unknown): unknown {
+	const messages = isObject(message) ? message['messages'] : undefined;
+	if (!Array.isArray(messages)) return undefined;
+	return messages.findLast((m) => isObject(m) && m['kind'] === 'settings');
 }
 
 // Kinds the helper doesn't know (a newer bot) are skipped, not fatal.
