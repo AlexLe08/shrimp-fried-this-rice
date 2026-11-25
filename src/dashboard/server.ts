@@ -1,6 +1,7 @@
 import type { Server } from 'node:http';
 import { serve } from '@hono/node-server';
 import { createApp, type AppOptions } from './app.ts';
+import { HelperHub } from '../minecraft/helperHub.ts';
 
 // cloudflared keeps an idle connection to the bot open for 90 s by default;
 // were Node to close it first (after 5 s by default), the request cloudflared
@@ -12,7 +13,10 @@ export const KEEP_ALIVE_TIMEOUT_MS = 100_000;
 // past index.ts's 5 s forced exit, which could cut off a reminder mid-send.
 export const CLOSE_GRACE_MS = 2000;
 
+const CLOSE_IDLE_EVERY_MS = 50;
+
 let server: Server | null = null;
+let helpers: HelperHub | null = null;
 
 /** DASHBOARD_PORT from `.env`, or null when unset (a dev bot) or malformed (logged). */
 export function dashboardPortFromEnv(env: NodeJS.ProcessEnv): number | null {
@@ -39,8 +43,9 @@ export function startDashboard(port: number, appOptions: AppOptions = { auth: nu
 	}
 	return new Promise((resolve) => {
 		let listening: Server;
+		const hub = appOptions.helpers ?? new HelperHub(appOptions.now);
 		try {
-			listening = startServer(port, appOptions, resolve);
+			listening = startServer(port, { ...appOptions, helpers: hub }, resolve);
 		} catch (error) {
 			console.error('The dashboard is off: its server failed:', error);
 			resolve(null);
@@ -49,10 +54,14 @@ export function startDashboard(port: number, appOptions: AppOptions = { auth: nu
 		listening.keepAliveTimeout = KEEP_ALIVE_TIMEOUT_MS;
 		listening.on('error', (error) => {
 			console.error('The dashboard is off: its server failed:', error);
-			if (server === listening) server = null;
+			if (server === listening) {
+				server = null;
+				helpers = null;
+			}
 			resolve(null);
 		});
 		server = listening;
+		helpers = hub;
 	});
 }
 
@@ -76,15 +85,24 @@ function startServer(port: number, appOptions: AppOptions, resolve: (port: numbe
 /**
  * Stops taking requests and waits for those under way, which may still need
  * the client and the database, for up to `graceMs`; then cuts off the rest.
+ * The Minecraft helpers' polls, held for up to 50 s, are answered first, so
+ * they don't use up the grace and get cut off (decision 0009).
  */
 export async function stopDashboard(graceMs = CLOSE_GRACE_MS): Promise<void> {
 	const running = server;
 	if (!running) return;
 	server = null;
+	helpers?.close();
+	helpers = null;
 	await new Promise<void>((resolve) => {
 		const cutOff = setTimeout(() => running.closeAllConnections(), graceMs);
+		// close() closes only the connections idle at the time; one whose
+		// request finishes later (a held poll, answered just above) would stay
+		// open on keep-alive until the cut-off, so keep closing those.
+		const closeIdle = setInterval(() => running.closeIdleConnections(), CLOSE_IDLE_EVERY_MS);
 		running.close((error) => {
 			clearTimeout(cutOff);
+			clearInterval(closeIdle);
 			if (error) console.error('Error while stopping the dashboard:', error);
 			resolve();
 		});

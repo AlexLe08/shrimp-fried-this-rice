@@ -21,6 +21,8 @@ import { endSession, sessionFromToken, startSession } from './sessions.ts';
 import { SESSION_LIFETIME_MS, type DashboardSession } from './storage.ts';
 import { MAX_REMINDERS_PER_GUILD, getGuildReminders, isGuildMasterEnabled } from '../reminders/storage.ts';
 import { reminderState } from '../reminders/reminderState.ts';
+import { HelperHub } from '../minecraft/helperHub.ts';
+import { registerHelperRoutes } from '../minecraft/helperRoutes.ts';
 
 export interface AppOptions {
 	/** Login's settings; null serves the dashboard without login. */
@@ -29,6 +31,8 @@ export interface AppOptions {
 	client?: DashboardClient | null;
 	fetch?: Fetch;
 	now?: () => number;
+	/** The Minecraft helpers' sessions and waiting messages; a new, empty one if not given. */
+	helpers?: HelperHub;
 }
 
 type Env = { Variables: { session: DashboardSession; server: ManagedServer } };
@@ -38,7 +42,8 @@ type Env = { Variables: { session: DashboardSession; server: ManagedServer } };
  * a new route can't be added without saying (decision 0009: deny by default).
  * `signed-in` routes go through requireSession; `server` routes are under
  * /servers/:guildId, where requireServer checks the user may manage that
- * server before any handler runs.
+ * server before any handler runs. `helper` routes are the Minecraft helper's,
+ * which open only with a bridge's keys (minecraft/helperRoutes.ts).
  */
 export const ROUTE_ACCESS = {
 	'GET /health': 'public',
@@ -48,6 +53,8 @@ export const ROUTE_ACCESS = {
 	'POST /logout': 'public',
 	'GET /servers': 'signed-in',
 	'GET /servers/:guildId': 'server',
+	'POST /minecraft/connect': 'helper',
+	'POST /minecraft/poll': 'helper',
 } as const;
 
 // Both __Host-: only this exact hostname can set them, so another site under
@@ -108,9 +115,11 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 		}
 		return key;
 	};
-	// /health is left out: it touches neither Discord nor the database.
+	// /health is left out: it touches neither Discord nor the database. So are
+	// the helper's routes, which have their own limits: a busy bridge polls
+	// more often than this allows a visitor.
 	app.use(async (c, next) => {
-		if (c.req.path === '/health') return next();
+		if (c.req.path === '/health' || c.req.path.startsWith('/minecraft/')) return next();
 		const wait = visitorRequests.take(visitorOf(c));
 		if (wait > 0) return tooMany(c, wait, 'Too many requests from your network. Please try again in a minute.');
 		return next();
@@ -229,6 +238,8 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 		deleteCookie(c, SESSION_COOKIE, cookieOptions);
 		return c.redirect('/', 303);
 	});
+
+	registerHelperRoutes(app, { hub: options.helpers ?? new HelperHub(now), now, visitorOf });
 
 	return app;
 }
