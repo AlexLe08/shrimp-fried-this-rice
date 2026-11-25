@@ -5,9 +5,12 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { createBotClient, type StopReason } from './botClient.ts';
 import { createBridge } from './bridge.ts';
-import { ConfigError, loadConfig } from './config.ts';
+import { ConfigError, loadConfig, serverPropertiesPathOf, type BridgeConfig } from './config.ts';
 import { createCrashWatcher } from './crashReports.ts';
+import { createGameRelay } from './gameRelay.ts';
+import { escapeMarkdown } from './messages.ts';
 import { createSender } from './sender.ts';
 import { createTailer } from './tailer.ts';
 
@@ -29,7 +32,7 @@ if (!configArg) {
 // command was typed, which is what a relative path means to whoever typed it.
 const configPath = resolve(process.env['INIT_CWD'] ?? process.cwd(), configArg);
 
-let config;
+let config: BridgeConfig;
 try {
 	config = await loadConfig(configPath);
 } catch (error) {
@@ -38,7 +41,45 @@ try {
 }
 
 const sender = createSender({ fallbackUsername: config.serverName });
-const bridge = createBridge({ config, sender });
+
+// Problems only the server's owner can fix, in the alerts channel like the helper's others.
+function postAlert(text: string): void {
+	sender.send({
+		webhook: config.webhooks.alerts,
+		username: config.serverName,
+		droppable: false,
+		content: `⚠️ **${escapeMarkdown(config.serverName)}**: ${text}`,
+	});
+}
+
+const STOPPED: Record<StopReason, string> = {
+	'taken-over':
+		"another mcbridge connected with this bridge's secret, so this one stopped taking messages from Discord. Stop the other copy, or restart this one to take two-way chat back.",
+	unauthorized:
+		"the bot no longer accepts this bridge's secret: it was regenerated, or the bridge removed, in the dashboard. Download the new mcbridge.json and restart mcbridge; until then messages from Discord don't reach the game.",
+};
+
+// Two-way chat (decision 0006), only once paired: without `bot` the helper is
+// today's one-way bridge, unchanged.
+const game = config.bot
+	? createGameRelay({
+			propertiesPath: serverPropertiesPathOf(config),
+			...(config.rcon ? { rconOverride: config.rcon } : {}),
+			alert: (_reason, message) => postAlert(message),
+		})
+	: null;
+const botClient =
+	config.bot && game
+		? createBotClient({
+				bot: config.bot,
+				onChat: (chat) => game.relay(chat),
+				onStopped: (reason) => {
+					console.error(`[mcbridge] two-way chat stopped: ${reason}`);
+					postAlert(STOPPED[reason]);
+				},
+			})
+		: null;
+const bridge = createBridge({ config, sender, ...(game ? { game } : {}) });
 const tailer = createTailer({
 	path: config.logPath,
 	onLines: bridge.onLines,
@@ -67,7 +108,8 @@ async function shutdown(signal: string): Promise<void> {
 	const forceExit = setTimeout(() => process.exit(1), 10_000);
 	forceExit.unref();
 	clearInterval(summaries);
-	await Promise.all([tailer.stop(), crashWatcher?.stop()]);
+	await Promise.all([tailer.stop(), crashWatcher?.stop(), botClient?.stop()]);
+	game?.close();
 	bridge.flush();
 	bridge.postSummaries({ final: true });
 	await sender.close(5000);
@@ -94,3 +136,7 @@ if (config.crashReportsDir) {
 }
 tailer.start();
 crashWatcher?.start();
+if (botClient) {
+	console.log(`[mcbridge] two-way chat: connecting to ${new URL(config.bot!.url).origin}`);
+	botClient.start();
+}

@@ -398,4 +398,68 @@ describe('createBridge', () => {
 			},
 		]);
 	});
+
+	describe('two-way chat (the game relay)', () => {
+		const START = '[12:00:00] [Server thread/INFO]: Done (8.123s)! For help, type "help"';
+		const STOP = '[12:00:07] [Server thread/INFO]: Stopping server';
+
+		function withGame(on = true) {
+			const calls: string[] = [];
+			const game = {
+				serverUp: vi.fn(async () => void calls.push('up')),
+				serverDown: vi.fn(() => void calls.push('down')),
+				isOn: vi.fn(() => on),
+			};
+			return { ...setup({ game }), game, calls };
+		}
+
+		it('connects as the server starts and disconnects as it stops, saying in the stop message that chat waits', () => {
+			const { bridge, posts, calls } = withGame();
+
+			bridge.onLines([START, STOP]);
+			bridge.flush();
+
+			expect(calls).toEqual(['up', 'down']);
+			expect(posts.at(-1)!.content).toBe(
+				"🔴 **Survival** is stopping\nMessages sent here won't reach the game until it's back.",
+			);
+		});
+
+		it('keeps the stop message as it was while two-way chat is off, or not set up', () => {
+			const off = withGame(false);
+			off.bridge.onLines([STOP]);
+			off.bridge.flush();
+			expect(off.posts.at(-1)!.content).toBe('🔴 **Survival** is stopping');
+
+			const oneWay = setup();
+			oneWay.bridge.onLines([STOP]);
+			oneWay.bridge.flush();
+			expect(oneWay.posts.at(-1)!.content).toBe('🔴 **Survival** is stopping');
+		});
+
+		it('connects at startup unless the existing log says the server is stopped', () => {
+			const up = withGame();
+			up.bridge.onBacklog(`${START}\n`);
+			expect(up.calls).toEqual(['up']);
+
+			const unknown = withGame();
+			unknown.bridge.onBacklog('');
+			expect(unknown.calls).toEqual(['up']);
+
+			const stopped = withGame();
+			stopped.bridge.onBacklog(`${START}\n${STOP}\n`);
+			expect(stopped.calls).toEqual([]);
+		});
+
+		it('logs a start that fails, never letting it end the helper', async () => {
+			const { bridge, game, log } = withGame();
+			game.serverUp.mockRejectedValueOnce(new Error('bug'));
+
+			bridge.onLines([START]);
+			bridge.flush();
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(log).toHaveBeenCalledWith('starting two-way chat failed: Error: bug');
+		});
+	});
 });
