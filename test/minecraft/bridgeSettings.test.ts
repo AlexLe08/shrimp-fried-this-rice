@@ -52,12 +52,15 @@ describe('checkSettingsChange', () => {
 });
 
 describe('checkPictureChange', () => {
-	it.each(['generated', 'generated:0', 'generated:9', 'skin', 'none'])('takes %s for a player, trimming the name', (picture) => {
-		expect(checkPictureChange({ name: ' Steve_2 ', picture })).toEqual({
-			ok: true,
-			change: { name: 'Steve_2', picture },
-		});
-	});
+	it.each(['generated', 'generated:0', 'generated:9', 'skin', 'none'])(
+		'takes %s for a player, trimming the name',
+		(picture) => {
+			expect(checkPictureChange({ name: ' Steve_2 ', picture })).toEqual({
+				ok: true,
+				change: { name: 'Steve_2', picture },
+			});
+		},
+	);
 
 	it('takes an empty picture as removing it', () => {
 		expect(checkPictureChange({ name: 'Steve', picture: '' })).toEqual({
