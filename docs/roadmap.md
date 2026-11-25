@@ -651,8 +651,10 @@ Later item), not a follow-up.
   won't reach the game until it's back." RCON not connecting for 2
   minutes posts one alert naming where it tried (`rcon.ts`'s new
   `onUnreachable`), and a helper taken over or refused posts one alert
-  saying what to do. Shutdown stops the connection and RCON. `!link`
-  lines stay chat until the bot takes link reports (A8f). Not tried
+  saying what to do. Shutdown stops the connection and closes the relay
+  after the last log entry is handled, and a closed relay never connects
+  again (from review). `!link` lines stay chat until the bot takes link
+  reports, which A8f does before issuing any code. Not tried
   against a real server or through the tunnel (A8h); nothing can be
   paired until A8f.
 
