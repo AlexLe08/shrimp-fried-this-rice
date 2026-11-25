@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RESTJSONErrorCodes } from 'discord.js';
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
+import { RESTJSONErrorCodes, type Guild } from 'discord.js';
 import { __resetForTests } from '../../src/core/database.ts';
-import { fetchLinkedMember, type LinkedMember } from '../../src/minecraft/linkedMember.ts';
+import { fetchLinkedMember, type LinkedMember, type LinkedMemberGuild } from '../../src/minecraft/linkedMember.ts';
 import { createBridge, getBridgeLinks, saveLink, type BridgeKeys } from '../../src/minecraft/storage.ts';
 
 const STEVE_UUID = '069a79f4-44e9-4726-a5be-fca90e38aaf5';
@@ -52,6 +52,10 @@ function linkedNames(bridgeId: string): string[] {
 }
 
 describe('fetchLinkedMember', () => {
+	it("takes discord.js's Guild, whose overloaded members.fetch must still fit", () => {
+		expectTypeOf<Guild>().toExtend<LinkedMemberGuild>();
+	});
+
 	it('returns the member, asking Discord rather than the cache, and keeps their links', async () => {
 		const member = { displayAvatarURL: () => 'https://cdn.discordapp.com/avatars/u1/a.webp' };
 		const guild = fakeGuild('g1', async () => member);

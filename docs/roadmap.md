@@ -544,7 +544,7 @@ Later item), not a follow-up.
   narrow `LinkedMember` (`displayAvatarURL`, the plan's `discord`
   picture) rather than a generic member type, as `members.fetch` is
   overloaded and TypeScript would infer its `Collection` overload; a real
-  `Guild` was checked to fit with `tsc`. Not used yet: A8e looks the
+  `Guild` fitting is pinned by a type test. Not used yet: A8e looks the
   member up when the helper reports a player joining; not tried against
   Discord.
 

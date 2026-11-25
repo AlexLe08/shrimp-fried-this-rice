@@ -30,7 +30,7 @@ export async function fetchLinkedMember(guild: LinkedMemberGuild, userId: string
 	try {
 		return await guild.members.fetch({ user: userId, force: true, cache: false });
 	} catch (error) {
-		if ((error as { code?: unknown }).code === RESTJSONErrorCodes.UnknownMember) {
+		if ((error as { code?: unknown } | null)?.code === RESTJSONErrorCodes.UnknownMember) {
 			const deleted = deleteMemberLinks(guild.id, userId);
 			if (deleted > 0) console.log(`Minecraft: ${userId} left ${guild.id}; deleted their ${deleted} link(s).`);
 		} else {
