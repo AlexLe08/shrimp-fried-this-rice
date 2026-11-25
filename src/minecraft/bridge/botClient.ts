@@ -12,6 +12,8 @@ import { deriveKeys, open, parseEnvelope, seal } from './seal.ts';
 export const REQUEST_TIMEOUT_MS = 70_000;
 export const MIN_BACKOFF_MS = 1000;
 export const MAX_BACKOFF_MS = 60_000;
+/** The least time between polls answered with nothing, as a bot shutting down answers each at once. */
+export const MIN_EMPTY_POLL_GAP_MS = 1000;
 
 /** Chat from Discord, for the game. */
 export interface BotChat {
@@ -59,6 +61,9 @@ export function createBotClient(options: BotClientOptions): BotClient {
 	const now = options.now ?? Date.now;
 	const log = options.log ?? ((message: string) => console.error(`[mcbridge] ${message}`));
 	const timeoutMs = options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
+	// Routes resolve against it, which keeps its last segment only with a slash:
+	// `…/minecraft` would send them to `…/connect`.
+	const base = bot.url.endsWith('/') ? bot.url : `${bot.url}/`;
 
 	let stopped = false;
 	let running: Promise<void> | null = null;
@@ -89,15 +94,22 @@ export function createBotClient(options: BotClientOptions): BotClient {
 		let response: Response;
 		let body: unknown;
 		try {
-			response = await fetchFn(new URL(route, bot.url), {
+			response = await fetchFn(new URL(route, base), {
 				method: 'POST',
 				// Required: the endpoint takes JSON only, which also keeps it clear of the dashboard's CSRF check.
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify(sent),
 				signal: controller.signal,
 			});
-			if (response.status === 429) return { kind: 'rate-limited', waitMs: retryAfterMs(response) };
-			if (response.status === 401) return { kind: 'unauthorized' };
+			// Each read or cancelled, so its connection is let go.
+			if (response.status === 429) {
+				await response.body?.cancel();
+				return { kind: 'rate-limited', waitMs: retryAfterMs(response) };
+			}
+			if (response.status === 401) {
+				await response.body?.cancel();
+				return { kind: 'unauthorized' };
+			}
 			body = await response.json().catch(() => undefined);
 		} catch (error) {
 			return { kind: 'failed', why: controller.signal.aborted ? 'no answer in time' : describe(error) };
@@ -126,21 +138,33 @@ export function createBotClient(options: BotClientOptions): BotClient {
 		let backoffMs = 0;
 		let clockFixes = 0;
 		while (!stopped) {
+			const askedAt = now();
 			const answer = await request(session ? 'poll' : 'connect', session ? { session } : {});
 			if (stopped) return;
 			switch (answer.kind) {
 				case 'ok': {
-					backoffMs = 0;
 					clockFixes = 0;
 					if (session === null) {
 						const given = isObject(answer.message) ? answer.message['session'] : undefined;
-						if (typeof given === 'string') {
-							session = given;
-							log('connected to the bot');
+						if (typeof given !== 'string') {
+							// A bot of another version, or a broken one: not a reason to ask again at once.
+							backoffMs = nextBackoff(backoffMs);
+							log(`the bot's answer had no session; trying again in ${backoffMs / 1000} s`);
+							await wait(backoffMs);
+							break;
 						}
-					} else {
-						const chat = chatIn(answer.message);
-						if (chat.length > 0) options.onChat(chat);
+						backoffMs = 0;
+						session = given;
+						log('connected to the bot');
+						break;
+					}
+					backoffMs = 0;
+					const chat = chatIn(answer.message);
+					if (chat.length > 0) {
+						call(() => options.onChat(chat), 'handling chat from the bot');
+					} else if (now() - askedAt < MIN_EMPTY_POLL_GAP_MS) {
+						// A poll is held until there's something, so nothing at once means the bot is closing.
+						await wait(MIN_EMPTY_POLL_GAP_MS - (now() - askedAt));
 					}
 					break;
 				}
@@ -160,9 +184,10 @@ export function createBotClient(options: BotClientOptions): BotClient {
 				case 'taken-over':
 				case 'unauthorized':
 					stopped = true;
-					options.onStopped(answer.kind);
+					call(() => options.onStopped(answer.kind), 'reporting why it stopped');
 					return;
 				case 'rate-limited':
+					log(`the bot asked to slow down; waiting ${Math.round(answer.waitMs / 1000)} s`);
 					await wait(answer.waitMs);
 					break;
 				case 'failed':
@@ -174,10 +199,20 @@ export function createBotClient(options: BotClientOptions): BotClient {
 		}
 	}
 
+	// The loop outlives anything a callback gets wrong: an unhandled rejection
+	// would end the helper, one-way relay and all.
+	function call(callback: () => void, doing: string): void {
+		try {
+			callback();
+		} catch (error) {
+			log(`${doing} failed: ${describe(error)}`);
+		}
+	}
+
 	return {
 		start() {
 			if (running || stopped) return;
-			running = run();
+			running = run().catch((error: unknown) => log(`the connection to the bot stopped: ${describe(error)}`));
 		},
 		async stop() {
 			stopped = true;

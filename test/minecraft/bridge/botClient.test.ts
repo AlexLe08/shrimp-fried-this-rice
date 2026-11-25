@@ -3,6 +3,7 @@ import { __resetForTests } from '../../../src/core/database.ts';
 import { createApp } from '../../../src/dashboard/app.ts';
 import {
 	MAX_BACKOFF_MS,
+	MIN_EMPTY_POLL_GAP_MS,
 	createBotClient,
 	type BotChat,
 	type BotClient,
@@ -126,12 +127,22 @@ function scriptedBot(replies: Reply[]) {
 
 const connected: Reply = { status: 200, sealed: { session: 's1' } };
 
-function startScripted(replies: Reply[]) {
+function startScripted(
+	replies: Reply[],
+	extra: { url?: string; requestTimeoutMs?: number; onChat?: (chat: BotChat[]) => void } = {},
+) {
 	const scripted = scriptedBot(replies);
-	const onChat = vi.fn<(chat: BotChat[]) => void>();
+	const onChat = vi.fn<(chat: BotChat[]) => void>(extra.onChat);
 	const onStopped = vi.fn<(reason: StopReason) => void>();
 	const log = vi.fn();
-	start({ bot: scripted.bot, onChat, onStopped, fetch: scripted.fetchFn, log });
+	start({
+		bot: { ...scripted.bot, url: extra.url ?? scripted.bot.url },
+		onChat,
+		onStopped,
+		fetch: scripted.fetchFn,
+		log,
+		...(extra.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: extra.requestTimeoutMs }),
+	});
 	return { ...scripted, onChat, onStopped, log };
 }
 
@@ -230,5 +241,75 @@ describe("the helper's connection, answer by answer", () => {
 		await vi.advanceTimersByTimeAsync(MAX_BACKOFF_MS * 2);
 
 		expect(requests).toHaveLength(1);
+	});
+
+	it('keeps the configured path when the address has no trailing slash', async () => {
+		const { fetchFn } = startScripted([connected], { url: URL_BASE.slice(0, -1) });
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(String(fetchFn.mock.calls[0]![0])).toBe(`${URL_BASE}connect`);
+	});
+
+	it('keeps polling when handling chat throws, logging it', async () => {
+		const { requests, log } = startScripted(
+			[connected, { status: 200, sealed: { messages: [{ kind: 'chat', name: 'A', text: 'b' }] } }],
+			{
+				onChat: () => {
+					throw new Error('tellraw broke');
+				},
+			},
+		);
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(log).toHaveBeenCalledWith('handling chat from the bot failed: tellraw broke');
+		expect(requests).toHaveLength(3);
+	});
+
+	it('backs off when a connect is answered without a session', async () => {
+		const { requests, log } = startScripted([{ status: 200, sealed: {} }, connected]);
+		await vi.advanceTimersByTimeAsync(5000);
+
+		expect(log).toHaveBeenCalledWith("the bot's answer had no session; trying again in 1 s");
+		expect(requests[1]!.at - requests[0]!.at).toBe(1000);
+	});
+
+	it(`leaves ${MIN_EMPTY_POLL_GAP_MS / 1000} s between polls answered at once with nothing, as while the bot closes`, async () => {
+		const empty: Reply = { status: 200, sealed: { messages: [] } };
+		const { requests } = startScripted([connected, empty, empty]);
+		await vi.advanceTimersByTimeAsync(5000);
+
+		expect(requests[2]!.at - requests[1]!.at).toBe(MIN_EMPTY_POLL_GAP_MS);
+		expect(requests[3]!.at - requests[2]!.at).toBe(MIN_EMPTY_POLL_GAP_MS);
+	});
+
+	it('backs off on a 403, which Cloudflare can send for a moment, rather than stopping', async () => {
+		const { requests, onStopped } = startScripted([{ status: 403, plain: '<html>Forbidden</html>' }, connected]);
+		await vi.advanceTimersByTimeAsync(5000);
+
+		expect(onStopped).not.toHaveBeenCalled();
+		expect(requests.map((r) => r.route).slice(0, 2)).toEqual(['connect', 'connect']);
+	});
+
+	it('gives up on a request with no answer in time, and backs off', async () => {
+		const { log } = startScripted([connected], { requestTimeoutMs: 5000 });
+		await vi.advanceTimersByTimeAsync(5000);
+
+		expect(log).toHaveBeenCalledWith("the bot couldn't be reached (no answer in time); trying again in 1 s");
+	});
+
+	it('backs off when the bot refuses its time twice in a row, rather than looping', async () => {
+		const clock: Reply = { status: 400, sealed: { error: 'clock' }, botTime: Date.now() };
+		const { requests } = startScripted([clock, clock, connected]);
+		await vi.advanceTimersByTimeAsync(5000);
+
+		expect(requests[1]!.at - requests[0]!.at).toBe(0);
+		expect(requests[2]!.at - requests[1]!.at).toBe(1000);
+	});
+
+	it(`waits ${MAX_BACKOFF_MS / 1000} s after a 429 without Retry-After`, async () => {
+		const { requests } = startScripted([{ status: 429, plain: '{"error":"rate-limited"}' }, connected]);
+		await vi.advanceTimersByTimeAsync(MAX_BACKOFF_MS * 2);
+
+		expect(requests[1]!.at - requests[0]!.at).toBe(MAX_BACKOFF_MS);
 	});
 });
