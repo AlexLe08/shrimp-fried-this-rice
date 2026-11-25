@@ -574,6 +574,23 @@ Later item), not a follow-up.
   checked in `discord-api-types`). Not used yet: nothing announces a
   bridge until the dashboard's pages (A8f), and no helper polls until
   its side; not tried against Discord.
+- **Announcing the relay** (2026-11-24, second part of A8e).
+  `src/minecraft/announcement.ts` posts decision 0006's opt-in in a
+  bridge's chat channel through its chat webhook, under the server's
+  name with no pings, and records the channel, which the relay needs
+  before it reads it. Posted when the helper is first active (any sealed
+  request to the endpoint), not at pairing (the owner's call,
+  2026-11-24), so it comes when chat starts to flow, and one place covers
+  a chat moved to another channel and a refused post: tried again at most
+  every 10 minutes, and not for a webhook Discord says is gone (10015)
+  until it's regenerated. Two requests at once post once; nothing is
+  recorded if the bridge changed while posting or once shutdown began
+  (the dashboard closes the announcer before the database closes).
+  Checked in discord.js 14.27's source: `WebhookClient` takes the
+  webhook's id and token, and `send` takes `username` and
+  `allowedMentions`; 10015 is Unknown Webhook in `discord-api-types`. Not
+  used yet: nothing pairs a bridge until A8f, and no helper connects
+  until its side; not tried against Discord.
 
 ## Next up
 
@@ -610,7 +627,8 @@ them ahead of items 5 and 6.
    A8i, two-way chat, linking and pictures. A8d (the bot's storage,
    sealing, endpoint, pairing and dropping the links of members who
    left) is done (Done above); the relay (A8e) is under way: the bot
-   reads bridge chat channels (Done above); next, the helper's side.
+   reads bridge chat channels and announces the relay (Done above);
+   next, catching up after a restart, then the helper's side.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the
