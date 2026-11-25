@@ -68,6 +68,13 @@ export interface BridgeKeys {
 /** Bridges a server may have: each takes two of a channel's 15 webhooks and the server's 1000. */
 export const MAX_BRIDGES_PER_GUILD = 10;
 
+/**
+ * Pictures a bridge's managers may set for players: they all go with every
+ * connect answer and settings message (about 50 bytes each, sealed), and
+ * into the helper's cache file. Plenty for a friends' server.
+ */
+export const MAX_PICTURES_PER_BRIDGE = 100;
+
 // Minecraft names are unique whatever their case, so "steve" finds "Steve".
 export function playerNameKey(name: string): string {
 	return name.toLowerCase();
@@ -265,19 +272,30 @@ export function getPlayerPictures(bridgeId: string): MinecraftBridgePicture[] {
 		.all(bridgeId) as MinecraftBridgePicture[];
 }
 
-/** `null` hands the player back to the helper's config. */
-export function setPlayerPicture(bridgeId: string, name: string, picture: PlayerPicture | null): void {
+/**
+ * `null` hands the player back to the helper's config. False, saving
+ * nothing, for a name without a picture yet once the bridge has
+ * MAX_PICTURES_PER_BRIDGE; changing one it has is still allowed.
+ */
+export function setPlayerPicture(bridgeId: string, name: string, picture: PlayerPicture | null): boolean {
+	const key = playerNameKey(name);
 	if (picture === null) {
-		db.prepare('DELETE FROM minecraft_bridge_pictures WHERE bridge_id = ? AND name_key = ?').run(
-			bridgeId,
-			playerNameKey(name),
-		);
-		return;
+		db.prepare('DELETE FROM minecraft_bridge_pictures WHERE bridge_id = ? AND name_key = ?').run(bridgeId, key);
+		return true;
 	}
+	// No await between the count and the insert, so nothing else can add one in between.
+	const { count, has } = db
+		.prepare(
+			`SELECT COUNT(*) AS count, COUNT(CASE WHEN name_key = ? THEN 1 END) AS has
+			 FROM minecraft_bridge_pictures WHERE bridge_id = ?`,
+		)
+		.get(key, bridgeId) as { count: number; has: number };
+	if (has === 0 && count >= MAX_PICTURES_PER_BRIDGE) return false;
 	db.prepare(
 		`INSERT INTO minecraft_bridge_pictures (bridge_id, name, name_key, picture) VALUES (?, ?, ?, ?)
 		 ON CONFLICT(bridge_id, name_key) DO UPDATE SET name = excluded.name, picture = excluded.picture`,
-	).run(bridgeId, name, playerNameKey(name), picture);
+	).run(bridgeId, name, key, picture);
+	return true;
 }
 
 // --- Links (decision 0007) ---

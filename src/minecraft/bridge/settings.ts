@@ -29,11 +29,21 @@ export interface LiveSettings {
 
 const PLAYER_NAME = /^[A-Za-z0-9_]{1,16}$/;
 
+/** A name the helper takes a picture for; the dashboard checks with it too. */
+export function isPlayerName(value: unknown): value is string {
+	return typeof value === 'string' && PLAYER_NAME.test(value);
+}
+
 // The dashboard sets no links (the plan's A8): one arriving means something's wrong.
 function picture(value: unknown): AvatarChoice | null {
 	if (typeof value !== 'string') return null;
 	const choice = parseChoice(value);
 	return choice && choice.kind !== 'url' ? choice : null;
+}
+
+/** A picture the helper takes from the bot for a player; the dashboard checks with it too. */
+export function isSettingsPicture(value: string): boolean {
+	return picture(value) !== null;
 }
 
 /**
@@ -65,7 +75,7 @@ export function readSettings(raw: unknown, log: (message: string) => void): Rece
 		for (const entry of pictures) {
 			const { name, picture: value } = (entry ?? {}) as Record<string, unknown>;
 			const choice = picture(value);
-			if (typeof name === 'string' && PLAYER_NAME.test(name) && choice) map.set(name.toLowerCase(), choice);
+			if (isPlayerName(name) && choice) map.set(name.toLowerCase(), choice);
 			else refused.push('a picture');
 		}
 		settings.pictures = map;

@@ -12,6 +12,7 @@ import {
 	getLink,
 	getMemberLinks,
 	getMinecraftGuildSettings,
+	MAX_PICTURES_PER_BRIDGE,
 	getPlayerPictures,
 	markBridgeAnnounced,
 	recordRelayedMessage,
@@ -197,6 +198,24 @@ describe('minecraft bridge storage', () => {
 
 			setPlayerPicture(bridge.id, 'steve', null);
 			expect(getPlayerPictures(bridge.id).map((p) => p.name_key)).toEqual(['alex']);
+		});
+
+		it('refuses a new name once the bridge has the most, but still changes or removes one it has', () => {
+			const bridge = newBridge();
+			const other = newBridge();
+			for (let i = 0; i < MAX_PICTURES_PER_BRIDGE; i++) {
+				expect(setPlayerPicture(bridge.id, `player${i}`, 'skin')).toBe(true);
+			}
+
+			expect(setPlayerPicture(bridge.id, 'Steve', 'skin')).toBe(false);
+			expect(getPlayerPictures(bridge.id).some((p) => p.name_key === 'steve')).toBe(false);
+			expect(setPlayerPicture(bridge.id, 'PLAYER0', 'none')).toBe(true);
+			expect(getPlayerPictures(bridge.id).find((p) => p.name_key === 'player0')?.picture).toBe('none');
+			expect(setPlayerPicture(other.id, 'Steve', 'skin')).toBe(true);
+
+			expect(setPlayerPicture(bridge.id, 'player1', null)).toBe(true);
+			expect(setPlayerPicture(bridge.id, 'Steve', 'skin')).toBe(true);
+			expect(getPlayerPictures(bridge.id)).toHaveLength(MAX_PICTURES_PER_BRIDGE);
 		});
 	});
 
