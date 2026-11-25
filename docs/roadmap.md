@@ -707,7 +707,11 @@ them ahead of items 5 and 6.
    a restart, the helper puts chat into the game, and it keeps the
    bridge's settings (Done above): A8e is done. Next, A8f: the dashboard's
    pages, `/minecraft link` and `/minecraft avatar`, the `!link` reports,
-   and queuing a settings message when the dashboard changes them.
+   and queuing a settings message when the dashboard changes them. Its
+   checks must match the helper's (`serverNameProblem`, `isPrefix`,
+   `isColour`, a player name, `generated:0` to `generated:9`), or the
+   helper ignores the setting; and a bridge's pictures need a cap in
+   `storage.ts`, as they go with every connect answer (from review).
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the
