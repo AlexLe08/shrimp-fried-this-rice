@@ -4,7 +4,7 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { csrf } from 'hono/csrf';
 import { secureHeaders } from 'hono/secure-headers';
 import { DiscordRateLimitedError, authorizeUrl, discordUserFromCode, type AuthConfig, type Fetch } from './auth.ts';
-import { serverAccess, type DashboardClient, type ManagedServer } from './access.ts';
+import { serverAccess, type DashboardClient, type ServerRights } from './access.ts';
 import { createLoginGate } from './loginGate.ts';
 import {
 	MINUTE_MS,
@@ -16,7 +16,7 @@ import {
 	createRateLimiter,
 	visitorKey,
 } from './rateLimit.ts';
-import { homePage, messagePage, serverPage, serversPage } from './pages.ts';
+import { homePage, messagePage, minecraftPage, serverPage, serversPage } from './pages.ts';
 import { endSession, sessionFromToken, startSession } from './sessions.ts';
 import { SESSION_LIFETIME_MS, type DashboardSession } from './storage.ts';
 import { MAX_REMINDERS_PER_GUILD, getGuildReminders, isGuildMasterEnabled } from '../reminders/storage.ts';
@@ -24,6 +24,7 @@ import { reminderState } from '../reminders/reminderState.ts';
 import type { Announcer } from '../minecraft/announcement.ts';
 import { HelperHub } from '../minecraft/helperHub.ts';
 import { registerHelperRoutes } from '../minecraft/helperRoutes.ts';
+import { MAX_BRIDGES_PER_GUILD, getGuildBridges } from '../minecraft/storage.ts';
 
 export interface AppOptions {
 	/** Login's settings; null serves the dashboard without login. */
@@ -38,15 +39,18 @@ export interface AppOptions {
 	announcer?: Announcer;
 }
 
-type Env = { Variables: { session: DashboardSession; server: ManagedServer } };
+type Env = { Variables: { session: DashboardSession; server: ServerRights } };
 
 /**
  * Who may reach each route, which a test checks against the app's routes, so
  * a new route can't be added without saying (decision 0009: deny by default).
- * `signed-in` routes go through requireSession; `server` routes are under
- * /servers/:guildId, where requireServer checks the user may manage that
- * server before any handler runs. `helper` routes are the Minecraft helper's,
- * which open only with a bridge's keys (minecraft/helperRoutes.ts).
+ * `signed-in` routes go through requireSession. `server` and `bridges` routes
+ * are under /servers/:guildId, where requireServer checks the user has a right
+ * in that server before any handler runs, then the route's own `requires`
+ * checks the right it needs: Manage Server for `server` (decision 0012), the
+ * server's owner or allowed role for `bridges` (decision 0013). `helper`
+ * routes are the Minecraft helper's, which open only with a bridge's keys
+ * (minecraft/helperRoutes.ts).
  */
 export const ROUTE_ACCESS = {
 	'GET /health': 'public',
@@ -56,6 +60,7 @@ export const ROUTE_ACCESS = {
 	'POST /logout': 'public',
 	'GET /servers': 'signed-in',
 	'GET /servers/:guildId': 'server',
+	'GET /servers/:guildId/minecraft': 'bridges',
 	'POST /minecraft/connect': 'helper',
 	'POST /minecraft/poll': 'helper',
 } as const;
@@ -203,11 +208,20 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 	// One answer, 404, whether the bot isn't in the server, the user isn't a
 	// member, or they can't manage it: none tells a visitor the server exists.
 	const requireServer: MiddlewareHandler<Env> = async (c, next) => {
-		const server = access && (await access.serverUserManages(c.req.param('guildId') ?? '', c.get('session').user_id));
-		if (!server) return notFound(c);
-		c.set('server', server);
+		const rights = access && (await access.rightsIn(c.req.param('guildId') ?? '', c.get('session').user_id));
+		if (!rights || !(rights.manageServer || rights.manageBridges)) return notFound(c);
+		c.set('server', rights);
 		return next();
 	};
+
+	// Each server route names the right it needs, after requireServer has
+	// found the user's rights; the same 404 for one they lack.
+	const requires =
+		(level: 'server' | 'bridges'): MiddlewareHandler<Env> =>
+		async (c, next) => {
+			const rights = c.get('server');
+			return (level === 'server' ? rights.manageServer : rights.manageBridges) ? next() : notFound(c);
+		};
 
 	app.use('/servers', requireSession);
 	// The wildcard matches /servers/:guildId itself too, so one registration
@@ -215,11 +229,11 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 	app.use('/servers/:guildId/*', requireSession, requireServer);
 
 	app.get('/servers', async (c) => {
-		const servers = access ? await access.serversUserManages(c.get('session').user_id) : [];
+		const servers = access ? await access.serversWithRights(c.get('session').user_id) : [];
 		return c.html(serversPage(servers));
 	});
 
-	app.get('/servers/:guildId', (c) => {
+	app.get('/servers/:guildId', requires('server'), (c) => {
 		const server = c.get('server');
 		const time = now();
 		const masterEnabled = isGuildMasterEnabled(server.id);
@@ -234,6 +248,19 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 			state: reminderState(reminder, masterEnabled, time),
 		}));
 		return c.html(serverPage(server, { masterEnabled, reminders, max: MAX_REMINDERS_PER_GUILD, now: time }));
+	});
+
+	app.get('/servers/:guildId/minecraft', requires('bridges'), (c) => {
+		const server = c.get('server');
+		const channels = options.client?.guilds.cache.get(server.id)?.channels.cache;
+		const channel = (id: string) => ({ id, name: channels?.get(id)?.name ?? null });
+		const bridges = getGuildBridges(server.id).map((bridge) => ({
+			serverName: bridge.server_name,
+			chat: channel(bridge.chat_channel_id),
+			alerts: channel(bridge.alerts_channel_id),
+			announced: bridge.announced_channel_id === bridge.chat_channel_id,
+		}));
+		return c.html(minecraftPage(server, { bridges, max: MAX_BRIDGES_PER_GUILD }));
 	});
 
 	app.post('/logout', (c) => {

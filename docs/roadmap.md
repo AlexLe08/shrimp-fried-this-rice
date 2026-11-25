@@ -667,6 +667,21 @@ Later item), not a follow-up.
   bridge's id, and reads them at startup, so posts keep their name and
   pictures while the bot is away. Not tried against a real server (A8h).
   With this, A8e is done.
+- **Who reaches a server's Minecraft pages** (2026-11-25, first part of
+  A8f; decision 0013). The dashboard's member fetch now answers two
+  rights from one call (`dashboard/access.ts`): Manage Server (decision
+  0012) and managing bridges (the server's owner or the allowed role, not
+  in timeout, `canManageBridges`). The guard on `/servers/:guildId/*`
+  lets in either, and each route requires its own (`requires('server')`,
+  `requires('bridges')`), listed in `ROUTE_ACCESS`; a test tries every
+  such route as a user holding only the other right. `/servers` lists
+  servers where the user has either, linking the pages that are theirs,
+  and `/servers/:guildId/minecraft` lists the paired bridges read-only
+  (name, channels, and whether chat goes into the game yet). Worked out
+  here: one guard with a check per route rather than a second guard on
+  another prefix, which would split a server's pages and couldn't use
+  `/minecraft/` (the helper's, outside the pages' rate limit). Not tried
+  on the live dashboard; nothing pairs a bridge until the next part.
 
 ## Next up
 
@@ -705,9 +720,14 @@ them ahead of items 5 and 6.
    left) is done (Done above); the relay (A8e) is under way: the bot
    reads bridge chat channels, announces the relay and catches up after
    a restart, the helper puts chat into the game, and it keeps the
-   bridge's settings (Done above): A8e is done. Next, A8f: the dashboard's
-   pages, `/minecraft link` and `/minecraft avatar`, the `!link` reports,
-   and queuing a settings message when the dashboard changes them. Its
+   bridge's settings (Done above): A8e is done. A8f is under way: who
+   reaches a server's Minecraft pages, and a read-only list of its
+   bridges (Done above). Next: adding a bridge (pairing and the config
+   download), who may manage (the allowed role), the bridge's settings
+   (regenerate, remove), per-player pictures and members' links, then
+   linking (codes, the `!link` reports, My Minecraft accounts,
+   `/minecraft link`) and `/minecraft avatar`, and queuing a settings
+   message when the dashboard changes them. Its
    checks must match the helper's (`serverNameProblem`, `isPrefix`,
    `isColour`, a player name, `generated:0` to `generated:9`), or the
    helper ignores the setting; and a bridge's pictures need a cap in
