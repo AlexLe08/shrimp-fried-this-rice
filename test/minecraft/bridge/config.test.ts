@@ -25,6 +25,8 @@ function problems(raw: unknown): string[] {
 	return [];
 }
 
+// A bridge id as createBridge makes them: 16 random bytes, base64url.
+const BRIDGE = 'AAECAwQFBgcICQoLDA0ODw';
 describe('parseConfig', () => {
 	it('accepts a minimal config, with the built-in ignore list', () => {
 		expect(parseConfig(valid())).toEqual({
@@ -129,33 +131,43 @@ describe('parseConfig', () => {
 		expect(found[1]).toBe('"ignorePatterns[2]" must be a string');
 	});
 
-	it("accepts the bot's address and secret from pairing", () => {
+	it("accepts the bot's address, the bridge's id and the secret from pairing", () => {
 		const secret = newBridgeSecret();
-		expect(parseConfig({ ...valid(), bot: { url: 'https://example.com/minecraft', secret } }).bot).toEqual({
+		expect(
+			parseConfig({ ...valid(), bot: { url: 'https://example.com/minecraft', bridge: BRIDGE, secret } }).bot,
+		).toEqual({
 			url: 'https://example.com/minecraft',
+			bridge: BRIDGE,
 			secret,
 		});
-		expect(problems({ ...valid(), bot: { url: 'http://127.0.0.1:3000/minecraft', secret } })).toEqual([]);
+		expect(problems({ ...valid(), bot: { url: 'http://127.0.0.1:3000/minecraft', bridge: BRIDGE, secret } })).toEqual(
+			[],
+		);
 		expect(parseConfig(valid())).not.toHaveProperty('bot');
 	});
 
-	it('refuses a bot address that is not https, a changed secret or an extra key, never quoting the secret', () => {
+	it('refuses a bot address that is not https, a changed bridge id or secret, or an extra key, never quoting the secret', () => {
 		const secret = newBridgeSecret();
 		const cut = secret.slice(0, -2);
 		const reported = problems({
 			...valid(),
-			bot: { url: 'http://example.com/minecraft', secret: cut, token: 'x' },
+			bot: { url: 'http://example.com/minecraft', bridge: BRIDGE.slice(1), secret: cut, token: 'x' },
 		});
 		expect(reported).toEqual([
 			'unknown key "bot.token"',
 			'"bot.url" must be the https address the dashboard gave (http only on 127.0.0.1 or localhost)',
+			'"bot.bridge" must be the bridge id the dashboard gave, unchanged',
 			'"bot.secret" must be the secret the dashboard gave, unchanged',
 		]);
 		expect(reported.join('\n')).not.toContain(cut);
 		expect(problems({ ...valid(), bot: 'https://example.com' })).toEqual([
-			'"bot" must be an object with "url" and "secret", as the dashboard gave it',
+			'"bot" must be an object with "url", "bridge" and "secret", as the dashboard gave it',
 		]);
-		expect(problems({ ...valid(), bot: { url: 'not a url', secret: 42 } })).toHaveLength(2);
+		// A config from before the bridge's id was part of it.
+		expect(problems({ ...valid(), bot: { url: 'https://example.com/minecraft', secret } })).toEqual([
+			'"bot.bridge" must be the bridge id the dashboard gave, unchanged',
+		]);
+		expect(problems({ ...valid(), bot: { url: 'not a url', bridge: BRIDGE, secret: 42 } })).toHaveLength(2);
 	});
 
 	it('refuses something other than an object', () => {

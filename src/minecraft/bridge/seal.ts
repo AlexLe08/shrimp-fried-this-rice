@@ -28,6 +28,11 @@ const BASE64URL = /^[A-Za-z0-9_-]*$/;
 // createBridge's ids: 16 random bytes, base64url.
 const BRIDGE_ID = /^[A-Za-z0-9_-]{22}$/;
 
+/** Whether `id` looks like a bridge's id, as createBridge makes them. */
+export function isBridgeId(id: string): boolean {
+	return BRIDGE_ID.test(id);
+}
+
 export type Direction = 'request' | 'response';
 
 /** A sealed body as sent: the bridge's id in the clear (it picks the keys and the rate limit), the rest opaque. */
