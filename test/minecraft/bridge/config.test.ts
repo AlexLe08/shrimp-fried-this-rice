@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_AVATARS } from '../../../src/minecraft/bridge/avatars.ts';
 import { DEFAULT_IGNORE } from '../../../src/minecraft/bridge/classify.ts';
 import { ConfigError, loadConfig, parseConfig } from '../../../src/minecraft/bridge/config.ts';
+import { newBridgeSecret } from '../../../src/minecraft/bridge/seal.ts';
 
 const CHAT = 'https://discord.com/api/webhooks/123/chat-token';
 const ALERTS = 'https://discord.com/api/webhooks/456/alerts_token';
@@ -126,6 +127,35 @@ describe('parseConfig', () => {
 		expect(found).toHaveLength(2);
 		expect(found[0]).toMatch(/^"ignorePatterns\[1\]" isn't a valid regular expression/);
 		expect(found[1]).toBe('"ignorePatterns[2]" must be a string');
+	});
+
+	it("accepts the bot's address and secret from pairing", () => {
+		const secret = newBridgeSecret();
+		expect(parseConfig({ ...valid(), bot: { url: 'https://example.com/minecraft', secret } }).bot).toEqual({
+			url: 'https://example.com/minecraft',
+			secret,
+		});
+		expect(problems({ ...valid(), bot: { url: 'http://127.0.0.1:3000/minecraft', secret } })).toEqual([]);
+		expect(parseConfig(valid())).not.toHaveProperty('bot');
+	});
+
+	it('refuses a bot address that is not https, a changed secret or an extra key, never quoting the secret', () => {
+		const secret = newBridgeSecret();
+		const cut = secret.slice(0, -2);
+		const reported = problems({
+			...valid(),
+			bot: { url: 'http://example.com/minecraft', secret: cut, token: 'x' },
+		});
+		expect(reported).toEqual([
+			'unknown key "bot.token"',
+			'"bot.url" must be the https address the dashboard gave (http only on 127.0.0.1 or localhost)',
+			'"bot.secret" must be the secret the dashboard gave, unchanged',
+		]);
+		expect(reported.join('\n')).not.toContain(cut);
+		expect(problems({ ...valid(), bot: 'https://example.com' })).toEqual([
+			'"bot" must be an object with "url" and "secret", as the dashboard gave it',
+		]);
+		expect(problems({ ...valid(), bot: { url: 'not a url', secret: 42 } })).toHaveLength(2);
 	});
 
 	it('refuses something other than an object', () => {
