@@ -737,6 +737,21 @@ Later item), not a follow-up.
   manager must be able to remove a bridge whose channel they can no
   longer see. A bridge's own page, with its name, prefix, colour and
   default picture, comes next. Not tried against Discord (A8h).
+- **A Minecraft server's settings** (2026-11-25, fifth part of A8f).
+  `/servers/:guildId/minecraft/bridges/:bridgeId`, linked from each
+  bridge on the Minecraft page, changes its name, prefix, colour and
+  default picture (generated, skin, none, or the helper's config's).
+  `checkSettingsChange` (`minecraft/bridgeSettings.ts`) checks each field
+  by the helper's own rules (`serverNameProblem`, `isPrefix`,
+  `isColour`), as the helper drops a field it would refuse, and a test
+  passes what it saves through the helper's `readSettings`; a refusal
+  names every field to fix. Saving asks Discord afresh, then queues the
+  settings on the hub, so a connected helper applies them at once rather
+  than at its next connect; this is the "settings message when the
+  dashboard changes them" for these four fields. Worked out here: no
+  one-time token (saving twice changes nothing) and a redirect after
+  saving; hex colours are lowercased, as named ones must be. Not tried
+  against Discord or a real helper (A8h).
 
 ## Next up
 
@@ -777,16 +792,14 @@ them ahead of items 5 and 6.
    a restart, the helper puts chat into the game, and it keeps the
    bridge's settings (Done above): A8e is done. A8f is under way: who
    reaches a server's Minecraft pages, a list of its bridges, adding
-   one, who may manage them, and regenerating and removing one (Done
-   above). Next: the bridge's settings (name, prefix, colour, default
-   picture), per-player pictures and members' links, then linking
-   (codes, the `!link` reports, My Minecraft accounts,
-   `/minecraft link`) and `/minecraft avatar`, and queuing a settings
-   message when the dashboard changes them. Its
-   checks must match the helper's (`serverNameProblem`, `isPrefix`,
-   `isColour`, a player name, `generated:0` to `generated:9`), or the
-   helper ignores the setting; and a bridge's pictures need a cap in
-   `storage.ts`, as they go with every connect answer (from review).
+   one, who may manage them, regenerating and removing one, and its
+   settings (Done above). Next: per-player pictures and members' links,
+   then linking (codes, the `!link` reports, My Minecraft accounts,
+   `/minecraft link`) and `/minecraft avatar`. Per-player pictures must
+   be checked as the helper does (a player name, `generated:0` to
+   `generated:9`) and queued on the hub when changed, as the settings
+   page does; and a bridge's pictures need a cap in `storage.ts`, as
+   they go with every connect answer (from review).
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the
