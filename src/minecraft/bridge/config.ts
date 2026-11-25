@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { parseAvatars, type AvatarConfig } from './avatars.ts';
 import { DEFAULT_IGNORE } from './classify.ts';
+import { deriveKeys } from './seal.ts';
 
 export interface BridgeConfig {
 	/** Shown in messages, and the sender name for everything but chat. */
@@ -14,9 +15,20 @@ export interface BridgeConfig {
 	ignore: RegExp[];
 	/** What each player's chat lines show as their picture. */
 	avatars: AvatarConfig;
+	/** The bot's endpoint and the pairing secret, from the dashboard; unset, the bridge is one-way. */
+	bot?: { url: string; secret: string };
 }
 
-const KEYS = new Set(['serverName', 'logPath', 'crashReportsDir', 'format', 'webhooks', 'ignorePatterns', 'avatars']);
+const KEYS = new Set([
+	'serverName',
+	'logPath',
+	'crashReportsDir',
+	'format',
+	'webhooks',
+	'ignorePatterns',
+	'avatars',
+	'bot',
+]);
 // discord.com, or the older discordapp.com, with the PTB and Canary clients'
 // hosts; an optional API version; then the webhook's id and token.
 const WEBHOOK_URL = /^https:\/\/(?:(?:ptb|canary)\.)?discord(?:app)?\.com\/api\/(?:v\d+\/)?webhooks\/\d+\/[\w-]+$/;
@@ -27,6 +39,20 @@ export class ConfigError extends Error {
 		super(`invalid config:\n${problems.map((problem) => `  - ${problem}`).join('\n')}`);
 		this.problems = problems;
 	}
+}
+
+/**
+ * What's wrong with a server name, if anything. Pairing checks a name with
+ * this too, so the dashboard never hands out a config the helper refuses.
+ */
+export function serverNameProblem(name: unknown): string | undefined {
+	if (typeof name !== 'string' || name.trim() === '' || name.length > 80) {
+		return '"serverName" must be a name of 1 to 80 characters';
+	}
+	// It's the name a post falls back to when Discord refuses a player's, and
+	// Discord refuses these words in a webhook's name.
+	if (/clyde|discord/i.test(name)) return '"serverName" can\'t contain "clyde" or "discord"';
+	return undefined;
 }
 
 /** Checks a parsed config file, reporting every problem at once. */
@@ -43,15 +69,10 @@ export function parseConfig(raw: unknown): BridgeConfig {
 		if (!KEYS.has(key)) problems.push(`unknown key "${key}"`);
 	}
 
-	const { serverName, logPath, crashReportsDir, format, webhooks, ignorePatterns, avatars } = input;
+	const { serverName, logPath, crashReportsDir, format, webhooks, ignorePatterns, avatars, bot } = input;
 
-	if (typeof serverName !== 'string' || serverName.trim() === '' || serverName.length > 80) {
-		problems.push('"serverName" must be a name of 1 to 80 characters');
-	} else if (/clyde|discord/i.test(serverName)) {
-		// It's the name a post falls back to when Discord refuses a player's, and
-		// Discord refuses these words in a webhook's name.
-		problems.push('"serverName" can\'t contain "clyde" or "discord"');
-	}
+	const nameProblem = serverNameProblem(serverName);
+	if (nameProblem) problems.push(nameProblem);
 
 	if (typeof logPath !== 'string' || logPath.trim() === '') {
 		problems.push('"logPath" must be the path to the server\'s logs/latest.log');
@@ -102,6 +123,7 @@ export function parseConfig(raw: unknown): BridgeConfig {
 	}
 
 	const avatarConfig = parseAvatars(avatars, problems);
+	const botConfig = bot === undefined ? undefined : parseBot(bot, problems);
 
 	if (problems.length) throw new ConfigError(problems);
 	return {
@@ -111,7 +133,53 @@ export function parseConfig(raw: unknown): BridgeConfig {
 		webhooks: urls,
 		ignore,
 		avatars: avatarConfig,
+		...(botConfig === undefined ? {} : { bot: botConfig }),
 	};
+}
+
+// What pairing in the dashboard wrote. Nothing reads it yet: the helper
+// connects to the bot only once two-way chat is wired up.
+function parseBot(bot: unknown, problems: string[]): { url: string; secret: string } | undefined {
+	if (typeof bot !== 'object' || bot === null || Array.isArray(bot)) {
+		problems.push('"bot" must be an object with "url" and "secret", as the dashboard gave it');
+		return undefined;
+	}
+	const given = bot as Record<string, unknown>;
+	const before = problems.length;
+	for (const key of Object.keys(given)) {
+		if (key !== 'url' && key !== 'secret') problems.push(`unknown key "bot.${key}"`);
+	}
+	const { url, secret } = given;
+	if (!isBotUrl(url)) {
+		problems.push('"bot.url" must be the https address the dashboard gave (http only on 127.0.0.1 or localhost)');
+	}
+	// Never quoted back: it's the bridge's one credential.
+	if (!isSecret(secret)) problems.push('"bot.secret" must be the secret the dashboard gave, unchanged');
+	return problems.length === before ? { url: url as string, secret: secret as string } : undefined;
+}
+
+function isBotUrl(url: unknown): boolean {
+	if (typeof url !== 'string') return false;
+	let parsed: URL;
+	try {
+		parsed = new URL(url);
+	} catch {
+		return false;
+	}
+	const local = parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost';
+	// The seal hides what's said, but plain http elsewhere would still show
+	// anyone on the way when and how much a server chats.
+	return parsed.protocol === 'https:' || (local && parsed.protocol === 'http:');
+}
+
+function isSecret(secret: unknown): boolean {
+	if (typeof secret !== 'string') return false;
+	try {
+		deriveKeys(secret);
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 export async function loadConfig(path: string): Promise<BridgeConfig> {

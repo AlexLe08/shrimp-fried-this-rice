@@ -65,6 +65,9 @@ export interface BridgeKeys {
 	response: Buffer;
 }
 
+/** Bridges a server may have: each takes two of a channel's 15 webhooks and the server's 1000. */
+export const MAX_BRIDGES_PER_GUILD = 10;
+
 // Minecraft names are unique whatever their case, so "steve" finds "Steve".
 export function playerNameKey(name: string): string {
 	return name.toLowerCase();
