@@ -620,7 +620,10 @@ Later item), not a follow-up.
   one callback for the alert, it waits out a 429's `Retry-After`, backs off
   from 1 s doubling to 60 s on anything else (an unsealed 409 or a 403
   included, as anyone on the way or Cloudflare could send them), and
-  corrects for its clock from the bot's sealed time. Found here: pairing's
+  corrects for its clock from the bot's sealed time. From review: a
+  `bot.url` without its slash, a throwing callback (logged, not fatal), a
+  connect without a session (backs off) and empty polls answered at once
+  (1 s apart). Found here: pairing's
   config didn't name the bridge, which every sealed request carries; it's
   now `bot.bridge`, required (no config has been handed out yet). Tested
   against the bot's real routes and a scripted fake bot. Not started by
