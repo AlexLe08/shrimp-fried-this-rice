@@ -336,4 +336,49 @@ describe("the Minecraft helper's endpoint", () => {
 			expect(page.status).toBe(200);
 		});
 	});
+
+	describe("the relay's announcement", () => {
+		it('asks the announcer on each sealed request, connect and poll alike, and never on a forged one', async () => {
+			const ensure = vi.fn(() => Promise.resolve());
+			const app = createApp({
+				auth: null,
+				now,
+				helpers: new HelperHub(now),
+				announcer: { ensure, close: vi.fn() },
+			});
+			const bridge = pairedBridge();
+
+			const forged = seal(
+				deriveKeys(newBridgeSecret()),
+				'request',
+				{ bridgeId: bridge.id, route: 'connect' },
+				{},
+				time,
+			);
+			expect((await post(app, 'connect', JSON.stringify(forged))).status).toBe(401);
+			expect(ensure).not.toHaveBeenCalled();
+
+			await connect(app, bridge);
+			expect(ensure).toHaveBeenCalledOnce();
+			expect(ensure).toHaveBeenLastCalledWith(expect.objectContaining({ id: bridge.id, chat_channel_id: 'chat' }));
+
+			// A poll of an unknown session (410) still proves the helper is there.
+			await call(app, bridge, 'poll', { session: 'not-a-session' });
+			expect(ensure).toHaveBeenCalledTimes(2);
+		});
+
+		it('never asks it for a replayed or stale request', async () => {
+			const ensure = vi.fn(() => Promise.resolve());
+			const app = createApp({ auth: null, now, helpers: new HelperHub(now), announcer: { ensure, close: vi.fn() } });
+			const bridge = pairedBridge();
+			const { request } = await call(app, bridge, 'connect', {});
+			ensure.mockClear();
+
+			expect((await post(app, 'connect', JSON.stringify(request))).status).toBe(400);
+			const stale = await call(app, bridge, 'connect', {}, time - MAX_CLOCK_SKEW_MS - 1);
+			expect(stale.message).toEqual({ error: 'clock' });
+
+			expect(ensure).not.toHaveBeenCalled();
+		});
+	});
 });

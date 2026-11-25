@@ -21,6 +21,7 @@ import { endSession, sessionFromToken, startSession } from './sessions.ts';
 import { SESSION_LIFETIME_MS, type DashboardSession } from './storage.ts';
 import { MAX_REMINDERS_PER_GUILD, getGuildReminders, isGuildMasterEnabled } from '../reminders/storage.ts';
 import { reminderState } from '../reminders/reminderState.ts';
+import type { Announcer } from '../minecraft/announcement.ts';
 import { HelperHub } from '../minecraft/helperHub.ts';
 import { registerHelperRoutes } from '../minecraft/helperRoutes.ts';
 
@@ -33,6 +34,8 @@ export interface AppOptions {
 	now?: () => number;
 	/** The Minecraft helpers' sessions and waiting messages; a new, empty one if not given. */
 	helpers?: HelperHub;
+	/** Announces a bridge's relay when its helper is first active; without it, none is announced. */
+	announcer?: Announcer;
 }
 
 type Env = { Variables: { session: DashboardSession; server: ManagedServer } };
@@ -239,7 +242,12 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 		return c.redirect('/', 303);
 	});
 
-	registerHelperRoutes(app, { hub: options.helpers ?? new HelperHub(now), now, visitorOf });
+	registerHelperRoutes(app, {
+		hub: options.helpers ?? new HelperHub(now),
+		now,
+		visitorOf,
+		...(options.announcer && { announcer: options.announcer }),
+	});
 
 	return app;
 }

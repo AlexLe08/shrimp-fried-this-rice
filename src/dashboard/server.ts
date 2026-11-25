@@ -1,6 +1,7 @@
 import type { Server } from 'node:http';
 import { serve } from '@hono/node-server';
 import { createApp, type AppOptions } from './app.ts';
+import type { Announcer } from '../minecraft/announcement.ts';
 import { HelperHub } from '../minecraft/helperHub.ts';
 
 // cloudflared keeps an idle connection to the bot open for 90 s by default;
@@ -17,6 +18,7 @@ const CLOSE_IDLE_EVERY_MS = 50;
 
 let server: Server | null = null;
 let helpers: HelperHub | null = null;
+let announcer: Announcer | null = null;
 
 /** DASHBOARD_PORT from `.env`, or null when unset (a dev bot) or malformed (logged). */
 export function dashboardPortFromEnv(env: NodeJS.ProcessEnv): number | null {
@@ -57,11 +59,13 @@ export function startDashboard(port: number, appOptions: AppOptions = { auth: nu
 			if (server === listening) {
 				server = null;
 				helpers = null;
+				announcer = null;
 			}
 			resolve(null);
 		});
 		server = listening;
 		helpers = hub;
+		announcer = appOptions.announcer ?? null;
 	});
 }
 
@@ -94,6 +98,9 @@ export async function stopDashboard(graceMs = CLOSE_GRACE_MS): Promise<void> {
 	server = null;
 	helpers?.close();
 	helpers = null;
+	// Before the database closes: a post finishing later must not record it.
+	announcer?.close();
+	announcer = null;
 	await new Promise<void>((resolve) => {
 		const cutOff = setTimeout(() => running.closeAllConnections(), graceMs);
 		// close() closes only the connections idle at the time; one whose

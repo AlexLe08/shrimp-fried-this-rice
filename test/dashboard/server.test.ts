@@ -194,6 +194,15 @@ describe('stopDashboard', () => {
 		await expect(poll).resolves.toEqual({ status: 200, message: { messages: [] } });
 	});
 
+	it('closes the relay announcer, so a post finishing later records nothing in a closed database', async () => {
+		const announcer = { ensure: vi.fn(() => Promise.resolve()), close: vi.fn() };
+		await startDashboard(0, { auth: null, announcer });
+
+		await stopDashboard();
+
+		expect(announcer.close).toHaveBeenCalledOnce();
+	});
+
 	it('does nothing when the dashboard was never started', async () => {
 		await expect(stopDashboard()).resolves.toBeUndefined();
 	});

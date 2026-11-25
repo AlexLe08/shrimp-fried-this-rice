@@ -2,6 +2,7 @@ import type { Context, Env, Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { MINUTE_MS, createRateLimiter } from '../dashboard/rateLimit.ts';
+import type { Announcer } from './announcement.ts';
 import { ReplayGuard, open, parseEnvelope, seal } from './bridge/seal.ts';
 import type { HelperHub, PollResult } from './helperHub.ts';
 import { getBridge, type BridgeKeys } from './storage.ts';
@@ -36,13 +37,15 @@ export interface HelperRouteOptions {
 	now: () => number;
 	/** The rate-limit key of the request's address (dashboard/rateLimit.ts's visitorKey). */
 	visitorOf: (c: Context) => string;
+	/** Announces the relay once its helper is active (decision 0006); none in tests that don't need it. */
+	announcer?: Announcer;
 }
 
 type Reply = { status: ContentfulStatusCode; message: unknown };
 type Handler = (bridgeId: string, message: unknown, signal: AbortSignal) => Reply | Promise<Reply>;
 
 export function registerHelperRoutes<E extends Env>(app: Hono<E>, options: HelperRouteOptions): void {
-	const { hub, now, visitorOf } = options;
+	const { hub, now, visitorOf, announcer } = options;
 	// Made with the routes, so nothing sealed before the bot started opens.
 	const replays = new ReplayGuard(now());
 	const visitorRequests = createRateLimiter(HELPER_VISITOR_REQUESTS_PER_MINUTE, MINUTE_MS, now);
@@ -104,6 +107,9 @@ export function registerHelperRoutes<E extends Env>(app: Hono<E>, options: Helpe
 				// Sealed, with the bot's time inside, so the helper can correct for its clock.
 				if (check === 'stale') return reply({ status: 400, message: { error: 'clock' } });
 
+				// Not awaited: the helper's answer doesn't wait on Discord. It's tried
+				// on every request, as a refused post is tried again later.
+				if (announcer) void announcer.ensure(bridge);
 				return reply(await handlers[route](bridge.id, opened.message, c.req.raw.signal));
 			},
 		);
