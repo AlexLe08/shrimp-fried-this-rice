@@ -4,7 +4,9 @@ import { deriveKeys, newBridgeSecret } from './bridge/seal.ts';
 import {
 	createBridge,
 	getBridge,
+	getGuildBridges,
 	getMinecraftGuildSettings,
+	MAX_BRIDGES_PER_GUILD,
 	replaceBridgeConnection,
 	type BridgeWebhook,
 	type MinecraftBridge,
@@ -55,7 +57,7 @@ export interface PairingGuild<M extends PairingMember = PairingMember> {
 	ownerId: string;
 	members: { me: M | null };
 	channels: { cache: { get(id: string): GuildChannel<M> | undefined } };
-	client: { deleteWebhook(id: string, options?: { reason?: string }): Promise<void> };
+	client: { deleteWebhook(id: string, options?: { token?: string; reason?: string }): Promise<void> };
 }
 
 /** The `mcbridge.json` pairing hands over, with `logPath` left for the host to fill in. */
@@ -71,13 +73,17 @@ export type BotPermission = 'ViewChannel' | 'ManageWebhooks' | 'ReadMessageHisto
 export type PairingRefusal =
 	| { reason: 'not-allowed' }
 	| { reason: 'bad-name'; problem: string }
+	| { reason: 'bridge-limit'; max: number }
 	| { reason: 'unknown-bridge' }
+	/** Its channels changed while new webhooks were made for the old ones: try again. */
+	| { reason: 'bridge-changed' }
 	/** Gone, or not a text or announcement channel. */
 	| { reason: 'unusable-channel'; channelId: string }
 	| { reason: 'member-cant-manage-channel'; channelId: string }
 	| { reason: 'bot-missing-permissions'; channelId: string; missing: BotPermission[] }
 	| { reason: 'webhook-limit'; channelId: string; scope: 'channel' | 'server' }
-	| { reason: 'discord-error' };
+	/** Discord or the database failed; logged, and nothing is left behind. */
+	| { reason: 'error' };
 
 export type Paired = { ok: true; bridge: MinecraftBridge; config: HelperConfig };
 export type Regenerated = Paired & {
@@ -128,6 +134,10 @@ export async function pairBridge<M extends PairingMember>(request: {
 	if (!canManageBridges(guild, member)) return { ok: false, reason: 'not-allowed' };
 	const problem = serverNameProblem(serverName);
 	if (problem) return { ok: false, reason: 'bad-name', problem };
+	// Each bridge takes two of a channel's 15 webhooks and the server's 1000.
+	if (getGuildBridges(guild.id).length >= MAX_BRIDGES_PER_GUILD) {
+		return { ok: false, reason: 'bridge-limit', max: MAX_BRIDGES_PER_GUILD };
+	}
 
 	const channels = checkChannels(guild, member, request.chatChannelId, request.alertsChannelId);
 	if ('reason' in channels) return { ok: false, ...channels };
@@ -137,14 +147,22 @@ export async function pairBridge<M extends PairingMember>(request: {
 	if ('reason' in webhooks) return { ok: false, ...webhooks };
 
 	const secret = newBridgeSecret();
-	const bridge = createBridge({
-		guildId: guild.id,
-		chat: webhooks.chat,
-		alerts: webhooks.alerts,
-		keys: deriveKeys(secret),
-		serverName,
-		now: request.now ?? Date.now(),
-	});
+	let bridge: MinecraftBridge;
+	try {
+		bridge = createBridge({
+			guildId: guild.id,
+			chat: webhooks.chat,
+			alerts: webhooks.alerts,
+			keys: deriveKeys(secret),
+			serverName,
+			now: request.now ?? Date.now(),
+		});
+	} catch (error) {
+		// Unrecorded, the new webhooks would post for anyone who saw their URLs.
+		console.error(`Minecraft pairing: couldn't save the bridge in ${guild.id}:`, error);
+		await deleteWebhooks(guild, webhooks, reason);
+		return { ok: false, reason: 'error' };
+	}
 	return { ok: true, bridge, config: helperConfig(bridge, secret, request.dashboardUrl) };
 }
 
@@ -176,25 +194,54 @@ export async function regenerateBridge<M extends PairingMember>(request: {
 	if ('reason' in webhooks) return { ok: false, ...webhooks };
 
 	const secret = newBridgeSecret();
+	const keys = deriveKeys(secret);
 	// Read and replaced with no await between, so the webhooks deleted below are
 	// the ones this replaced. Two regenerations at once then each delete what
-	// the other saved before them, and no live webhook is left unrecorded.
+	// the other saved before them, and no live webhook is left unrecorded; the
+	// later one's config is the one that works.
 	const replaced = getBridge(bridgeId);
-	if (!replaced || !replaceBridgeConnection(bridgeId, { ...webhooks, keys: deriveKeys(secret) })) {
-		await deleteWebhook(guild, webhooks.chat.webhookId, reason);
-		await deleteWebhook(guild, webhooks.alerts.webhookId, reason);
+	if (!replaced) {
+		await deleteWebhooks(guild, webhooks, reason);
 		return { ok: false, reason: 'unknown-bridge' };
 	}
+	// Moved meanwhile: saving would put the bridge back on the old channels.
+	if (replaced.chat_channel_id !== bridge.chat_channel_id || replaced.alerts_channel_id !== bridge.alerts_channel_id) {
+		await deleteWebhooks(guild, webhooks, reason);
+		return { ok: false, reason: 'bridge-changed' };
+	}
+	try {
+		replaceBridgeConnection(bridgeId, { ...webhooks, keys });
+	} catch (error) {
+		console.error(`Minecraft pairing: couldn't save bridge ${bridgeId}'s new webhooks and keys:`, error);
+		await deleteWebhooks(guild, webhooks, reason);
+		return { ok: false, reason: 'error' };
+	}
+	// What this call saved, not read again after the deletes below: a later
+	// regeneration or removal mustn't change what this one returns.
+	const saved: MinecraftBridge = {
+		...replaced,
+		chat_webhook_id: webhooks.chat.webhookId,
+		chat_webhook_token: webhooks.chat.token,
+		alerts_webhook_id: webhooks.alerts.webhookId,
+		alerts_webhook_token: webhooks.alerts.token,
+		request_key: keys.request,
+		response_key: keys.response,
+	};
 
 	const undeletedWebhooks: Regenerated['undeletedWebhooks'] = [];
-	for (const [channelId, webhookId] of [
-		[replaced.chat_channel_id, replaced.chat_webhook_id],
-		[replaced.alerts_channel_id, replaced.alerts_webhook_id],
-	] as const) {
-		if (!(await deleteWebhook(guild, webhookId, reason))) undeletedWebhooks.push({ channelId, webhookId });
+	for (const old of [
+		{ channelId: replaced.chat_channel_id, webhookId: replaced.chat_webhook_id, token: replaced.chat_webhook_token },
+		{
+			channelId: replaced.alerts_channel_id,
+			webhookId: replaced.alerts_webhook_id,
+			token: replaced.alerts_webhook_token,
+		},
+	]) {
+		if (!(await deleteWebhook(guild, old, reason))) {
+			undeletedWebhooks.push({ channelId: old.channelId, webhookId: old.webhookId });
+		}
 	}
-	const updated = getBridge(bridgeId)!;
-	return { ok: true, bridge: updated, config: helperConfig(updated, secret, request.dashboardUrl), undeletedWebhooks };
+	return { ok: true, bridge: saved, config: helperConfig(saved, secret, request.dashboardUrl), undeletedWebhooks };
 }
 
 export function helperConfig(bridge: MinecraftBridge, secret: string, dashboardUrl: string): HelperConfig {
@@ -205,7 +252,8 @@ export function helperConfig(bridge: MinecraftBridge, secret: string, dashboardU
 			chat: webhookUrl(bridge.chat_webhook_id, bridge.chat_webhook_token),
 			alerts: webhookUrl(bridge.alerts_webhook_id, bridge.alerts_webhook_token),
 		},
-		bot: { url: new URL('/minecraft', dashboardUrl).href, secret },
+		// With the slash, so the helper can resolve `connect` and `poll` against it.
+		bot: { url: new URL('/minecraft/', dashboardUrl).href, secret },
 	};
 }
 
@@ -222,7 +270,7 @@ function checkChannels<M extends PairingMember>(
 	alertsId: string,
 ): ChannelPair | PairingRefusal {
 	const me = guild.members.me;
-	if (!me) return { reason: 'discord-error' };
+	if (!me) return { reason: 'error' };
 	const chat = checkChannel(guild, member, me, chatId, ['ViewChannel', 'ManageWebhooks', 'ReadMessageHistory']);
 	if ('reason' in chat) return chat;
 	// Reading history is for catching up the chat after a restart (decision 0010).
@@ -270,7 +318,7 @@ async function createWebhooks(
 	if ('reason' in chat) return chat;
 	const alerts = await createWebhook(guild, channels.alerts, WEBHOOK_NAMES.alerts, reason);
 	if ('reason' in alerts) {
-		await deleteWebhook(guild, chat.webhookId, reason);
+		await deleteWebhook(guild, chat, reason);
 		return alerts;
 	}
 	return { chat, alerts };
@@ -292,8 +340,8 @@ async function createWebhook(
 		// Discord returns the token for a webhook the bot made; without it the
 		// helper couldn't post, so it isn't left behind.
 		console.error(`Minecraft pairing: webhook ${webhook.id} in ${channel.id} came back without a token`);
-		await deleteWebhook(guild, webhook.id, reason);
-		return { reason: 'discord-error' };
+		await deleteWebhook(guild, { webhookId: webhook.id }, reason);
+		return { reason: 'error' };
 	}
 	return { channelId: channel.id, webhookId: webhook.id, token: webhook.token };
 }
@@ -303,6 +351,8 @@ function refusalFor(error: unknown, channelId: string): PairingRefusal {
 		case RESTJSONErrorCodes.MissingPermissions:
 			// Checked just before, so a permission changed in between.
 			return { reason: 'bot-missing-permissions', channelId, missing: ['ManageWebhooks'] };
+		case RESTJSONErrorCodes.MissingAccess:
+			return { reason: 'bot-missing-permissions', channelId, missing: ['ViewChannel'] };
 		case RESTJSONErrorCodes.MaximumNumberOfWebhooksReached:
 			return { reason: 'webhook-limit', channelId, scope: 'channel' };
 		case RESTJSONErrorCodes.MaximumNumberOfWebhooksPerGuildReached:
@@ -311,18 +361,35 @@ function refusalFor(error: unknown, channelId: string): PairingRefusal {
 			return { reason: 'unusable-channel', channelId };
 		default:
 			console.error(`Minecraft pairing: couldn't make a webhook in ${channelId}:`, error);
-			return { reason: 'discord-error' };
+			return { reason: 'error' };
 	}
 }
 
-/** True once the webhook is gone, including when it already was. */
-async function deleteWebhook(guild: Pick<PairingGuild, 'client'>, webhookId: string, reason: string): Promise<boolean> {
+async function deleteWebhooks(
+	guild: Pick<PairingGuild, 'client'>,
+	webhooks: { chat: BridgeWebhook; alerts: BridgeWebhook },
+	reason: string,
+): Promise<void> {
+	await deleteWebhook(guild, webhooks.chat, reason);
+	await deleteWebhook(guild, webhooks.alerts, reason);
+}
+
+/**
+ * True once the webhook is gone, including when it already was. With its
+ * token, deleting needs no permission, so it works after the bot has lost
+ * Manage Webhooks; the id is logged on failure, as the webhook still posts.
+ */
+async function deleteWebhook(
+	guild: Pick<PairingGuild, 'client'>,
+	webhook: { webhookId: string; token?: string },
+	reason: string,
+): Promise<boolean> {
 	try {
-		await guild.client.deleteWebhook(webhookId, { reason });
+		await guild.client.deleteWebhook(webhook.webhookId, { ...(webhook.token && { token: webhook.token }), reason });
 		return true;
 	} catch (error) {
 		if ((error as { code?: unknown }).code === RESTJSONErrorCodes.UnknownWebhook) return true;
-		console.error(`Minecraft pairing: couldn't delete webhook ${webhookId}:`, error);
+		console.error(`Minecraft pairing: couldn't delete webhook ${webhook.webhookId}:`, error);
 		return false;
 	}
 }

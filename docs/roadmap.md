@@ -523,8 +523,13 @@ Later item), not a follow-up.
   (2026-11-24): Manage Webhooks for creating and deleting, names of 1 to
   80 characters without `clyde` or `discord`, 15 webhooks a channel
   (30007) and 1000 a server (30058), and an audit-log reason, which names
-  the member. Not used yet: the dashboard's pages (A8f) call it; not
-  tried against Discord.
+  the member. From review: at most 10 bridges a server
+  (`MAX_BRIDGES_PER_GUILD`, as each takes two of a channel's 15
+  webhooks); webhooks made for a pairing that then fails, the database
+  included, are deleted, with their token so it needs no permission;
+  regenerating returns what it saved rather than reading it again, and
+  refuses if the channels changed meanwhile. Not used yet: the
+  dashboard's pages (A8f) call it; not tried against Discord.
 
 ## Next up
 

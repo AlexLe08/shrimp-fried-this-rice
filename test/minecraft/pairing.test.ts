@@ -1,6 +1,6 @@
 import { ChannelType, PermissionFlagsBits, RESTJSONErrorCodes, type Guild, type GuildMember } from 'discord.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { __resetForTests } from '../../src/core/database.ts';
+import { __resetForTests, db } from '../../src/core/database.ts';
 import { parseConfig } from '../../src/minecraft/bridge/config.ts';
 import { deriveKeys } from '../../src/minecraft/bridge/seal.ts';
 import {
@@ -10,7 +10,14 @@ import {
 	type PairingGuild,
 	type PairingMember,
 } from '../../src/minecraft/pairing.ts';
-import { deleteBridge, getBridge, getGuildBridges, setAllowedRole } from '../../src/minecraft/storage.ts';
+import {
+	deleteBridge,
+	getBridge,
+	getGuildBridges,
+	MAX_BRIDGES_PER_GUILD,
+	replaceBridgeConnection,
+	setAllowedRole,
+} from '../../src/minecraft/storage.ts';
 
 // The dashboard will pass discord.js's own objects; checked here by tsc, as
 // nothing in src/ calls pairing yet.
@@ -81,6 +88,13 @@ function fakeGuild(channels: FakeChannel[], options: { id?: string; me?: FakeMem
 	};
 }
 
+/** Makes the next insert or update of bridges fail, as a busy or closed database would. */
+function failingBridgeWrites(statement: 'INSERT' | 'UPDATE') {
+	db.exec(
+		`CREATE TEMP TRIGGER fail_bridge_writes BEFORE ${statement} ON minecraft_bridges BEGIN SELECT RAISE(ABORT, 'database is locked'); END`,
+	);
+}
+
 function discordError(code: number) {
 	return Object.assign(new Error(`Discord error ${code}`), { code });
 }
@@ -90,8 +104,8 @@ let alerts: FakeChannel;
 let guild: ReturnType<typeof fakeGuild>;
 let owner: FakeMember;
 
-function pair(overrides: Partial<Parameters<typeof pairBridge<FakeMember>>[0]> = {}) {
-	return pairBridge({
+function pairArgs() {
+	return {
 		guild,
 		member: owner,
 		chatChannelId: 'chat',
@@ -99,8 +113,11 @@ function pair(overrides: Partial<Parameters<typeof pairBridge<FakeMember>>[0]> =
 		serverName: 'Survival',
 		dashboardUrl: DASHBOARD,
 		now: 1000,
-		...overrides,
-	});
+	};
+}
+
+function pair(overrides: Partial<ReturnType<typeof pairArgs>> = {}) {
+	return pairBridge({ ...pairArgs(), ...overrides });
 }
 
 async function paired() {
@@ -125,6 +142,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	db.exec('DROP TRIGGER IF EXISTS temp.fail_bridge_writes');
 	vi.restoreAllMocks();
 });
 
@@ -169,7 +187,7 @@ describe('pairBridge', () => {
 				chat: 'https://discord.com/api/webhooks/901/tok1',
 				alerts: 'https://discord.com/api/webhooks/902/tok2',
 			},
-			bot: { url: 'https://dash.example/minecraft', secret: config.bot.secret },
+			bot: { url: 'https://dash.example/minecraft/', secret: config.bot.secret },
 		});
 		expect(bridge).toMatchObject({
 			guild_id: 'g1',
@@ -285,7 +303,7 @@ describe('pairBridge', () => {
 
 	it("refuses while the bot's own member isn't cached", async () => {
 		guild = fakeGuild([chat, alerts], { me: null });
-		expect(await pair()).toEqual({ ok: false, reason: 'discord-error' });
+		expect(await pair()).toEqual({ ok: false, reason: 'error' });
 	});
 
 	it.each([
@@ -301,6 +319,10 @@ describe('pairBridge', () => {
 			RESTJSONErrorCodes.MissingPermissions,
 			{ reason: 'bot-missing-permissions', channelId: 'alerts', missing: ['ManageWebhooks'] },
 		],
+		[
+			RESTJSONErrorCodes.MissingAccess,
+			{ reason: 'bot-missing-permissions', channelId: 'alerts', missing: ['ViewChannel'] },
+		],
 		[RESTJSONErrorCodes.UnknownChannel, { reason: 'unusable-channel', channelId: 'alerts' }],
 	])('deletes the chat webhook when Discord refuses the alerts one (%i)', async (code, refusal) => {
 		alerts.createWebhook.mockRejectedValueOnce(discordError(code));
@@ -313,15 +335,37 @@ describe('pairBridge', () => {
 	it('logs an unexpected failure, leaving nothing behind', async () => {
 		const error = vi.spyOn(console, 'error').mockImplementation(() => {});
 		alerts.createWebhook.mockRejectedValueOnce(new Error('socket hang up'));
-		expect(await pair()).toEqual({ ok: false, reason: 'discord-error' });
+		expect(await pair()).toEqual({ ok: false, reason: 'error' });
 		expect(deleted).toEqual(['901']);
 		expect(error).toHaveBeenCalledWith("Minecraft pairing: couldn't make a webhook in alerts:", expect.any(Error));
+	});
+
+	it(`refuses an eleventh bridge before making anything`, async () => {
+		for (let i = 0; i < MAX_BRIDGES_PER_GUILD; i++) await paired();
+		made = [];
+		expect(await pair()).toEqual({ ok: false, reason: 'bridge-limit', max: MAX_BRIDGES_PER_GUILD });
+		expect(made).toEqual([]);
+		expect(await pairBridge({ ...pairArgs(), guild: fakeGuild([chat, alerts], { id: 'g2' }) })).toMatchObject({
+			ok: true,
+		});
+	});
+
+	it("deletes both new webhooks, with their tokens, if the bridge can't be saved", async () => {
+		const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+		failingBridgeWrites('INSERT');
+		expect(await pair()).toEqual({ ok: false, reason: 'error' });
+		expect(deleted).toEqual(['901', '902']);
+		expect(guild.client.deleteWebhook).toHaveBeenCalledWith('902', {
+			token: 'tok2',
+			reason: 'Minecraft bridge "Survival" paired by member owner',
+		});
+		expect(error).toHaveBeenCalledWith("Minecraft pairing: couldn't save the bridge in g1:", expect.any(Error));
 	});
 
 	it('deletes a webhook that came back without a token', async () => {
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 		chat.createWebhook.mockResolvedValueOnce({ id: '999', token: null });
-		expect(await pair()).toEqual({ ok: false, reason: 'discord-error' });
+		expect(await pair()).toEqual({ ok: false, reason: 'error' });
 		expect(deleted).toEqual(['999']);
 		expect(alerts.createWebhook).not.toHaveBeenCalled();
 	});
@@ -344,7 +388,9 @@ describe('regenerateBridge', () => {
 		expect(stored.response_key.equals(keys.response)).toBe(true);
 		expect(stored).toMatchObject({ chat_webhook_id: '903', alerts_webhook_id: '904', server_name: 'Survival' });
 		expect(deleted).toEqual(['901', '902']);
+		// With its token, so it goes even if the bot has lost Manage Webhooks.
 		expect(guild.client.deleteWebhook).toHaveBeenCalledWith('901', {
+			token: 'tok1',
 			reason: 'Minecraft bridge "Survival" regenerated by member owner',
 		});
 		expect(result.undeletedWebhooks).toEqual([]);
@@ -400,13 +446,57 @@ describe('regenerateBridge', () => {
 		expect(deleted).toEqual(['903', '904']);
 	});
 
-	it('leaves only the saved webhooks live when two regenerations overlap', async () => {
+	it('leaves only the saved webhooks live when two regenerations overlap, and the later config works', async () => {
 		const { bridge } = await paired();
 		const results = await Promise.all([regenerate(bridge.id), regenerate(bridge.id)]);
-		expect(results.every((result) => result.ok)).toBe(true);
-
 		const stored = getBridge(bridge.id)!;
+
 		const live = made.filter((id) => !deleted.includes(id));
 		expect(live.sort()).toEqual([stored.chat_webhook_id, stored.alerts_webhook_id].sort());
+
+		// Each returns what it saved; the later save is the one stored.
+		const works = results.map((result) => {
+			if (!result.ok) throw new Error(result.reason);
+			const keys = deriveKeys(result.config.bot.secret);
+			expect(result.bridge.request_key.equals(keys.request)).toBe(true);
+			expect(result.config.webhooks.chat).toBe(
+				`https://discord.com/api/webhooks/${result.bridge.chat_webhook_id}/${result.bridge.chat_webhook_token}`,
+			);
+			return stored.request_key.equals(keys.request);
+		});
+		expect(works.filter(Boolean)).toHaveLength(1);
+	});
+
+	it('returns what it saved even if the bridge is removed while the old webhooks are deleted', async () => {
+		const { bridge } = await paired();
+		guild.client.deleteWebhook.mockImplementationOnce(async (id) => {
+			deleteBridge(bridge.id);
+			deleted.push(id);
+		});
+		const result = await regenerate(bridge.id);
+		expect(result).toMatchObject({ ok: true, bridge: { chat_webhook_id: '903', alerts_webhook_id: '904' } });
+	});
+
+	it('refuses, deleting the new webhooks, if the channels changed while they were made', async () => {
+		const { bridge } = await paired();
+		alerts.createWebhook.mockImplementationOnce(async () => {
+			replaceBridgeConnection(bridge.id, { alerts: { channelId: 'chat', webhookId: '950', token: 'moved' } });
+			made.push('904');
+			return { id: '904', token: 'tok4' };
+		});
+		expect(await regenerate(bridge.id)).toEqual({ ok: false, reason: 'bridge-changed' });
+		expect(deleted).toEqual(['903', '904']);
+		expect(getBridge(bridge.id)).toMatchObject({ alerts_channel_id: 'chat', alerts_webhook_id: '950' });
+	});
+
+	it("deletes both new webhooks and keeps the old connection if it can't be saved", async () => {
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		const { bridge, config } = await paired();
+		failingBridgeWrites('UPDATE');
+		expect(await regenerate(bridge.id)).toEqual({ ok: false, reason: 'error' });
+		expect(deleted).toEqual(['903', '904']);
+		const stored = getBridge(bridge.id)!;
+		expect(stored.request_key.equals(deriveKeys(config.bot.secret).request)).toBe(true);
+		expect(stored.chat_webhook_id).toBe('901');
 	});
 });
