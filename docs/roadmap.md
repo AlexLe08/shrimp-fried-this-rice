@@ -629,6 +629,19 @@ Later item), not a follow-up.
   against the bot's real routes and a scripted fake bot. Not started by
   `main.ts` yet, as connecting announces the relay before the helper can
   run `tellraw` (next: RCON); not tried through the real tunnel.
+- **Into the game** (2026-11-25, fifth part of A8e).
+  `src/minecraft/bridge/gameRelay.ts` reads `server.properties` at each
+  server start, connects RCON, and sends chat from the bot as `tellraw
+  @a`, one command at a time at most 5 a second in order, dropping chat
+  while the server is down (waiting chat included) and chat that waited
+  over 10 s (at most 50 wait). It stays off, with one
+  alert per reason naming the fix and never quoting the password, when
+  the file can't be read or parsed, RCON is disabled, the password is empty or
+  refused, the port isn't one, or the password is weak: under 12
+  characters, fewer than 5 different ones, or letters made only of common
+  words (the rule proposed here, for the owner's OK). The config takes
+  `serverPropertiesPath` and `rcon` (host, port), refused without `bot`.
+  Not wired in yet (next); not tried against a real server (A8h).
 
 ## Next up
 
@@ -666,9 +679,11 @@ them ahead of items 5 and 6.
    sealing, endpoint, pairing and dropping the links of members who
    left) is done (Done above); the relay (A8e) is under way: the bot
    reads bridge chat channels, announces the relay and catches up after
-   a restart, and the helper connects (Done above); next, RCON and
-   `tellraw` with pacing, dropping chat while the server is down, the weak
-   password check and the stop line, then the settings cache.
+   a restart, the helper connects, and chat can go into the game (Done
+   above); next, wiring it into the helper (start and stop, the stop
+   line, alerts, starting the connection, and an alert when RCON can't
+   be reached for a while, which `rcon.ts` only logs today), then the
+   settings cache.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the

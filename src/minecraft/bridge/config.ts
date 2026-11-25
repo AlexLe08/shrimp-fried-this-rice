@@ -17,6 +17,15 @@ export interface BridgeConfig {
 	avatars: AvatarConfig;
 	/** The bot's endpoint, the bridge's id and the pairing secret, from the dashboard; unset, the bridge is one-way. */
 	bot?: BotConfig;
+	/** Where the server's `server.properties` is, for RCON; unset, beside `logs/` (only with `bot`). */
+	serverPropertiesPath?: string;
+	/** Where to reach RCON when `server.properties` can't say: a container's published port, a `server-ip` (only with `bot`). */
+	rcon?: RconOverride;
+}
+
+export interface RconOverride {
+	host?: string;
+	port?: number;
 }
 
 export interface BotConfig {
@@ -35,6 +44,8 @@ const KEYS = new Set([
 	'ignorePatterns',
 	'avatars',
 	'bot',
+	'serverPropertiesPath',
+	'rcon',
 ]);
 // discord.com, or the older discordapp.com, with the PTB and Canary clients'
 // hosts; an optional API version; then the webhook's id and token.
@@ -76,7 +87,18 @@ export function parseConfig(raw: unknown): BridgeConfig {
 		if (!KEYS.has(key)) problems.push(`unknown key "${key}"`);
 	}
 
-	const { serverName, logPath, crashReportsDir, format, webhooks, ignorePatterns, avatars, bot } = input;
+	const {
+		serverName,
+		logPath,
+		crashReportsDir,
+		format,
+		webhooks,
+		ignorePatterns,
+		avatars,
+		bot,
+		serverPropertiesPath,
+		rcon,
+	} = input;
 
 	const nameProblem = serverNameProblem(serverName);
 	if (nameProblem) problems.push(nameProblem);
@@ -132,6 +154,16 @@ export function parseConfig(raw: unknown): BridgeConfig {
 	const avatarConfig = parseAvatars(avatars, problems);
 	const botConfig = bot === undefined ? undefined : parseBot(bot, problems);
 
+	// Both are for two-way chat only: without `bot` they'd do nothing, and a
+	// one-way helper never reads server.properties.
+	if (serverPropertiesPath !== undefined) {
+		if (bot === undefined) problems.push('"serverPropertiesPath" is only for two-way chat, with "bot"');
+		else if (typeof serverPropertiesPath !== 'string' || serverPropertiesPath.trim() === '') {
+			problems.push('"serverPropertiesPath" must be the path to the server\'s server.properties');
+		}
+	}
+	const rconOverride = rcon === undefined ? undefined : parseRcon(rcon, bot !== undefined, problems);
+
 	if (problems.length) throw new ConfigError(problems);
 	return {
 		serverName: serverName as string,
@@ -141,6 +173,36 @@ export function parseConfig(raw: unknown): BridgeConfig {
 		ignore,
 		avatars: avatarConfig,
 		...(botConfig === undefined ? {} : { bot: botConfig }),
+		...(serverPropertiesPath === undefined ? {} : { serverPropertiesPath: serverPropertiesPath as string }),
+		...(rconOverride === undefined ? {} : { rcon: rconOverride }),
+	};
+}
+
+function parseRcon(rcon: unknown, paired: boolean, problems: string[]): RconOverride | undefined {
+	if (!paired) {
+		problems.push('"rcon" is only for two-way chat, with "bot"');
+		return undefined;
+	}
+	if (typeof rcon !== 'object' || rcon === null || Array.isArray(rcon)) {
+		problems.push('"rcon" must be an object with "host", "port" or both');
+		return undefined;
+	}
+	const given = rcon as Record<string, unknown>;
+	const before = problems.length;
+	for (const key of Object.keys(given)) {
+		if (key !== 'host' && key !== 'port') problems.push(`unknown key "rcon.${key}"`);
+	}
+	const { host, port } = given;
+	if (host !== undefined && (typeof host !== 'string' || host.trim() === '')) {
+		problems.push('"rcon.host" must be a host name or address');
+	}
+	if (port !== undefined && (!Number.isInteger(port) || (port as number) < 1 || (port as number) > 65535)) {
+		problems.push('"rcon.port" must be a port number, 1 to 65535');
+	}
+	if (problems.length > before) return undefined;
+	return {
+		...(host === undefined ? {} : { host: host as string }),
+		...(port === undefined ? {} : { port: port as number }),
 	};
 }
 
@@ -220,7 +282,15 @@ export async function loadConfig(path: string): Promise<BridgeConfig> {
 		...config,
 		logPath: resolve(base, config.logPath),
 		...(config.crashReportsDir === undefined ? {} : { crashReportsDir: resolve(base, config.crashReportsDir) }),
+		...(config.serverPropertiesPath === undefined
+			? {}
+			: { serverPropertiesPath: resolve(base, config.serverPropertiesPath) }),
 	};
+}
+
+/** `server.properties` as the server keeps it: beside `logs/`, unless the config says where. */
+export function serverPropertiesPathOf(config: Pick<BridgeConfig, 'logPath' | 'serverPropertiesPath'>): string {
+	return config.serverPropertiesPath ?? resolve(dirname(config.logPath), '..', 'server.properties');
 }
 
 function where(text: string, message: string): string {
