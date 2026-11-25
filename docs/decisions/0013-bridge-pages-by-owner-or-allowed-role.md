@@ -55,3 +55,8 @@ server where the user has either, linking the pages that are theirs.
 - The server list may now name servers where the user lacks Manage
   Server. They're members there with a right the owner gave, so this
   tells them nothing they couldn't see in Discord.
+- The Minecraft page names a bridge's channels from the bot's cache, so
+  a role holder who can't see a private chat or alerts channel in
+  Discord still learns its name and ID, as a Manage Server user does
+  from the reminders page. Bridge channels are normally ones the players
+  see; pairing checks the member can see each channel it's given.

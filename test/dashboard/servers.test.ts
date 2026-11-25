@@ -410,7 +410,8 @@ describe('route access', () => {
 
 	// Decision 0013: requireServer lets in either right, so each route must
 	// check its own. u-server has Manage Server only, u-bridges the allowed
-	// role only; each is refused the other's routes with the same 404.
+	// role only; each is refused the other's routes with the same 404, and
+	// u-none, a member with neither, is refused them all.
 	describe('by right', () => {
 		const rightsApp = createApp({
 			auth,
@@ -418,7 +419,7 @@ describe('route access', () => {
 				fakeGuild(
 					'g1',
 					'Shrimp Hall',
-					{ 'u-server': true, 'u-bridges': false },
+					{ 'u-server': true, 'u-bridges': false, 'u-none': false },
 					{},
 					{ roles: { 'u-bridges': ['r-mc'] } },
 				),
@@ -438,9 +439,12 @@ describe('route access', () => {
 			const theirs = await rightsApp.request(path, { method, headers: signedIn(levels[level]) });
 			const others = await rightsApp.request(path, { method, headers: signedIn(levels[otherLevel]) });
 
+			const none = await rightsApp.request(path, { method, headers: signedIn('u-none') });
+
 			expect(theirs.status).toBe(200);
 			expect(others.status).toBe(404);
 			expect(await others.text()).toContain('<h1>Not found</h1>');
+			expect(none.status).toBe(404);
 		});
 	});
 });

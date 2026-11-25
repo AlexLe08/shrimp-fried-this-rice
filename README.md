@@ -245,7 +245,7 @@ src/
       storage.ts          # the trial members' queries, row types and limits (settings, entries, due follow-ups)
       followUps.ts        # the scheduler's follow-up check — posts each due follow-up once, pausing a server whose posts fail
   dashboard/              # the web dashboard (decisions 0008 and 0009)
-    app.ts                # the Hono app and its routes: /health, the home page, Discord login and log-out, the server list and a server's reminders page; who may reach each (ROUTE_ACCESS), the session and server guards, CSRF and security headers
+    app.ts                # the Hono app and its routes: /health, the home page, Discord login and log-out, the server list, a server's reminders page and its Minecraft page; who may reach each (ROUTE_ACCESS), the session and server guards, each server route's own right check (`requires`), CSRF and security headers
     access.ts             # what a user may do in each server: Manage Server, or its Minecraft bridges (owner or allowed role), asked of Discord
     auth.ts               # login's .env settings, and Discord OAuth2: the consent page's URL, the code for the user, revoking the token
     pages.ts              # the pages' HTML, through Hono's escaping html helper
@@ -341,9 +341,9 @@ test/
     auth.test.ts                    # login's .env settings, and the OAuth2 calls to a fake Discord (exchange, user, revoke, failures, 429)
     loginGate.test.ts               # the per-minute cap and waiting out Discord's Retry-After
     rateLimit.test.ts               # windows per key, the cap on keys, and visitor keys (IPv4, IPv6 by /64, missing or malformed)
-    access.test.ts                  # Manage Server, not a member, the bot not in the server, Discord failing, the sorted list
-    servers.test.ts                 # the server list, a server's reminders page, the 404s, and every route declared in ROUTE_ACCESS and tried signed out, as another server's manager, or without a seal
-    fakeGuilds.ts                   # fake servers whose members have Manage Server or not, and their cached channels, for the two above
+    access.test.ts                  # Manage Server, not a member, the bot not in the server, Discord failing, the sorted list; each user's rights (owner, allowed role, timeout) from one fetch, and the servers with either
+    servers.test.ts                 # the server list, a server's reminders and Minecraft pages, the 404s, and every route declared in ROUTE_ACCESS and tried signed out, as another server's manager, with only the other right or none, or without a seal
+    fakeGuilds.ts                   # fake servers whose members have Manage Server or not, their owner and members' roles, and their cached channels, for the two above
     server.test.ts                  # DASHBOARD_PORT, serving on 127.0.0.1, the keep-alive timeout, a port already taken, stopping (held polls answered at once, the relay announcer closed), and a helper hanging up on a held poll
     storage.test.ts                 # sessions: expiry, deleting, clearing expired ones, the per-user cap
     sessions.test.ts                # tokens: random, stored only hashed, malformed or unknown ones refused, ending one

@@ -41,8 +41,8 @@ export function homePage(signedInAs: string | null, loginAvailable: boolean): Pa
 	);
 }
 
-// Its name links to the first page the user may see there; the Minecraft
-// page gets its own link too when both are theirs.
+// A user who manages only bridges would get a 404 from /servers/:id, so
+// their link goes straight to the Minecraft page.
 function serverItem(server: ServerRights): Page {
 	const minecraft = `/servers/${server.id}/minecraft`;
 	if (!server.manageServer) return html`<li><a href="${minecraft}">${server.name}</a> (Minecraft servers)</li>`;

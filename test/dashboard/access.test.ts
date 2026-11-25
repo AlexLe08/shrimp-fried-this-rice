@@ -125,14 +125,14 @@ describe('serversUserManages', () => {
 });
 
 describe('rightsIn', () => {
-	// u1 owns the server, u2 has the allowed role, u3 another role, u4 Manage Server only.
+	// u1 owns the server, u2 has the allowed role, u3 another role, u4 Manage Server only, u5 both but in timeout.
 	const guild = () =>
 		fakeGuild(
 			'g1',
 			'Shrimp Hall',
 			{ u1: false, u2: false, u3: false, u4: true, u5: 'timed out' },
 			{},
-			{ ownerId: 'u1', roles: { u2: ['r-mc'], u3: ['r-other'] } },
+			{ ownerId: 'u1', roles: { u2: ['r-mc'], u3: ['r-other'], u5: ['r-mc'] } },
 		);
 
 	it.each([
@@ -140,6 +140,7 @@ describe('rightsIn', () => {
 		['a member with the allowed role', 'u2', false, true],
 		['a member with another role', 'u3', false, false],
 		['a member with Manage Server only', 'u4', true, false],
+		['a member in timeout, with Manage Server and the allowed role', 'u5', false, false],
 	])('gives %s the right rights, from one fetch', async (_who, userId, manageServer, manageBridges) => {
 		setAllowedRole('g1', 'r-mc');
 		const server = guild();
