@@ -1,4 +1,4 @@
-import { Client, Collection } from 'discord.js';
+import { Client, Collection, type GuildMember } from 'discord.js';
 import 'dotenv/config';
 
 import { clientOptions } from './core/clientOptions.ts';
@@ -9,6 +9,7 @@ import type { Event } from './core/types/event.ts';
 import { dashboardPortFromEnv, startDashboard } from './dashboard/server.ts';
 import { authConfigFromEnv } from './dashboard/auth.ts';
 import { createAnnouncer, postWithWebhook } from './minecraft/announcement.ts';
+import { bridgePairing } from './minecraft/dashboardPairing.ts';
 
 const client = new Client(clientOptions);
 
@@ -50,6 +51,7 @@ if (dashboardPort !== null)
 	void startDashboard(dashboardPort, {
 		auth: authConfigFromEnv(process.env),
 		client,
+		pairing: bridgePairing<GuildMember>(client),
 		announcer: createAnnouncer({ post: postWithWebhook }),
 	});
 

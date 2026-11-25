@@ -16,12 +16,22 @@ import {
 	createRateLimiter,
 	visitorKey,
 } from './rateLimit.ts';
-import { homePage, messagePage, minecraftPage, serverPage, serversPage } from './pages.ts';
+import {
+	addBridgePage,
+	homePage,
+	messagePage,
+	minecraftPage,
+	pairedPage,
+	serverPage,
+	serversPage,
+	type AddBridgeProblem,
+} from './pages.ts';
 import { endSession, sessionFromToken, startSession } from './sessions.ts';
 import { SESSION_LIFETIME_MS, type DashboardSession } from './storage.ts';
 import { MAX_REMINDERS_PER_GUILD, getGuildReminders, isGuildMasterEnabled } from '../reminders/storage.ts';
 import { reminderState } from '../reminders/reminderState.ts';
 import type { Announcer } from '../minecraft/announcement.ts';
+import type { BridgePairing } from '../minecraft/dashboardPairing.ts';
 import { HelperHub } from '../minecraft/helperHub.ts';
 import { registerHelperRoutes } from '../minecraft/helperRoutes.ts';
 import { MAX_BRIDGES_PER_GUILD, getGuildBridges } from '../minecraft/storage.ts';
@@ -37,6 +47,8 @@ export interface AppOptions {
 	helpers?: HelperHub;
 	/** Announces a bridge's relay when its helper is first active; without it, none is announced. */
 	announcer?: Announcer;
+	/** Pairs Minecraft bridges with the bot's client; without it, none can be added. */
+	pairing?: BridgePairing;
 }
 
 type Env = { Variables: { session: DashboardSession; server: ServerRights } };
@@ -61,6 +73,8 @@ export const ROUTE_ACCESS = {
 	'GET /servers': 'signed-in',
 	'GET /servers/:guildId': 'server',
 	'GET /servers/:guildId/minecraft': 'bridges',
+	'GET /servers/:guildId/minecraft/new': 'bridges',
+	'POST /servers/:guildId/minecraft/new': 'bridges',
 	'POST /minecraft/connect': 'helper',
 	'POST /minecraft/poll': 'helper',
 } as const;
@@ -261,6 +275,58 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 			announced: bridge.announced_channel_id === bridge.chat_channel_id,
 		}));
 		return c.html(minecraftPage(server, { bridges, max: MAX_BRIDGES_PER_GUILD }));
+	});
+
+	const pairingOff = (c: Context) =>
+		c.html(messagePage('Pairing unavailable', "Minecraft servers can't be paired on this bot."), 503);
+	const atLimit = (guildId: string) => getGuildBridges(guildId).length >= MAX_BRIDGES_PER_GUILD;
+
+	app.get('/servers/:guildId/minecraft/new', requires('bridges'), async (c) => {
+		const server = c.get('server');
+		if (!options.pairing) return pairingOff(c);
+		if (atLimit(server.id)) return c.html(addBridgePage(server, { kind: 'limit', max: MAX_BRIDGES_PER_GUILD }));
+		// Asked of Discord, not the access cache, so the form offers exactly the
+		// channels pairing would accept from them now.
+		const choices = await options.pairing.channelChoices(server.id, c.get('session').user_id);
+		if (!choices) return notFound(c);
+		return c.html(addBridgePage(server, { kind: 'form', choices }));
+	});
+
+	app.post('/servers/:guildId/minecraft/new', requires('bridges'), async (c) => {
+		const server = c.get('server');
+		const pairing = options.pairing;
+		if (!pairing || !auth) return pairingOff(c);
+		const userId = c.get('session').user_id;
+		const body = await c.req.parseBody();
+		const field = (name: string) => {
+			const value = body[name];
+			return typeof value === 'string' ? value.trim() : '';
+		};
+		const values = { serverName: field('serverName'), chat: field('chat'), alerts: field('alerts') };
+		const channels = options.client?.guilds.cache.get(server.id)?.channels.cache;
+
+		// The form again, with what they sent and what to fix.
+		const again = async (problem: AddBridgeProblem, status: 400 | 502) => {
+			const choices = await pairing.channelChoices(server.id, userId);
+			if (!choices) return notFound(c);
+			const channelName = (id: string) => channels?.get(id)?.name ?? null;
+			return c.html(addBridgePage(server, { kind: 'form', choices, values, problem, channelName }), status);
+		};
+		if (!values.chat || !values.alerts) return again({ reason: 'no-channel' }, 400);
+
+		const answer = await pairing.pair({
+			guildId: server.id,
+			userId,
+			chatChannelId: values.chat,
+			alertsChannelId: values.alerts,
+			serverName: values.serverName,
+			dashboardUrl: auth.origin,
+		});
+		if (answer.ok) return c.html(pairedPage(server, { serverName: answer.bridge.server_name, config: answer.config }));
+		// Checked fresh, they may no longer: the same 404 as the guard's.
+		if (answer.reason === 'not-allowed') return notFound(c);
+		if (answer.reason === 'bridge-limit') return c.html(addBridgePage(server, { kind: 'limit', max: answer.max }), 400);
+		return again(answer, answer.reason === 'error' ? 502 : 400);
 	});
 
 	app.post('/logout', (c) => {

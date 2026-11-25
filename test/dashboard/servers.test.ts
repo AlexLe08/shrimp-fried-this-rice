@@ -12,6 +12,8 @@ import {
 } from '../../src/reminders/storage.ts';
 import { createBridge, markBridgeAnnounced, setAllowedRole } from '../../src/minecraft/storage.ts';
 import { fakeClient, fakeGuild } from './fakeGuilds.ts';
+import { fakePairing } from './fakePairing.ts';
+import type { BridgePairing, PairAnswer } from '../../src/minecraft/dashboardPairing.ts';
 
 const auth: AuthConfig = { clientId: 'client-1', clientSecret: 'secret-1', origin: 'https://dash.example' };
 const NOW = 1_000_000;
@@ -312,6 +314,218 @@ describe("a server's Minecraft servers", () => {
 	});
 });
 
+describe('adding a Minecraft server', () => {
+	const owner = () =>
+		fakeGuild('g1', 'Shrimp Hall', { u1: false }, { c1: 'mc-chat', c2: '<i>alerts</i>' }, { ownerId: 'u1' });
+
+	function addApp(pairing: BridgePairing | null = fakePairing()) {
+		return createApp({ auth, client: fakeClient([owner()]), now: () => NOW, ...(pairing && { pairing }) });
+	}
+
+	const form = (fields: Record<string, string>) => ({
+		method: 'POST',
+		headers: { ...signedIn(), origin: auth.origin, 'content-type': 'application/x-www-form-urlencoded' },
+		body: new URLSearchParams(fields).toString(),
+	});
+	const filled = { serverName: '  Survival  ', chat: 'c1', alerts: 'c2' };
+
+	function pairTenBridges() {
+		for (let i = 0; i < 10; i += 1) {
+			createBridge({
+				guildId: 'g1',
+				chat: { channelId: 'c1', webhookId: `w${i}`, token: 't' },
+				alerts: { channelId: 'c2', webhookId: `x${i}`, token: 't' },
+				keys: { request: Buffer.alloc(32, 1), response: Buffer.alloc(32, 2) },
+				serverName: `S${i}`,
+				now: NOW + i,
+			});
+		}
+	}
+
+	it("links the form from the Minecraft page, until the server's limit", async () => {
+		const app = addApp();
+		const link = '<a href="/servers/g1/minecraft/new">Add a Minecraft server</a>';
+
+		expect(await (await app.request('/servers/g1/minecraft', { headers: signedIn() })).text()).toContain(link);
+		pairTenBridges();
+		expect(await (await app.request('/servers/g1/minecraft', { headers: signedIn() })).text()).not.toContain(link);
+	});
+
+	it('offers the channels pairing would accept from the member, asked of Discord for them', async () => {
+		const pairing = fakePairing({
+			choices: [
+				{ id: 'c1', name: 'mc-chat' },
+				{ id: 'c2', name: '<i>alerts</i>' },
+			],
+		});
+
+		const response = await addApp(pairing).request('/servers/g1/minecraft/new', { headers: signedIn() });
+		const text = await response.text();
+
+		expect(response.status).toBe(200);
+		expect(pairing.channelChoices).toHaveBeenCalledWith('g1', 'u1');
+		expect(text).toContain('<form method="post" action="/servers/g1/minecraft/new">');
+		expect(text).toContain('<option value="c1" >#mc-chat</option>');
+		expect(text).toContain('#&lt;i&gt;alerts&lt;/i&gt;');
+		expect(text).not.toContain('<i>');
+	});
+
+	it('says why there is nothing to pick when the member can manage no channel', async () => {
+		const text = await (
+			await addApp(fakePairing({ choices: [] })).request('/servers/g1/minecraft/new', { headers: signedIn() })
+		).text();
+
+		expect(text).toContain("There's no channel to pick");
+		expect(text).not.toContain('<form');
+	});
+
+	it('answers 404 when the member is gone by the time the form asks Discord', async () => {
+		const response = await addApp(fakePairing({ choices: null })).request('/servers/g1/minecraft/new', {
+			headers: signedIn(),
+		});
+
+		expect(response.status).toBe(404);
+	});
+
+	it('says the server is at its limit instead of offering the form', async () => {
+		pairTenBridges();
+		const pairing = fakePairing();
+
+		const text = await (await addApp(pairing).request('/servers/g1/minecraft/new', { headers: signedIn() })).text();
+
+		expect(text).toContain('already has 10 Minecraft servers paired');
+		expect(text).not.toContain('<form');
+		expect(pairing.channelChoices).not.toHaveBeenCalled();
+	});
+
+	it('answers 503 without pairing', async () => {
+		const app = addApp(null);
+
+		expect((await app.request('/servers/g1/minecraft/new', { headers: signedIn() })).status).toBe(503);
+		expect((await app.request('/servers/g1/minecraft/new', form(filled))).status).toBe(503);
+	});
+
+	it('pairs with the trimmed name, the channels and the public origin, and shows the config once', async () => {
+		const pairing = fakePairing();
+		const app = addApp(pairing);
+
+		const response = await app.request('/servers/g1/minecraft/new', form(filled));
+		const text = await response.text();
+
+		expect(response.status).toBe(200);
+		expect(pairing.pair).toHaveBeenCalledWith({
+			guildId: 'g1',
+			userId: 'u1',
+			chatChannelId: 'c1',
+			alertsChannelId: 'c2',
+			serverName: 'Survival',
+			dashboardUrl: auth.origin,
+		});
+		expect(text).toContain('<h1>Shrimp Hall: Survival paired</h1>');
+		expect(text).toContain('shown only this once');
+		expect(text).toContain('&quot;secret&quot;: &quot;the-secret&quot;');
+		expect(text).toContain('&quot;url&quot;: &quot;https://dash.example/minecraft/&quot;');
+		expect(text).toContain('<textarea readonly');
+		expect(response.headers.get('cache-control')).toBe('no-store');
+		expect(await (await app.request('/servers/g1/minecraft', { headers: signedIn() })).text()).toContain(
+			'<h2>Survival</h2>',
+		);
+	});
+
+	it('refuses a form from another site', async () => {
+		const pairing = fakePairing();
+		const request = form(filled);
+
+		const response = await addApp(pairing).request('/servers/g1/minecraft/new', {
+			...request,
+			headers: { ...request.headers, origin: 'https://evil.example' },
+		});
+
+		expect(response.status).toBe(403);
+		expect(pairing.pair).not.toHaveBeenCalled();
+	});
+
+	it('asks for both channels before pairing, keeping what was sent', async () => {
+		const pairing = fakePairing();
+
+		const response = await addApp(pairing).request(
+			'/servers/g1/minecraft/new',
+			form({ serverName: 'Survival', chat: 'c1' }),
+		);
+		const text = await response.text();
+
+		expect(response.status).toBe(400);
+		expect(pairing.pair).not.toHaveBeenCalled();
+		expect(text).toContain('Pick a chat channel and an alerts channel.');
+		expect(text).toContain('value="Survival"');
+		expect(text).toContain('<option value="c1" selected>#general</option>');
+	});
+
+	it.each([
+		[{ reason: 'bad-name', problem: 'x' }, 400, 'The name must be 1 to 80 characters'],
+		[{ reason: 'unusable-channel', channelId: 'c9' }, 400, "the channel with ID c9 can't be used"],
+		[
+			{ reason: 'member-cant-manage-channel', channelId: 'c1' },
+			400,
+			'You need View Channel and Manage Webhooks in #mc-chat',
+		],
+		[
+			{ reason: 'bot-missing-permissions', channelId: 'c2', missing: ['ManageWebhooks', 'ReadMessageHistory'] },
+			400,
+			'The bot needs Manage Webhooks, Read Message History in\n',
+		],
+		[{ reason: 'webhook-limit', channelId: 'c1', scope: 'channel' }, 400, '#mc-chat already has 15 webhooks'],
+		[{ reason: 'webhook-limit', channelId: 'c1', scope: 'server' }, 400, 'already has 1000 webhooks'],
+		[{ reason: 'error' }, 502, 'nothing was paired'],
+	] as const)('says what to fix when pairing refuses (%o)', async (refusal, status, words) => {
+		const response = await addApp(fakePairing({ answer: { ok: false, ...refusal } as PairAnswer })).request(
+			'/servers/g1/minecraft/new',
+			form(filled),
+		);
+		const text = await response.text();
+
+		expect(response.status).toBe(status);
+		expect(text).toContain('<p role="alert">');
+		expect(text).toContain(words.trimEnd());
+		expect(text).toContain('<form');
+		expect(text).not.toContain('<i>');
+	});
+
+	it('names a channel by its escaped name in a refusal', async () => {
+		const answer: PairAnswer = {
+			ok: false,
+			reason: 'bot-missing-permissions',
+			channelId: 'c2',
+			missing: ['ViewChannel'],
+		};
+
+		const text = await (
+			await addApp(fakePairing({ answer })).request('/servers/g1/minecraft/new', form(filled))
+		).text();
+
+		expect(text).toContain('#&lt;i&gt;alerts&lt;/i&gt;');
+	});
+
+	it('answers 404 when the fresh check finds the member may no longer manage bridges', async () => {
+		const response = await addApp(fakePairing({ answer: { ok: false, reason: 'not-allowed' } })).request(
+			'/servers/g1/minecraft/new',
+			form(filled),
+		);
+
+		expect(response.status).toBe(404);
+	});
+
+	it('shows the limit when pairing finds the server full', async () => {
+		const response = await addApp(fakePairing({ answer: { ok: false, reason: 'bridge-limit', max: 10 } })).request(
+			'/servers/g1/minecraft/new',
+			form(filled),
+		);
+
+		expect(response.status).toBe(400);
+		expect(await response.text()).toContain('already has 10 Minecraft servers paired');
+	});
+});
+
 // Decision 0009: deny by default. A route missing from ROUTE_ACCESS, or one
 // listed but not served, fails here, and every route behind a login is tried
 // signed out and, for a server's routes, as a manager of another server. The
@@ -344,6 +558,17 @@ describe('route access', () => {
 		return { method, path: path.replace(':guildId', 'g1') };
 	};
 
+	// A POST as the dashboard's own form sends it, so the CSRF check lets it
+	// through and the guard is what answers.
+	const send = (method: string, headers: Record<string, string> = {}): RequestInit =>
+		method === 'GET'
+			? { method, headers }
+			: {
+					method,
+					headers: { ...headers, origin: auth.origin, 'content-type': 'application/x-www-form-urlencoded' },
+					body: 'serverName=Survival&chat=c1&alerts=c1',
+				};
+
 	it("keeps every helper route under /minecraft/, where the pages' rate limit gives way to its own", () => {
 		for (const [route, access] of declared) {
 			if (access === 'helper') expect(route).toMatch(/^POST \/minecraft\/[a-z]+$/);
@@ -355,7 +580,7 @@ describe('route access', () => {
 		async (route) => {
 			const { method, path } = withGuild(route);
 
-			const response = await app.request(path, { method });
+			const response = await app.request(path, send(method));
 
 			expect(response.status).toBe(302);
 			expect(response.headers.get('location')).toBe('/');
@@ -382,7 +607,7 @@ describe('route access', () => {
 		async (route) => {
 			const { method, path } = withGuild(route);
 
-			const response = await app.request(path, { method, headers: signedIn('u1') });
+			const response = await app.request(path, send(method, signedIn('u1')));
 
 			expect(response.status).toBe(404);
 		},
@@ -399,8 +624,8 @@ describe('route access', () => {
 		async (route) => {
 			const { method, path } = withGuild(route);
 
-			const signedOut = await app.request(path, { method });
-			const other = await app.request(path, { method, headers: signedIn('u1') });
+			const signedOut = await app.request(path, send(method));
+			const other = await app.request(path, send(method, signedIn('u1')));
 
 			expect(signedOut.status).toBe(302);
 			expect(signedOut.headers.get('location')).toBe('/');
@@ -424,6 +649,7 @@ describe('route access', () => {
 					{ roles: { 'u-bridges': ['r-mc'] } },
 				),
 			]),
+			pairing: fakePairing(),
 			now: () => NOW,
 		});
 		const levels = { server: 'u-server', bridges: 'u-bridges' } as const;
@@ -436,10 +662,10 @@ describe('route access', () => {
 			const { method, path } = withGuild(route);
 			const otherLevel = level === 'server' ? 'bridges' : 'server';
 
-			const theirs = await rightsApp.request(path, { method, headers: signedIn(levels[level]) });
-			const others = await rightsApp.request(path, { method, headers: signedIn(levels[otherLevel]) });
+			const theirs = await rightsApp.request(path, send(method, signedIn(levels[level])));
+			const others = await rightsApp.request(path, send(method, signedIn(levels[otherLevel])));
 
-			const none = await rightsApp.request(path, { method, headers: signedIn('u-none') });
+			const none = await rightsApp.request(path, send(method, signedIn('u-none')));
 
 			expect(theirs.status).toBe(200);
 			expect(others.status).toBe(404);

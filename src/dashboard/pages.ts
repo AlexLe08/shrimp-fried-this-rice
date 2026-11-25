@@ -1,6 +1,8 @@
 import { html } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
 import type { ReminderState } from '../reminders/reminderState.ts';
+import type { ChannelChoice } from '../minecraft/dashboardPairing.ts';
+import type { BotPermission, HelperConfig, PairingRefusal } from '../minecraft/pairing.ts';
 import type { ServerRights } from './access.ts';
 
 type Page = HtmlEscapedString | Promise<HtmlEscapedString>;
@@ -213,7 +215,159 @@ export function minecraftPage(
 							${view.bridges.map(bridgeItem)}
 						</ul>`
 			}
+			${
+				view.bridges.length < view.max
+					? html`<p><a href="/servers/${server.id}/minecraft/new">Add a Minecraft server</a></p>`
+					: ''
+			}
 			<p><a href="/servers">Your servers</a></p>`,
+	);
+}
+
+/** Why a bridge wasn't paired, for the form to say what to fix. */
+export type AddBridgeProblem =
+	{ reason: 'no-channel' } | Exclude<PairingRefusal, { reason: 'not-allowed' } | { reason: 'bridge-limit' }>;
+
+export type AddBridgeView =
+	| { kind: 'limit'; max: number }
+	| {
+			kind: 'form';
+			choices: ChannelChoice[];
+			/** What was sent, kept when the form comes back with a problem. */
+			values?: { serverName: string; chat: string; alerts: string };
+			problem?: AddBridgeProblem;
+			/** A channel's name from the bot's cache, null for one it can't see. */
+			channelName?: (id: string) => string | null;
+	  };
+
+const PERMISSION_NAMES: Record<BotPermission, string> = {
+	ViewChannel: 'View Channel',
+	ManageWebhooks: 'Manage Webhooks',
+	ReadMessageHistory: 'Read Message History',
+};
+
+function problemText(problem: AddBridgeProblem, channelName: (id: string) => string | null): Page | string {
+	const channel = (id: string) => {
+		const name = channelName(id);
+		return name === null ? html`the channel with ID ${id}` : html`#${name}`;
+	};
+	switch (problem.reason) {
+		case 'no-channel':
+			return 'Pick a chat channel and an alerts channel.';
+		case 'bad-name':
+			return 'The name must be 1 to 80 characters, without "clyde" or "discord" (Discord refuses those in a webhook\'s name).';
+		case 'unusable-channel':
+			return html`${channel(problem.channelId)} can't be used: pick a text or announcement channel.`;
+		case 'member-cant-manage-channel':
+			return html`You need View Channel and Manage Webhooks in ${channel(problem.channelId)}.`;
+		case 'bot-missing-permissions':
+			return html`The bot needs ${problem.missing.map((name) => PERMISSION_NAMES[name]).join(', ')} in
+			${channel(problem.channelId)}. Allow them for the bot in the channel's permissions, then try again.`;
+		case 'webhook-limit':
+			return problem.scope === 'channel'
+				? html`${channel(problem.channelId)} already has 15 webhooks, Discord's most for a channel. Delete one in its
+					settings (Integrations), or pick another channel.`
+				: "This Discord server already has 1000 webhooks, Discord's most for a server. Delete some in Server Settings (Integrations).";
+		case 'unknown-bridge':
+		case 'bridge-changed':
+		case 'error':
+			return 'Discord or the bot failed, and nothing was paired. Please try again.';
+	}
+}
+
+function channelOptions(choices: ChannelChoice[], selected: string | undefined): Page {
+	return html`<option value="">Pick a channel</option>
+		${choices.map(
+			(choice) =>
+				html`<option value="${choice.id}" ${choice.id === selected ? 'selected' : ''}>#${choice.name}</option>`,
+		)}`;
+}
+
+/** The form that pairs a Minecraft server, or why it can't. */
+export function addBridgePage(server: { id: string; name: string }, view: AddBridgeView): Page {
+	const title = `${server.name}: add a Minecraft server`;
+	const back = html`<p><a href="/servers/${server.id}/minecraft">Back to its Minecraft servers</a></p>`;
+	if (view.kind === 'limit') {
+		return layout(
+			title,
+			html`<h1>${title}</h1>
+				<p>This Discord server already has ${view.max} Minecraft servers paired, the most it may have.</p>
+				${back}`,
+		);
+	}
+	const values = view.values;
+	return layout(
+		title,
+		html`<h1>${title}</h1>
+			${view.problem ? html`<p role="alert">${problemText(view.problem, view.channelName ?? (() => null))}</p>` : ''}
+			${
+				view.choices.length === 0
+					? html`<p>
+							There's no channel to pick: you need View Channel and Manage Webhooks in a text or announcement channel.
+						</p>`
+					: html`<form method="post" action="/servers/${server.id}/minecraft/new">
+							<p>
+								<label
+									>Minecraft server's name, shown on its posts in Discord and in game
+									<input name="serverName" required maxlength="80" value="${values?.serverName ?? ''}"
+								/></label>
+							</p>
+							<p>
+								<label
+									>Chat channel, where game chat is posted and whose messages go into the game
+									<select name="chat" required>
+										${channelOptions(view.choices, values?.chat)}
+									</select></label
+								>
+							</p>
+							<p>
+								<label
+									>Alerts channel, for the server starting, stopping and crashing (may be the same channel)
+									<select name="alerts" required>
+										${channelOptions(view.choices, values?.alerts)}
+									</select></label
+								>
+							</p>
+							<p>
+								The bot needs View Channel and Manage Webhooks in both, and Read Message History in the chat channel. It
+								makes a webhook in each.
+							</p>
+							<p><button type="submit">Pair</button></p>
+						</form>`
+			}
+			${back}`,
+	);
+}
+
+/**
+ * The helper's config, shown once: only the keys derived from its secret are
+ * kept, so it can't be shown again. In a read-only box to copy, as the pages
+ * run no scripts.
+ */
+export function pairedPage(
+	server: { id: string; name: string },
+	view: { serverName: string; config: HelperConfig },
+): Page {
+	const title = `${server.name}: ${view.serverName} paired`;
+	return layout(
+		title,
+		html`<h1>${title}</h1>
+			<p>
+				This is the config for <code>mcbridge</code>, the helper beside the Minecraft server.
+				<strong>It's shown only this once.</strong> Save it as <code>mcbridge.json</code>, fill in
+				<code>logPath</code> (the server's <code>logs/latest.log</code>), and keep it private (<code>chmod 600</code>):
+				anyone with it can post in its channels and receive its chat.
+			</p>
+			<p>
+				<label
+					>mcbridge.json <textarea readonly rows="16" cols="80">${JSON.stringify(view.config, null, 2)}</textarea>
+				</label>
+			</p>
+			<p>
+				Messages posted in the chat channel go into the game once the helper first connects, when the bot announces it
+				there. Consider telling the channel beforehand, and saying so in its topic.
+			</p>
+			<p><a href="/servers/${server.id}/minecraft">Back to its Minecraft servers</a></p>`,
 	);
 }
 
