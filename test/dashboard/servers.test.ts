@@ -13,6 +13,7 @@ import {
 import {
 	MAX_PICTURES_PER_BRIDGE,
 	createBridge,
+	deleteBridge,
 	getBridge,
 	getMinecraftGuildSettings,
 	getPlayerPictures,
@@ -1261,6 +1262,43 @@ describe("a Minecraft server's settings", () => {
 				expect((await app.request(path, save({ name: 'Steve', picture: 'skin' }))).status).toBe(404);
 			}
 			expect(pictures(theirs.id)).toEqual([]);
+		});
+
+		// The body arrives after the fresh check; a bridge removed while it's
+		// read must not get a picture row that nothing would delete.
+		it('saves and sends nothing for a bridge removed while the form was being read', async () => {
+			const bridge = pairedBridge();
+			const session = hub.connect(bridge.id);
+			const form = new TextEncoder().encode('name=Steve&picture=skin');
+			const body = new ReadableStream<Uint8Array>(
+				{
+					pull(controller) {
+						deleteBridge(bridge.id);
+						controller.enqueue(form);
+						controller.close();
+					},
+					// Not before it's read: by default a stream pulls once as it's made.
+				},
+				{ highWaterMark: 0 },
+			);
+
+			const response = await settingsApp().request(picturesPath(bridge.id), {
+				method: 'POST',
+				headers: {
+					...signedIn(),
+					origin: auth.origin,
+					'content-type': 'application/x-www-form-urlencoded',
+					// As a browser sends it: without it, bodyLimit reads the body before the route.
+					'content-length': String(form.length),
+				},
+				body,
+				duplex: 'half',
+			} as RequestInit);
+
+			expect(response.status).toBe(404);
+			expect(getPlayerPictures(bridge.id)).toEqual([]);
+			hub.close();
+			expect(await hub.poll(bridge.id, session)).toEqual({ kind: 'messages', messages: [] });
 		});
 
 		it('asks Discord afresh before saving, so a member who lost the role is refused', async () => {

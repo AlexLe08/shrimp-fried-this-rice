@@ -533,9 +533,12 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 		const server = c.get('server');
 		const fresh = access && (await access.rightsIn(server.id, c.get('session').user_id, { fresh: true }));
 		if (!fresh?.manageBridges) return notFound(c);
+		const body = await c.req.parseBody();
+		// Looked up after the last await: a bridge removed meanwhile would get
+		// a picture row no remove deletes, and settings saved meanwhile would be
+		// overwritten on the helper by the older ones queued here.
 		const bridge = bridgeIn(c);
 		if (!bridge) return notFound(c);
-		const body = await c.req.parseBody();
 		const field = (name: string) => {
 			const value = body[name];
 			return typeof value === 'string' ? value : '';
