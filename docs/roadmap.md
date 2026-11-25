@@ -719,6 +719,24 @@ Later item), not a follow-up.
   secret. Worked out here: no one-time token, as saving twice changes
   nothing; and the page warns that whoever can give the role can make
   themselves a manager. Not tried against Discord (A8h).
+- **Regenerating and removing a Minecraft server** (2026-11-25, fourth
+  part of A8f). Each bridge on the Minecraft page links
+  `/servers/:guildId/minecraft/bridges/:bridgeId/regenerate` and
+  `…/remove`, each a page that asks first (the pages run no scripts to
+  confirm with). Regenerating (`regenerateBridge`, now offered) shows the
+  new config once, behind a one-time token as pairing's is, and names
+  any old webhook Discord kept, as it still posts. Removing
+  (`removeBridge`, new) deletes the row with its links and pictures,
+  then both webhooks by token, and goes back to the list. Both go
+  through `BridgePairing` as the member fetched fresh, and end the
+  helper's session at once (`HelperHub.end`): a poll held with the old
+  keys would otherwise get chat for up to 50 s more, which matters for a
+  leaked config. Worked out here: remove needs no token (nothing secret
+  in its answer, and a second finds nothing) and doesn't check the
+  member's rights in the channels, as it hands over no webhook URL and a
+  manager must be able to remove a bridge whose channel they can no
+  longer see. A bridge's own page, with its name, prefix, colour and
+  default picture, comes next. Not tried against Discord (A8h).
 
 ## Next up
 
@@ -759,9 +777,10 @@ them ahead of items 5 and 6.
    a restart, the helper puts chat into the game, and it keeps the
    bridge's settings (Done above): A8e is done. A8f is under way: who
    reaches a server's Minecraft pages, a list of its bridges, adding
-   one, and who may manage them (Done above). Next: the bridge's settings
-   (regenerate, remove), per-player pictures and members' links, then
-   linking (codes, the `!link` reports, My Minecraft accounts,
+   one, who may manage them, and regenerating and removing one (Done
+   above). Next: the bridge's settings (name, prefix, colour, default
+   picture), per-player pictures and members' links, then linking
+   (codes, the `!link` reports, My Minecraft accounts,
    `/minecraft link`) and `/minecraft avatar`, and queuing a settings
    message when the dashboard changes them. Its
    checks must match the helper's (`serverNameProblem`, `isPrefix`,
