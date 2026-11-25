@@ -496,6 +496,35 @@ Later item), not a follow-up.
   otherwise waited out the grace period). Not used yet: no bridge can be
   paired until the next part, and nothing delivers messages until the
   relay (A8e). Not tried through the real tunnel.
+- **Pairing a Minecraft bridge** (2026-11-24, fourth part of A8d).
+  `src/minecraft/pairing.ts`: `pairBridge` makes a bridge's chat and
+  alerts webhooks and a new secret, stores only the keys derived from it,
+  and returns the `mcbridge.json` to download (`logPath` left blank);
+  `regenerateBridge` replaces the secret and both webhooks and deletes the
+  old ones. Who may: the server's owner or the allowed role, not in
+  timeout (`canManageBridges`). Everything is checked before a webhook is
+  made, so a refusal leaves nothing behind: the server name by the
+  helper's own rule (now shared from `config.ts`), each channel a text or
+  announcement channel (a forum takes webhooks only into a thread), the
+  member able to see it and manage its webhooks (also on regenerate, as
+  the config holds the webhook URLs), and the bot with View Channel,
+  Manage Webhooks and, in the chat channel, Read Message History for the
+  catch-up (decision 0010). If Discord refuses the second webhook, the
+  first is deleted. Worked out here: the webhooks are named
+  "Minecraft chat" and "Minecraft alerts" rather than after the server,
+  as Discord holds a webhook's name to its nickname rules and the helper
+  names each post itself; regenerating deletes the webhooks the row held
+  when the new ones were saved (read and replaced with no `await`
+  between), so two at once leave no live webhook unrecorded, and an old
+  one Discord wouldn't delete is returned for the page to name, as it
+  still posts. The helper's config now accepts the `bot` key (an https
+  address, http only on loopback, and the 32-byte secret, never quoted in
+  an error); nothing reads it until A8e. Checked against Discord's docs
+  (2026-11-24): Manage Webhooks for creating and deleting, names of 1 to
+  80 characters without `clyde` or `discord`, 15 webhooks a channel
+  (30007) and 1000 a server (30058), and an audit-log reason, which names
+  the member. Not used yet: the dashboard's pages (A8f) call it; not
+  tried against Discord.
 
 ## Next up
 
@@ -531,9 +560,8 @@ them ahead of items 5 and 6.
    page and rate limits, all tried on the live dashboard. Left: A8d to
    A8i, two-way chat, linking and pictures. A8d's storage, the
    sealing of the helper's messages and its endpoint are done (Done
-   above); next, pairing (making a bridge's webhooks and secret, and the
-   config to download), then deleting a link whose member has left (on
-   Unknown Member only), the rest of A8d.
+   above), and so is pairing; next, deleting a link whose member has
+   left (on Unknown Member only), the rest of A8d.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the
