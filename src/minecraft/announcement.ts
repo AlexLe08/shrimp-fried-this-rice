@@ -59,10 +59,6 @@ export function createAnnouncer(options: {
 					username: bridge.server_name,
 					content: announcementText(bridge.server_name),
 				});
-				if (closed) return;
-				nextTryAt.delete(bridge.id);
-				// The bridge may have been removed, or its chat moved, while posting.
-				if (getBridge(bridge.id)?.chat_channel_id === channelId) markBridgeAnnounced(bridge.id, channelId);
 			} catch (error) {
 				if ((error as { code?: unknown } | null)?.code === RESTJSONErrorCodes.UnknownWebhook) {
 					goneWebhooks.add(webhookId);
@@ -71,8 +67,22 @@ export function createAnnouncer(options: {
 					);
 				} else {
 					nextTryAt.set(bridge.id, now() + ANNOUNCEMENT_RETRY_MS);
-					console.error(`Minecraft bridge ${bridge.id}: announcing the relay failed; trying again later:`, error);
+					console.error(
+						`Minecraft bridge ${bridge.id}: announcing the relay failed (${describeFailure(error)}); trying again later.`,
+					);
 				}
+				inFlight.delete(bridge.id);
+				return;
+			}
+
+			try {
+				if (closed) return;
+				nextTryAt.delete(bridge.id);
+				// The bridge may have been removed, or its chat moved, while posting.
+				if (getBridge(bridge.id)?.chat_channel_id === channelId) markBridgeAnnounced(bridge.id, channelId);
+			} catch (error) {
+				// Posted but not recorded: the next request posts it again.
+				console.error(`Minecraft bridge ${bridge.id}: the relay was announced, but recording it failed:`, error);
 			} finally {
 				inFlight.delete(bridge.id);
 			}
@@ -81,6 +91,13 @@ export function createAnnouncer(options: {
 			closed = true;
 		},
 	};
+}
+
+// Never the error itself: @discordjs/rest's errors carry the request's URL,
+// and a webhook's URL holds its token, the whole secret.
+function describeFailure(error: unknown): string {
+	const { status, code, message } = (error ?? {}) as { status?: unknown; code?: unknown; message?: unknown };
+	return [status, code, message].filter((part) => typeof part === 'number' || typeof part === 'string').join(' ');
 }
 
 /** Posts through the bridge's webhook with its token, which needs no permission of the bot's. */

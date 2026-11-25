@@ -1,3 +1,4 @@
+import { inspect } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RESTJSONErrorCodes, WebhookClient } from 'discord.js';
 import { __resetForTests } from '../../src/core/database.ts';
@@ -10,7 +11,6 @@ import {
 } from '../../src/minecraft/announcement.ts';
 import {
 	createBridge,
-	deleteGuildMinecraftData,
 	getBridge,
 	markBridgeAnnounced,
 	replaceBridgeConnection,
@@ -143,17 +143,44 @@ describe('the relay announcement', () => {
 		expect(post).toHaveBeenCalledOnce();
 	});
 
-	it('records nothing if the bridge was removed while posting', async () => {
+	it('records nothing if the chat moved while posting, and then announces in the new channel', async () => {
 		let finish!: () => void;
-		const post = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
+		const post = vi.fn<(post: AnnouncementPost) => Promise<void>>(
+			() => new Promise<void>((resolve) => (finish = resolve)),
+		);
+		const announcer = createAnnouncer({ post, now });
 		const bridge = paired();
 
-		const posting = createAnnouncer({ post, now }).ensure(bridge);
-		deleteGuildMinecraftData(bridge.guild_id);
+		const posting = announcer.ensure(bridge);
+		replaceBridgeConnection(bridge.id, { chat: { channelId: 'new-chat', webhookId: 'wh-new', token: 'tok-new' } });
 		finish();
 		await posting;
+		expect(fresh(bridge).announced_channel_id).toBeNull();
 
-		expect(getBridge(bridge.id)).toBeUndefined();
+		const again = announcer.ensure(fresh(bridge));
+		finish();
+		await again;
+		expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ webhook: { id: 'wh-new', token: 'tok-new' } }));
+		expect(fresh(bridge).announced_channel_id).toBe('new-chat');
+	});
+
+	it("never logs the webhook's token, which a REST error's URL carries", async () => {
+		const refused = Object.assign(new Error('Internal Server Error'), {
+			status: 500,
+			url: 'https://discord.com/api/v10/webhooks/wh-chat/tok-chat',
+			requestBody: { json: { content: 'x' } },
+		});
+		const announcer = createAnnouncer({ post: vi.fn().mockRejectedValue(refused), now });
+
+		await announcer.ensure(paired());
+
+		const logged = vi
+			.mocked(console.error)
+			.mock.calls.flat()
+			.map((arg) => inspect(arg))
+			.join('\n');
+		expect(logged).toContain('500 Internal Server Error');
+		expect(logged).not.toContain('tok-chat');
 	});
 
 	it("names the server in bold, its Markdown escaped, as it's the server owner's text", () => {

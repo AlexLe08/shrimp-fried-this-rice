@@ -366,5 +366,19 @@ describe("the Minecraft helper's endpoint", () => {
 			await call(app, bridge, 'poll', { session: 'not-a-session' });
 			expect(ensure).toHaveBeenCalledTimes(2);
 		});
+
+		it('never asks it for a replayed or stale request', async () => {
+			const ensure = vi.fn(() => Promise.resolve());
+			const app = createApp({ auth: null, now, helpers: new HelperHub(now), announcer: { ensure, close: vi.fn() } });
+			const bridge = pairedBridge();
+			const { request } = await call(app, bridge, 'connect', {});
+			ensure.mockClear();
+
+			expect((await post(app, 'connect', JSON.stringify(request))).status).toBe(400);
+			const stale = await call(app, bridge, 'connect', {}, time - MAX_CLOCK_SKEW_MS - 1);
+			expect(stale.message).toEqual({ error: 'clock' });
+
+			expect(ensure).not.toHaveBeenCalled();
+		});
 	});
 });
