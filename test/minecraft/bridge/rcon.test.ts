@@ -478,4 +478,72 @@ describe('createRcon', () => {
 		const gaps = attempts.slice(1).map((time, index) => Math.round((time - attempts[index]!) / 1000) * 1000);
 		expect(gaps).toEqual([1000, 2000, 4000, 8000]);
 	});
+
+	it('reports once when RCON stays unreachable for 2 minutes, and again only after it connected in between', async () => {
+		vi.useFakeTimers();
+		let reachable = false;
+		const connect = vi.fn<typeof connectRcon>(() =>
+			reachable ? Promise.resolve(fakeConnection()) : Promise.reject(new RconError('closed', 'ECONNREFUSED')),
+		);
+		const onUnreachable = vi.fn();
+		const rcon = createRcon({ host: 'h', port: 1, password: PASSWORD, log: () => {}, connect, onUnreachable });
+		clients.push(rcon);
+		rcon.start();
+
+		await vi.advanceTimersByTimeAsync(2 * 60_000 - 1);
+		expect(onUnreachable).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(1);
+		expect(onUnreachable).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+		expect(onUnreachable).toHaveBeenCalledOnce();
+
+		// Connected, then dropped for good: reported again after another 2 minutes.
+		reachable = true;
+		await vi.advanceTimersByTimeAsync(60_000);
+		reachable = false;
+		connect.mock.calls.at(-1)![0].onClose!(new RconError('closed', 'dropped'));
+		await vi.advanceTimersByTimeAsync(2 * 60_000);
+		expect(onUnreachable).toHaveBeenCalledTimes(2);
+	});
+
+	it("doesn't report an RCON that connects in time, or one stopped before then", async () => {
+		vi.useFakeTimers();
+		const onUnreachable = vi.fn();
+		const connect = vi.fn<typeof connectRcon>(() => Promise.resolve(fakeConnection()));
+		const reached = createRcon({ host: 'h', port: 1, password: PASSWORD, log: () => {}, connect, onUnreachable });
+		clients.push(reached);
+		reached.start();
+
+		const never = vi.fn<typeof connectRcon>(() => Promise.reject(new RconError('closed', 'ECONNREFUSED')));
+		const stopped = createRcon({
+			host: 'h',
+			port: 1,
+			password: PASSWORD,
+			log: () => {},
+			connect: never,
+			onUnreachable,
+		});
+		clients.push(stopped);
+		stopped.start();
+		await vi.advanceTimersByTimeAsync(60_000);
+		stopped.stop();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+		expect(onUnreachable).not.toHaveBeenCalled();
+	});
+
+	it('reports nothing unreachable after the server refused the password', async () => {
+		vi.useFakeTimers();
+		const onUnreachable = vi.fn();
+		const connect = vi.fn<typeof connectRcon>(() => Promise.reject(new RconError('login-refused', 'wrong')));
+		const rcon = createRcon({ host: 'h', port: 1, password: PASSWORD, log: () => {}, connect, onUnreachable });
+		clients.push(rcon);
+
+		rcon.start();
+		// Before 2 minutes: a timer still armed would show here, though it would fire harmlessly.
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		expect(onUnreachable).not.toHaveBeenCalled();
+		expect(vi.getTimerCount()).toBe(0);
+	});
 });

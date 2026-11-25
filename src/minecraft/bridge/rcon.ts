@@ -219,6 +219,14 @@ export interface RconOptions {
 	log?: (message: string) => void;
 	/** Called once when the server refuses the password; the client then stays off until the helper restarts. */
 	onLoginRefused?(): void;
+	/**
+	 * Called once when it hasn't been connected for `unreachableAfterMs`
+	 * (2 minutes by default) while started: a port nobody listens on, such as
+	 * a container's that isn't published, otherwise only shows as retries in
+	 * the log. Called again only after it has connected in between.
+	 */
+	onUnreachable?(): void;
+	unreachableAfterMs?: number;
 	/** Defaults to 5 s. */
 	timeoutMs?: number;
 	/**
@@ -249,6 +257,7 @@ export function createRcon(options: RconOptions): Rcon {
 	const minBackoffMs = options.minBackoffMs ?? 1000;
 	const maxBackoffMs = options.maxBackoffMs ?? 60_000;
 	const connect = options.connect ?? connectRcon;
+	const unreachableAfterMs = options.unreachableAfterMs ?? 2 * 60_000;
 	let running = false;
 	let refused = false;
 	// Each start() bumps it, so a connection attempt from before a stop() is discarded.
@@ -258,6 +267,24 @@ export function createRcon(options: RconOptions): Rcon {
 	let connection: RconConnection | null = null;
 	let openedAt = 0;
 	const waiters = new Set<(connection: RconConnection | null) => void>();
+	let unreachableTimer: NodeJS.Timeout | null = null;
+	let reportedUnreachable = false;
+
+	// Armed while started and not connected; disarmed by a connection.
+	function watchReachable(): void {
+		if (unreachableTimer || reportedUnreachable || !options.onUnreachable) return;
+		unreachableTimer = setTimeout(() => {
+			unreachableTimer = null;
+			if (!running || connection) return;
+			reportedUnreachable = true;
+			options.onUnreachable?.();
+		}, unreachableAfterMs);
+	}
+
+	function stopWatching(): void {
+		if (unreachableTimer) clearTimeout(unreachableTimer);
+		unreachableTimer = null;
+	}
 
 	function wake(value: RconConnection | null): void {
 		for (const waiter of [...waiters]) waiter(value);
@@ -274,6 +301,7 @@ export function createRcon(options: RconOptions): Rcon {
 			onClose: (error) => {
 				if (current !== generation) return;
 				connection = null;
+				watchReachable();
 				if (Date.now() - openedAt >= STABLE_MS) backoffMs = minBackoffMs;
 				log(`${error.message}; reconnecting in ${backoffMs / 1000} s`);
 				retry();
@@ -286,6 +314,8 @@ export function createRcon(options: RconOptions): Rcon {
 				}
 				connection = opened;
 				openedAt = Date.now();
+				stopWatching();
+				reportedUnreachable = false;
 				log(`RCON connected to ${options.host}:${options.port}`);
 				wake(opened);
 			},
@@ -294,6 +324,8 @@ export function createRcon(options: RconOptions): Rcon {
 				if (error instanceof RconError && error.code === 'login-refused') {
 					refused = true;
 					running = false;
+					// stop() returns early once not running, so the timer is cleared here.
+					stopWatching();
 					log(`${error.message}; RCON stays off until mcbridge restarts`);
 					wake(null);
 					options.onLoginRefused?.();
@@ -330,12 +362,14 @@ export function createRcon(options: RconOptions): Rcon {
 			running = true;
 			generation++;
 			backoffMs = minBackoffMs;
+			watchReachable();
 			attempt();
 		},
 		stop() {
 			if (!running) return;
 			running = false;
 			generation++;
+			stopWatching();
 			if (retryTimer) clearTimeout(retryTimer);
 			retryTimer = null;
 			connection?.close();

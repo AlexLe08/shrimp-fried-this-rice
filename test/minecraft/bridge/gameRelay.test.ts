@@ -322,4 +322,29 @@ describe('the game relay', () => {
 		expect(sent).toHaveLength(0);
 		expect(log).toHaveBeenCalledWith(expect.stringMatching(/^skipped a message from Discord: Not a valid prefix/));
 	});
+
+	it('alerts once when RCON stays unreachable, naming where it tried, and keeps chat on for when it connects', async () => {
+		const { relay, rcons, alert } = setup(PROPERTIES, { rconOverride: { port: 25599 } });
+		await relay.serverUp();
+
+		rcons[0]!.options.onUnreachable!();
+		rcons[0]!.options.onUnreachable!();
+
+		expect(alert).toHaveBeenCalledOnce();
+		expect(alert.mock.calls[0]![0]).toBe('unreachable');
+		expect(alert.mock.calls[0]![1]).toContain('127.0.0.1:25599');
+		expect(relay.isOn()).toBe(true);
+	});
+
+	it('connects nothing once closed, as a start flushed during shutdown would otherwise reach RCON', async () => {
+		const { relay, rcons, readFile } = setup();
+
+		relay.close();
+		await relay.serverUp();
+		relay.relay(chat(1));
+
+		expect(readFile).not.toHaveBeenCalled();
+		expect(rcons).toHaveLength(0);
+		expect(relay.isOn()).toBe(false);
+	});
 });

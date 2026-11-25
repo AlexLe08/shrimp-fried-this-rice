@@ -639,9 +639,24 @@ Later item), not a follow-up.
   the file can't be read or parsed, RCON is disabled, the password is empty or
   refused, the port isn't one, or the password is weak: under 12
   characters, fewer than 5 different ones, or letters made only of common
-  words (the rule proposed here, for the owner's OK). The config takes
+  words (accepted by the owner, 2026-11-25). The config takes
   `serverPropertiesPath` and `rcon` (host, port), refused without `bot`.
   Not wired in yet (next); not tried against a real server (A8h).
+- **Two-way chat in the helper** (2026-11-25, last helper part of A8e).
+  With `bot` in its config, `mcbridge` starts the connection to the bot
+  and the game relay: chat from Discord goes into the game. The log's
+  start line and the startup scan (unless it says the server is stopped)
+  read `server.properties` and connect RCON; the stop line disconnects,
+  and while two-way chat is on the stop message adds "Messages sent here
+  won't reach the game until it's back." RCON not connecting for 2
+  minutes posts one alert naming where it tried (`rcon.ts`'s new
+  `onUnreachable`), and a helper taken over or refused posts one alert
+  saying what to do. Shutdown stops the connection and closes the relay
+  after the last log entry is handled, and a closed relay never connects
+  again (from review). `!link` lines stay chat until the bot takes link
+  reports, which A8f does before issuing any code. Not tried
+  against a real server or through the tunnel (A8h); nothing can be
+  paired until A8f.
 
 ## Next up
 
@@ -679,11 +694,9 @@ them ahead of items 5 and 6.
    sealing, endpoint, pairing and dropping the links of members who
    left) is done (Done above); the relay (A8e) is under way: the bot
    reads bridge chat channels, announces the relay and catches up after
-   a restart, the helper connects, and chat can go into the game (Done
-   above); next, wiring it into the helper (start and stop, the stop
-   line, alerts, starting the connection, and an alert when RCON can't
-   be reached for a while, which `rcon.ts` only logs today), then the
-   settings cache.
+   a restart, and the helper puts chat into the game (Done above);
+   next, the settings cache (the bridge's name, prefix, colour and
+   pictures from the bot, kept beside the config), then A8f.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the

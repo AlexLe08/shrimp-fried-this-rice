@@ -29,6 +29,16 @@ export interface BridgeOptions {
 		/** `online-mode` from `server.properties`, as read at the server's last start. */
 		onlineMode(): boolean;
 	};
+	/**
+	 * Two-way chat's way into the game (gameRelay.ts), set only once paired:
+	 * told when the server starts and stops, as RCON follows the server.
+	 */
+	game?: {
+		serverUp(): Promise<void>;
+		serverDown(): void;
+		/** Whether chat from Discord was reaching the game, for the stop message's second line. */
+		isOn(): boolean;
+	};
 	log?: (message: string) => void;
 	gate?: AlertGate;
 	/** How long the log stays quiet before a stack trace still collecting lines is posted. Defaults to 1 s. */
@@ -97,6 +107,12 @@ export function createBridge(options: BridgeOptions): Bridge {
 		};
 	}
 
+	// Its own failures are alerts already; anything else is a bug to log, never
+	// an unhandled rejection, which would end the helper.
+	function gameUp(): void {
+		options.game?.serverUp().catch((error: unknown) => log(`starting two-way chat failed: ${String(error)}`));
+	}
+
 	function postAlert(alert: Extract<BridgeEvent, { type: 'alert' }>): void {
 		const gated = gate.check(alert, Date.now());
 		if (gated) {
@@ -153,6 +169,10 @@ export function createBridge(options: BridgeOptions): Bridge {
 		// queue overflows; a lost chat or join line matters less.
 		const droppable = event.type !== 'started' && event.type !== 'stopping';
 		const message = eventMessage(event, config.serverName);
+		if (event.type === 'stopping' && options.game?.isOn()) {
+			// Dropped, not queued, while it's down (the owner's call), so say so where people post.
+			message.content += "\nMessages sent here won't reach the game until it's back.";
+		}
 		if (event.type === 'chat') {
 			const avatarUrl = avatarFor(event.player, config.avatars, {
 				uuid: uuids.get(event.player.toLowerCase()),
@@ -161,6 +181,8 @@ export function createBridge(options: BridgeOptions): Bridge {
 			if (avatarUrl) message.avatarUrl = avatarUrl;
 		}
 		sender.send({ webhook: config.webhooks.chat, droppable, ...message });
+		if (event.type === 'started') gameUp();
+		else if (event.type === 'stopping') options.game?.serverDown();
 	}
 
 	const flush = guarded('flushing the last entry', () => {
@@ -185,6 +207,10 @@ export function createBridge(options: BridgeOptions): Bridge {
 					? 'no start or stop in the existing log yet'
 					: `the existing log says ${config.serverName} is ${up ? 'up' : 'stopped'}`,
 			);
+			// When it can't tell, RCON is tried anyway: it retries, and a server that
+			// is in fact stopped (a crash logs no stop) costs retries and, after 2
+			// minutes, the unreachable alert, which says that's all it may be.
+			if (up !== false) gameUp();
 		}),
 		onLines: guarded('reading new lines', (lines: string[]) => {
 			// A stack trace has no end marker: the next prefixed line ends it, or
