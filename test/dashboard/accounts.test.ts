@@ -32,11 +32,14 @@ function signedIn(userId = 'u1'): { Cookie: string } {
 	return { Cookie: `__Host-session=${startSession({ id: userId, username: 'Alex' }, NOW).token}` };
 }
 
-function setup() {
+function setup(ownerId?: string) {
 	const linkCodes = new LinkCodes(() => time);
 	const app = createApp({
 		auth,
-		client: fakeClient([fakeGuild('g1', 'Shrimp Hall', members), fakeGuild('g2', 'Other Place', { u3: false })]),
+		client: fakeClient([
+			fakeGuild('g1', 'Shrimp Hall', members, {}, ownerId ? { ownerId } : {}),
+			fakeGuild('g2', 'Other Place', { u3: false }),
+		]),
 		now: () => time,
 		linkCodes,
 	});
@@ -256,6 +259,34 @@ describe('My Minecraft accounts', () => {
 		const response = await setup().app.request(PAGE, { headers: signedIn('u3') });
 
 		expect(response.status).toBe(404);
+	});
+
+	describe('tabs', () => {
+		const TABS = '<nav aria-label="Minecraft">';
+
+		it("shows a plain member no tabs, the managers' one being hidden rather than greyed out", async () => {
+			pairedBridge();
+
+			const text = await (await setup().app.request(PAGE, { headers: signedIn() })).text();
+
+			expect(text).not.toContain(TABS);
+			expect(text).not.toContain('href="/servers/g1/minecraft"');
+		});
+
+		it('shows a manager both tabs on both pages, marking the one they are on', async () => {
+			pairedBridge();
+			const { app } = setup('u1');
+
+			const accounts = await (await app.request(PAGE, { headers: signedIn() })).text();
+			const manage = await (await app.request('/servers/g1/minecraft', { headers: signedIn() })).text();
+
+			expect(accounts).toContain(TABS);
+			expect(accounts).toContain('<li><a href="/servers/g1/minecraft">Minecraft servers</a></li>');
+			expect(accounts).toContain('<li><strong aria-current="page">My Minecraft accounts</strong></li>');
+			expect(manage).toContain(TABS);
+			expect(manage).toContain('<li><strong aria-current="page">Minecraft servers</strong></li>');
+			expect(manage).toContain(`<li><a href="${PAGE}">My Minecraft accounts</a></li>`);
+		});
 	});
 
 	describe('in the server list', () => {

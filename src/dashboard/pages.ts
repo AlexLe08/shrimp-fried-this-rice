@@ -231,8 +231,32 @@ function managersText(role: AllowedRoleView): Page | string {
 }
 
 /** A server's Minecraft bridges, for its owner and members with the role they allow. */
+/** The server's Minecraft pages, as tabs. */
+export type MinecraftTab = 'manage' | 'accounts';
+
+// Tabs across a server's Minecraft pages, each its own URL (the pages run no
+// scripts). The managers' tab is left out for a member without the right,
+// rather than shown greyed out, as they could never use it (the owner's call);
+// with one tab left there's nothing to switch between, so no bar.
+function minecraftTabs(server: { id: string; manageBridges: boolean }, current: MinecraftTab): Page | string {
+	if (!server.manageBridges) return '';
+	const tabs: [MinecraftTab, string, string][] = [
+		['manage', `/servers/${server.id}/minecraft`, 'Minecraft servers'],
+		['accounts', `/servers/${server.id}/minecraft/accounts`, 'My Minecraft accounts'],
+	];
+	return html`<nav aria-label="Minecraft">
+		<ul>
+			${tabs.map(([tab, href, label]) =>
+				tab === current
+					? html`<li><strong aria-current="page">${label}</strong></li>`
+					: html`<li><a href="${href}">${label}</a></li>`,
+			)}
+		</ul>
+	</nav>`;
+}
+
 export function minecraftPage(
-	server: { id: string; name: string },
+	server: { id: string; name: string; manageBridges: boolean },
 	view: { bridges: BridgeView[]; max: number; allowedRole: AllowedRoleView; isOwner: boolean },
 ): Page {
 	const managers = html`<p>
@@ -242,6 +266,7 @@ export function minecraftPage(
 	return layout(
 		`${server.name}: Minecraft servers`,
 		html`<h1>${server.name}: Minecraft servers</h1>
+			${minecraftTabs(server, 'manage')}
 			<p>${plural(view.bridges.length, 'Minecraft server')} of ${view.max} paired with this Discord server.</p>
 			${managers}
 			${
@@ -908,7 +933,7 @@ function codeProblemText(problem: CodeProblem): string {
 }
 
 /** My Minecraft accounts: any member's page, for linking their own Minecraft names (decision 0007). */
-export function accountsPage(server: { id: string; name: string }, view: AccountsView): Page {
+export function accountsPage(server: { id: string; name: string; manageBridges: boolean }, view: AccountsView): Page {
 	const title = `${server.name}: My Minecraft accounts`;
 	const base = `/servers/${server.id}/minecraft/accounts`;
 	const values = view.form?.values;
@@ -916,6 +941,7 @@ export function accountsPage(server: { id: string; name: string }, view: Account
 	return layout(
 		title,
 		html`<h1>${title}</h1>
+			${minecraftTabs(server, 'accounts')}
 			${
 				view.code
 					? html`<p role="status">

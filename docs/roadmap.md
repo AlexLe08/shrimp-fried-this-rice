@@ -858,7 +858,13 @@ Later item), not a follow-up.
   excludes them. A helper not yet updated posts a typed `!link` line to
   Discord as chat, which shows the code there, but only that player can
   use it, as the bot checks the code against the name typing it.
-  Choosing a linked name's picture comes next. Not tried against Discord
+  The owner's calls (2026-11-25): server-rendered tabs over a single-page
+  app (decision 0009's pages without scripts stand; a single-page app
+  would still need 0014's checks on the server), heading the Minecraft
+  page and this one, and the managers' tab hidden from a member who
+  can't use it rather than greyed out. The tabs are plain links, as the
+  pages' Content-Security-Policy allows no styles; styling them is its
+  own change. Choosing a linked name's picture comes next. Not tried against Discord
   or a real server (A8h).
 
 ## Next up
