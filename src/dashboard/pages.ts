@@ -45,27 +45,38 @@ export function homePage(signedInAs: string | null, loginAvailable: boolean): Pa
 	);
 }
 
-// A user who manages only bridges would get a 404 from /servers/:id, so
-// their link goes straight to the Minecraft page.
-function serverItem(server: ServerRights): Page {
+/** A server in the list: the user's rights there, and whether it has a Minecraft server to link. */
+export type ServerListItem = ServerRights & { hasBridges: boolean };
+
+// The server's name links its first page the user may open, as the others
+// would answer 404: reminders, then Minecraft servers, then their own accounts.
+function serverItem(server: ServerListItem): Page {
 	const minecraft = `/servers/${server.id}/minecraft`;
-	if (!server.manageServer) return html`<li><a href="${minecraft}">${server.name}</a> (Minecraft servers)</li>`;
-	return html`<li>
-		<a href="/servers/${server.id}">${server.name}</a>${
-			server.manageBridges ? html` · <a href="${minecraft}">Minecraft servers</a>` : ''
-		}
-	</li>`;
+	const accounts = server.hasBridges ? `${minecraft}/accounts` : null;
+	const accountsLink = accounts ? html` · <a href="${accounts}">My Minecraft accounts</a>` : '';
+	if (server.manageServer) {
+		return html`<li>
+			<a href="/servers/${server.id}">${server.name}</a>${
+				server.manageBridges ? html` · <a href="${minecraft}">Minecraft servers</a>` : ''
+			}${accountsLink}
+		</li>`;
+	}
+	if (server.manageBridges) {
+		return html`<li><a href="${minecraft}">${server.name}</a> (Minecraft servers)${accountsLink}</li>`;
+	}
+	return html`<li><a href="${accounts}">${server.name}</a> (My Minecraft accounts)</li>`;
 }
 
-export function serversPage(servers: ServerRights[]): Page {
+export function serversPage(servers: ServerListItem[]): Page {
 	return layout(
 		'Your servers',
 		html`<h1>Your servers</h1>
 			${
 				servers.length === 0
 					? html`<p>
-							No servers to show. This lists the servers the bot is in where you have Manage Server, or may manage its
-							Minecraft servers (the server's owner, or members with the role they allow).
+							No servers to show. This lists the servers the bot is in where you have Manage Server, may manage its
+							Minecraft servers (the server's owner, or members with the role they allow), or can link your Minecraft
+							account to a Minecraft server it has.
 						</p>`
 					: html`<ul>
 							${servers.map(serverItem)}
@@ -870,5 +881,118 @@ export function removePage(server: { id: string; name: string }, view: RemoveVie
 				<p><button type="submit">Remove</button></p>
 			</form>
 			${back}`,
+	);
+}
+
+/** Why a code wasn't given. */
+export type CodeProblem = 'name' | 'bridge' | 'too-many';
+
+/** A member's own links on a server's bridges, and the form to link another. */
+export interface AccountsView {
+	bridges: { id: string; serverName: string }[];
+	links: { bridgeId: string; serverName: string; name: string; linkedAt: number }[];
+	/** A code just given, shown once on the page that answers the form. */
+	code?: { code: string; player: string; serverName: string; minutes: number };
+	form?: { values: { bridge: string; name: string }; problem: CodeProblem };
+}
+
+function codeProblemText(problem: CodeProblem): string {
+	switch (problem) {
+		case 'name':
+			return 'A Minecraft name is 1 to 16 letters A to Z, digits or underscores.';
+		case 'bridge':
+			return 'Pick one of the Minecraft servers listed.';
+		case 'too-many':
+			return 'You’ve asked for several codes in the last few minutes. Wait a few minutes, then try again.';
+	}
+}
+
+/** My Minecraft accounts: any member's page, for linking their own Minecraft names (decision 0007). */
+export function accountsPage(server: { id: string; name: string }, view: AccountsView): Page {
+	const title = `${server.name}: My Minecraft accounts`;
+	const base = `/servers/${server.id}/minecraft/accounts`;
+	const values = view.form?.values;
+	const only = view.bridges.length === 1 ? view.bridges[0] : undefined;
+	return layout(
+		title,
+		html`<h1>${title}</h1>
+			${
+				view.code
+					? html`<p role="status">
+							Type <code>!link ${view.code.code}</code> in chat on <strong>${view.code.serverName}</strong>, logged in
+							as ${view.code.player}, within ${view.code.minutes} minutes. It works once; if it runs out, get another
+							here.
+						</p>`
+					: ''
+			}
+			<h2>Linked accounts</h2>
+			${
+				view.links.length > 0
+					? html`<table>
+							<thead>
+								<tr>
+									<th>Player</th>
+									<th>Minecraft server</th>
+									<th>Linked</th>
+									<th></th>
+								</tr>
+							</thead>
+							<tbody>
+								${view.links.map(
+									(link) =>
+										html`<tr>
+											<td>${link.name}</td>
+											<td>${link.serverName}</td>
+											<td>${linkedOn(link.linkedAt)}</td>
+											<td>
+												<form method="post" action="${base}/unlink">
+													<input type="hidden" name="bridge" value="${link.bridgeId}" />
+													<input type="hidden" name="name" value="${link.name}" />
+													<button type="submit">Unlink</button>
+												</form>
+											</td>
+										</tr>`,
+								)}
+							</tbody>
+						</table>`
+					: html`<p>You haven't linked a Minecraft account here yet.</p>`
+			}
+			<h2>Link an account</h2>
+			${
+				view.bridges.length === 0
+					? html`<p>This server has no Minecraft servers paired with the bot.</p>`
+					: html`<p>
+								You prove a Minecraft name is yours by typing a code in that Minecraft server's chat while logged in as
+								it. The server must be in online mode. Linking a name someone else had linked moves it to you.
+							</p>
+							${view.form ? html`<p role="alert">${codeProblemText(view.form.problem)}</p>` : ''}
+							<form method="post" action="${base}/code">
+								${
+									only
+										? html`<p>On <strong>${only.serverName}</strong></p>
+												<input type="hidden" name="bridge" value="${only.id}" />`
+										: html`<p>
+												<label
+													>Minecraft server
+													<select name="bridge">
+														${view.bridges.map(
+															(bridge) =>
+																html`<option value="${bridge.id}" ${bridge.id === values?.bridge ? 'selected' : ''}>
+																	${bridge.serverName}
+																</option>`,
+														)}
+													</select></label
+												>
+											</p>`
+								}
+								<p>
+									<label
+										>Your Minecraft name <input name="name" required maxlength="16" value="${values?.name ?? ''}"
+									/></label>
+								</p>
+								<p><button type="submit">Get a code</button></p>
+							</form>`
+			}
+			<p><a href="/servers">Back to your servers</a></p>`,
 	);
 }

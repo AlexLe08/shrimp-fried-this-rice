@@ -5,6 +5,7 @@ import {
 	deleteBridge,
 	deleteGuildMinecraftData,
 	deleteLink,
+	deleteOwnLink,
 	deleteMemberLinks,
 	getBridge,
 	getBridgeLinks,
@@ -298,6 +299,16 @@ describe('minecraft bridge storage', () => {
 
 			expect(deleteLink(bridge.id, 'STEVE')).toBe(true);
 			expect(deleteLink(bridge.id, 'Steve')).toBe(false);
+			expect(getLink(bridge.id, 'Steve')).toBeUndefined();
+		});
+
+		it("unlinks a member's own name only, never someone else's", () => {
+			const bridge = newBridge();
+			saveLink({ bridgeId: bridge.id, name: 'Steve', userId: 'u1', uuid: STEVE_UUID, now: 1 });
+
+			expect(deleteOwnLink(bridge.id, 'Steve', 'u2')).toBe(false);
+			expect(getLink(bridge.id, 'Steve')).toBeDefined();
+			expect(deleteOwnLink(bridge.id, 'STEVE', 'u1')).toBe(true);
 			expect(getLink(bridge.id, 'Steve')).toBeUndefined();
 		});
 

@@ -1675,13 +1675,15 @@ describe('route access', () => {
 		},
 	);
 
-	it('keeps every bridges route under /servers/:guildId, where the guard runs', () => {
+	const underGuard = (access: string) => access === 'bridges' || access === 'owner' || access === 'member';
+
+	it('keeps every bridges, owner and member route under /servers/:guildId, where the guard runs', () => {
 		for (const [route, access] of declared) {
-			if (access === 'bridges' || access === 'owner') expect(route.split(' ')[1]).toMatch(/^\/servers\/:guildId\//);
+			if (underGuard(access)) expect(route.split(' ')[1]).toMatch(/^\/servers\/:guildId\//);
 		}
 	});
 
-	it.each(declared.filter(([, access]) => access === 'bridges' || access === 'owner').map(([route]) => route))(
+	it.each(declared.filter(([, access]) => underGuard(access)).map(([route]) => route))(
 		'sends a signed-out visitor of %s back to the home page, and answers 404 to a manager of another server',
 		async (route) => {
 			const { method, path } = withGuild(route);
@@ -1754,6 +1756,31 @@ describe('route access', () => {
 			expect(others.status).toBe(404);
 			expect(await others.text()).toContain('<h1>Not found</h1>');
 			expect(none.status).toBe(404);
+		});
+
+		// The guard now lets any member in for these; u-none, with no right, is
+		// refused everything above but answered here.
+		const memberRoutes = declared.filter(([, access]) => access === 'member').map(([route]) => route);
+		const memberSuccess: Record<string, number> = {
+			'POST /servers/:guildId/minecraft/accounts/unlink': 303,
+		};
+
+		it.each(memberRoutes)('answers %s to any member, one with no right included', async (route) => {
+			const bridge = createBridge({
+				guildId: 'g1',
+				chat: { channelId: 'c1', webhookId: 'w1', token: 't' },
+				alerts: { channelId: 'c1', webhookId: 'w2', token: 't' },
+				keys: { request: Buffer.alloc(32, 1), response: Buffer.alloc(32, 2) },
+				serverName: 'Survival',
+				now: NOW,
+			});
+			const { method, path } = withGuild(route);
+			const init = send(method, signedIn('u-none'));
+			const request = method === 'GET' ? init : { ...init, body: `bridge=${bridge.id}&name=Steve` };
+
+			const response = await rightsApp.request(path, request);
+
+			expect(response.status).toBe(memberSuccess[route] ?? 200);
 		});
 	});
 });
