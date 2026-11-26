@@ -97,7 +97,7 @@ type Env = { Variables: { session: DashboardSession; server: ServerRights } };
  * route's own `requires` checks the right it needs: Manage Server for
  * `server` (decision 0012), the server's owner or allowed role for `bridges`
  * (decision 0013), the owner alone for `owner`, and nothing more for
- * `member` (a member's own Minecraft accounts, the third level 0013 foresaw). `helper`
+ * `member` (a member's own Minecraft accounts, decision 0014). `helper`
  * routes are the Minecraft helper's, which open only with a bridge's keys
  * (minecraft/helperRoutes.ts).
  */
@@ -305,8 +305,14 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 	app.use('/servers/:guildId/*', requireSession, requireServer);
 
 	app.get('/servers', async (c) => {
-		// A plain member sees a server only where there's a Minecraft server to link.
-		const hasBridges = (guildId: string) => getGuildBridges(guildId).length > 0;
+		// A plain member sees a server only where there's a Minecraft server to
+		// link. Read once, so the list and its links agree.
+		const withBridges = new Set(
+			[...(options.client?.guilds.cache.values() ?? [])]
+				.map((guild) => guild.id)
+				.filter((id) => getGuildBridges(id).length > 0),
+		);
+		const hasBridges = (guildId: string) => withBridges.has(guildId);
 		const servers = access ? await access.serversWithRights(c.get('session').user_id, hasBridges) : [];
 		return c.html(serversPage(servers.map((server) => ({ ...server, hasBridges: hasBridges(server.id) }))));
 	});
@@ -660,7 +666,11 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 		const bridge = formBridge(server, values.bridge);
 		if (!bridge) return refuse('bridge', 400);
 		if (!isPlayerName(values.name)) return refuse('name', 400);
-		if (codeRequests.take(userId) > 0) return refuse('too-many', 429);
+		const wait = codeRequests.take(userId);
+		if (wait > 0) {
+			c.header('Retry-After', String(Math.ceil(wait / 1000)));
+			return refuse('too-many', 429);
+		}
 		const code = linkCodes.issue(bridge.id, values.name, userId);
 		return c.html(
 			accountsPage(

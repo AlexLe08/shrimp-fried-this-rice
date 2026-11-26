@@ -843,7 +843,8 @@ Later item), not a follow-up.
   own links on that server's bridges with an Unlink button
   (`deleteOwnLink`, only theirs), and gives a code for a bridge and
   Minecraft name, shown once. A fourth access level, `member`, as
-  decision 0013's Consequences foresaw: the guard on `/servers/:guildId/*`
+  decision 0013's Consequences foresaw, recorded in decision 0014
+  (superseding 0013 in part): the guard on `/servers/:guildId/*`
   now lets in any member, each route requires its own right, and the
   deny-by-default test also tries every server, bridges and owner route
   as a member with no right. Worked out here: a code is answered with the

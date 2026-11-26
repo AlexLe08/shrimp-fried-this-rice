@@ -14,7 +14,7 @@ const NOW = 1_000_000;
 let time = NOW;
 
 // u1 and u2 are plain members of g1 (no Manage Server, not the owner); u3 is in g2 only.
-const members: Record<string, boolean> = {};
+const members: Record<string, boolean | 'timed out'> = {};
 
 beforeEach(() => {
 	__resetForTests();
@@ -157,6 +157,7 @@ describe('My Minecraft accounts', () => {
 			const someoneElse = await app.request(`${PAGE}/code`, post({ bridge: bridge.id, name: 'Alex' }, 'u2'));
 
 			expect(limited.status).toBe(429);
+			expect(limited.headers.get('retry-after')).toBe(String(LINK_CODE_WINDOW_MS / 1000));
 			const text = await limited.text();
 			expect(text).toContain('Wait a few minutes, then try again.');
 			expect(text).not.toContain('!link');
@@ -232,6 +233,21 @@ describe('My Minecraft accounts', () => {
 			expect(response.status).toBe(404);
 			expect(linked(bridge.id)).toEqual([{ name: 'Steve', user_id: 'u1' }]);
 		});
+	});
+
+	// Decision 0014: it's about the member themselves, so timeout, which keeps
+	// them from managing anything, doesn't keep them from it.
+	it('lets a member in timeout see the page and get a code', async () => {
+		members['u1'] = 'timed out';
+		const { app } = setup();
+		const bridge = pairedBridge();
+
+		const page = await app.request(PAGE, { headers: signedIn() });
+		const code = await app.request(`${PAGE}/code`, post({ bridge: bridge.id, name: 'Steve' }));
+
+		expect(page.status).toBe(200);
+		expect(code.status).toBe(200);
+		expect(await code.text()).toContain('<code>!link ');
 	});
 
 	it('answers 404 to someone not in the server, as for any server page', async () => {
