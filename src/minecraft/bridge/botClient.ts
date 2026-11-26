@@ -46,20 +46,21 @@ export interface BotClientOptions {
 	requestTimeoutMs?: number;
 }
 
-/** The bot's answer to a `!link` report: the text to show that player alone. */
-export interface LinkAnswer {
-	result: string;
-	text: string;
-}
+/** What came of a `!link` report. */
+export type LinkReportOutcome =
+	/** The bot's answer: the text to show that player alone. */
+	| { kind: 'answered'; result: string; text: string }
+	/** No answer in time, or one that can't be used: the player may try again. */
+	| { kind: 'no-answer' }
+	/** The bot no longer takes this helper (taken over, or its secret refused) until it's restarted. */
+	| { kind: 'refused' }
+	/** The helper is stopping: nothing to tell anyone. */
+	| { kind: 'stopping' };
 
 export interface BotClient {
 	start(): void;
-	/**
-	 * Sends the bot a player's `!link` line and resolves with its answer, or
-	 * null when there's none to show: the bot couldn't be reached in time,
-	 * refused the report, or the helper is stopping.
-	 */
-	report(link: LinkReport): Promise<LinkAnswer | null>;
+	/** Sends the bot a player's `!link` line, beside the poll loop. */
+	report(link: LinkReport): Promise<LinkReportOutcome>;
 	/** Ends a poll or report under way and any wait, and resolves once the loop has ended. */
 	stop(): Promise<void>;
 }
@@ -71,8 +72,8 @@ type Answer =
 	| { kind: 'taken-over' }
 	| { kind: 'unauthorized' }
 	| { kind: 'rate-limited'; waitMs: number }
-	/** `byBot` when the bot itself answered no (sealed), so the same request would only be refused again. */
-	| { kind: 'failed'; why: string; byBot?: true };
+	/** `unsent` when the connection never opened, so the bot can't have acted on it. */
+	| { kind: 'failed'; why: string; unsent?: true };
 
 export function createBotClient(options: BotClientOptions): BotClient {
 	const { bot } = options;
@@ -85,7 +86,9 @@ export function createBotClient(options: BotClientOptions): BotClient {
 	// `…/minecraft` would send them to `…/connect`.
 	const base = bot.url.endsWith('/') ? bot.url : `${bot.url}/`;
 
+	// Stopped by the helper (shutting down), apart from refused by the bot.
 	let stopped = false;
+	let refused = false;
 	let running: Promise<void> | null = null;
 	// The poll loop's and any `!link` reports': stop ends them all.
 	const inFlight = new Set<AbortController>();
@@ -133,7 +136,8 @@ export function createBotClient(options: BotClientOptions): BotClient {
 			}
 			body = await response.json().catch(() => undefined);
 		} catch (error) {
-			return { kind: 'failed', why: controller.signal.aborted ? 'no answer in time' : describe(error) };
+			if (controller.signal.aborted) return { kind: 'failed', why: 'no answer in time' };
+			return { kind: 'failed', why: describe(error), ...(neverOpened(error) && { unsent: true as const }) };
 		} finally {
 			clearTimeout(timer);
 			inFlight.delete(controller);
@@ -151,11 +155,7 @@ export function createBotClient(options: BotClientOptions): BotClient {
 		if (response.status === 409) return { kind: 'taken-over' };
 		if (response.status === 410) return { kind: 'session-ended' };
 		if (response.status === 400 && error === 'clock') return { kind: 'clock', botTime: opened.sentAt };
-		return {
-			kind: 'failed',
-			why: `HTTP ${response.status}${typeof error === 'string' ? ` ${error}` : ''}`,
-			byBot: true,
-		};
+		return { kind: 'failed', why: `HTTP ${response.status}${typeof error === 'string' ? ` ${error}` : ''}` };
 	}
 
 	async function run(): Promise<void> {
@@ -212,7 +212,7 @@ export function createBotClient(options: BotClientOptions): BotClient {
 					break;
 				case 'taken-over':
 				case 'unauthorized':
-					stopped = true;
+					refused = true;
 					call(() => options.onStopped(answer.kind), 'reporting why it stopped');
 					return;
 				case 'rate-limited':
@@ -244,24 +244,25 @@ export function createBotClient(options: BotClientOptions): BotClient {
 	}
 
 	// Beside the poll loop, not through it: a report mustn't wait for a held
-	// poll. The player is waiting in game, so it's given up on after
+	// poll. The player is waiting in game, so the last try ends by
 	// REPORT_DEADLINE_MS, well inside the code's 10 minutes.
-	async function report(link: LinkReport): Promise<LinkAnswer | null> {
+	async function report(link: LinkReport): Promise<LinkReportOutcome> {
 		const deadline = now() + REPORT_DEADLINE_MS;
 		let backoffMs = 0;
 		let clockFixed = false;
 		while (!stopped) {
+			// A copy taken over still reads the log: the live one reports, not both.
+			if (refused) return { kind: 'refused' };
 			const answer = await request('link', link, REPORT_TIMEOUT_MS);
-			if (stopped) return null;
+			if (stopped) break;
 			let waitMs: number;
 			switch (answer.kind) {
 				case 'ok': {
 					const message = answer.message;
 					if (isObject(message) && typeof message['result'] === 'string' && typeof message['text'] === 'string') {
-						return { result: message['result'], text: message['text'] };
+						return { kind: 'answered', result: message['result'], text: message['text'] };
 					}
-					log(`the bot's answer to ${link.player}'s !link had no text`);
-					return null;
+					return gaveUp(link, 'an answer without text');
 				}
 				case 'clock':
 					clockOffset = answer.botTime - now();
@@ -274,28 +275,34 @@ export function createBotClient(options: BotClientOptions): BotClient {
 					waitMs = answer.waitMs;
 					break;
 				case 'failed':
-					if (answer.byBot) return gaveUp(link, answer.why);
+					// Sent again only if the bot can't have seen it: it isn't idempotent,
+					// so a second copy of a right code would be told "no code waiting",
+					// and of a wrong one would count twice towards voiding.
+					if (!answer.unsent) return gaveUp(link, answer.why);
 					backoffMs = nextBackoff(backoffMs);
 					waitMs = backoffMs;
 					break;
+				case 'unauthorized':
+					log(`couldn't check ${link.player}'s !link: the bot no longer accepts this bridge's secret`);
+					return { kind: 'refused' };
 				default:
-					// 401, or a 409 or 410 that no link answer should get.
+					// A 409 or 410, which no link answer should get.
 					return gaveUp(link, answer.kind);
 			}
-			if (now() + waitMs > deadline) return gaveUp(link, 'no answer in time');
+			if (now() + waitMs + REPORT_TIMEOUT_MS > deadline) return gaveUp(link, 'no answer in time');
 			await wait(waitMs);
 		}
-		return null;
+		return { kind: 'stopping' };
 	}
 
-	function gaveUp(link: LinkReport, why: string): null {
+	function gaveUp(link: LinkReport, why: string): LinkReportOutcome {
 		log(`couldn't check ${link.player}'s !link with the bot (${why})`);
-		return null;
+		return { kind: 'no-answer' };
 	}
 
 	return {
 		start() {
-			if (running || stopped) return;
+			if (running || stopped || refused) return;
 			running = run().catch((error: unknown) => log(`the connection to the bot stopped: ${describe(error)}`));
 		},
 		report,
@@ -337,6 +344,15 @@ function chatIn(message: unknown): BotChat[] {
 
 function isObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+// Errors from before a connection opened: the address didn't resolve, or
+// nothing took the connection. Anything later (a reset, a timeout) may come
+// after the bot read the request.
+const NEVER_OPENED = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH']);
+
+function neverOpened(error: unknown): boolean {
+	return NEVER_OPENED.has((error as { cause?: { code?: unknown } } | null)?.cause?.code as string);
 }
 
 // The error's own words: Node's fetch errors name the cause, not the body sent.

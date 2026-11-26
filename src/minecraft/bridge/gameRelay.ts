@@ -96,7 +96,8 @@ export function createGameRelay(options: GameRelayOptions): GameRelay {
 	// Each start or stop bumps it, so a read finishing after the server stopped is dropped.
 	let generation = 0;
 	const alerted = new Set<RelayOffReason>();
-	let queue: { command: string; queuedAt: number }[] = [];
+	// `toPlayer` for an answer to one player's `!link` line.
+	let queue: { command: string; queuedAt: number; toPlayer?: string }[] = [];
 	let pumping = false;
 	let dropped = 0;
 
@@ -123,10 +124,13 @@ export function createGameRelay(options: GameRelayOptions): GameRelay {
 		pumping = true;
 		try {
 			while (queue.length > 0 && rcon && on) {
-				const { command, queuedAt } = queue.shift()!;
+				const { command, queuedAt, toPlayer } = queue.shift()!;
+				// A lost answer is named, not counted as chat: its player is waiting for it.
+				const lose = () =>
+					toPlayer === undefined ? dropped++ : log(`couldn't answer ${toPlayer} in game: RCON didn't take it`);
 				const startedAt = Date.now();
 				if (startedAt - queuedAt > MAX_CHAT_AGE_MS) {
-					dropped++;
+					lose();
 					continue;
 				}
 				const run = generation;
@@ -140,7 +144,7 @@ export function createGameRelay(options: GameRelayOptions): GameRelay {
 					sent = false;
 				}
 				// One cut off by the server stopping is expected, not a fault.
-				if (!sent && run === generation) dropped++;
+				if (!sent && run === generation) lose();
 				const rest = 1000 / GAME_CHAT_PER_SECOND - (Date.now() - startedAt);
 				if (rest > 0) await sleep(rest);
 			}
@@ -268,7 +272,7 @@ export function createGameRelay(options: GameRelayOptions): GameRelay {
 			if (!command) return false;
 			// Past the cap on chat: one answer per `!link` line the bot took, and
 			// the player is waiting for it.
-			queue.push({ command, queuedAt: Date.now() });
+			queue.push({ command, queuedAt: Date.now(), toPlayer: player });
 			void pump();
 			return true;
 		},

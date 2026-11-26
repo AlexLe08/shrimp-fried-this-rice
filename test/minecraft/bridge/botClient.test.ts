@@ -5,6 +5,7 @@ import {
 	MAX_BACKOFF_MS,
 	MIN_EMPTY_POLL_GAP_MS,
 	REPORT_DEADLINE_MS,
+	REPORT_TIMEOUT_MS,
 	createBotClient,
 	type BotChat,
 	type BotClient,
@@ -407,6 +408,7 @@ describe("a player's `!link` report", () => {
 			result: 'log-in-again',
 		});
 		await expect(reporting.report({ ...steve, code })).resolves.toEqual({
+			kind: 'answered',
 			result: 'linked',
 			text: 'Linked Steve to your Discord account. Choose your picture in the dashboard.',
 		});
@@ -418,33 +420,33 @@ describe("a player's `!link` report", () => {
 			vi.useFakeTimers({ now: 1_790_000_000_000 });
 		});
 
-		it('sends the report sealed to `link`, with no session', async () => {
-			const { client, requests } = reporter([{ status: 200, sealed: { result: 'linked', text: 'Linked.' } }]);
+		const linked: Reply = { status: 200, sealed: { result: 'linked', text: 'Linked.' } };
+		const noAnswer = { kind: 'no-answer' };
 
-			await expect(client.report(steve)).resolves.toEqual({ result: 'linked', text: 'Linked.' });
+		it('sends the report sealed to `link`, with no session', async () => {
+			const { client, requests } = reporter([linked]);
+
+			await expect(client.report(steve)).resolves.toEqual({ kind: 'answered', result: 'linked', text: 'Linked.' });
 			expect(requests.map((r) => [r.route, r.message])).toEqual([['link', steve]]);
 		});
 
 		it("waits out a 429's Retry-After, as reports share the bridge's limit with polls", async () => {
 			const { client, requests } = reporter([
 				{ status: 429, plain: '{"error":"rate-limited"}', headers: { 'Retry-After': '7' } },
-				{ status: 200, sealed: { result: 'linked', text: 'Linked.' } },
+				linked,
 			]);
 
 			const answer = client.report(steve);
 			await vi.advanceTimersByTimeAsync(7000);
 
-			await expect(answer).resolves.toMatchObject({ result: 'linked' });
+			await expect(answer).resolves.toMatchObject({ kind: 'answered' });
 			expect(requests[1]!.at - requests[0]!.at).toBe(7000);
 		});
 
 		it("corrects for its clock once, then gives up if it's still refused", async () => {
 			const botTime = Date.now() + 10 * 60_000;
-			const fixed = reporter([
-				{ status: 400, sealed: { error: 'clock' }, botTime },
-				{ status: 200, sealed: { result: 'linked', text: 'Linked.' } },
-			]);
-			await expect(fixed.client.report(steve)).resolves.toMatchObject({ result: 'linked' });
+			const fixed = reporter([{ status: 400, sealed: { error: 'clock' }, botTime }, linked]);
+			await expect(fixed.client.report(steve)).resolves.toMatchObject({ kind: 'answered' });
 			expect(Math.abs(fixed.requests[1]!.sentAt - botTime)).toBeLessThan(1000);
 			await fixed.client.stop();
 
@@ -452,52 +454,77 @@ describe("a player's `!link` report", () => {
 				{ status: 400, sealed: { error: 'clock' }, botTime },
 				{ status: 400, sealed: { error: 'clock' }, botTime: botTime + 10 * 60_000 },
 			]);
-			await expect(jumping.client.report(steve)).resolves.toBeNull();
+			await expect(jumping.client.report(steve)).resolves.toEqual(noAnswer);
 			expect(jumping.log).toHaveBeenCalledWith("couldn't check Steve's !link with the bot (its clock keeps moving)");
 		});
 
-		it('backs off while the bot is out of reach, then gives up after a minute', async () => {
+		it('backs off while nothing takes the connection, the last try ending within a minute', async () => {
 			const { client, requests, log } = reporter(Array.from({ length: 10 }, (): Reply => ({ fail: true })));
 
 			const answer = client.report(steve);
 			await vi.advanceTimersByTimeAsync(REPORT_DEADLINE_MS);
 
-			await expect(answer).resolves.toBeNull();
-			// 1, 2, 4, 8 and 16 s apart; the next wait, 32 s, would pass the minute.
-			expect(requests).toHaveLength(6);
+			await expect(answer).resolves.toEqual(noAnswer);
+			// At 0, 1, 3, 7, 15 and 31 s; one after a 32 s wait, timing out at 15 s, would end past the minute.
+			expect(requests.map((r) => r.at - requests[0]!.at)).toEqual([0, 1000, 3000, 7000, 15_000, 31_000]);
 			expect(log).toHaveBeenCalledWith("couldn't check Steve's !link with the bot (no answer in time)");
 		});
 
-		it("doesn't send again what the bot refused, nor after a 401", async () => {
-			const refused = reporter([{ status: 400, sealed: { error: 'bad-request' } }]);
-			await expect(refused.client.report(steve)).resolves.toBeNull();
+		it('never sends again what the bot may have acted on: a timeout, an error page, or its own refusal', async () => {
+			// Answered by nothing: the request times out at 15 s.
+			const timedOut = reporter([]);
+			const answer = timedOut.client.report(steve);
+			await vi.advanceTimersByTimeAsync(REPORT_TIMEOUT_MS);
+			await expect(answer).resolves.toEqual(noAnswer);
+			await vi.advanceTimersByTimeAsync(REPORT_DEADLINE_MS);
+			expect(timedOut.requests).toHaveLength(1);
+			await timedOut.client.stop();
+
+			const errorPage = reporter([{ status: 502, plain: '<html>Bad gateway</html>' }, linked]);
+			await expect(errorPage.client.report(steve)).resolves.toEqual(noAnswer);
+			expect(errorPage.requests).toHaveLength(1);
+			await errorPage.client.stop();
+
+			const refused = reporter([{ status: 400, sealed: { error: 'bad-request' } }, linked]);
+			await expect(refused.client.report(steve)).resolves.toEqual(noAnswer);
 			expect(refused.requests).toHaveLength(1);
 			expect(refused.log).toHaveBeenCalledWith("couldn't check Steve's !link with the bot (HTTP 400 bad-request)");
-			await refused.client.stop();
+		});
 
-			const unauthorized = reporter([{ status: 401, plain: '{"error":"unauthorized"}' }]);
-			await expect(unauthorized.client.report(steve)).resolves.toBeNull();
-			expect(unauthorized.requests).toHaveLength(1);
+		it('says the bot refused the helper on a 401, without trying again', async () => {
+			const { client, requests } = reporter([{ status: 401, plain: '{"error":"unauthorized"}' }, linked]);
+
+			await expect(client.report(steve)).resolves.toEqual({ kind: 'refused' });
+			expect(requests).toHaveLength(1);
+		});
+
+		it('sends nothing once the bot has stopped taking this helper, as a newer copy reports instead', async () => {
+			const { requests, onStopped } = startScripted([connected, { status: 409, sealed: { error: 'taken-over' } }]);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(onStopped).toHaveBeenCalledWith('taken-over');
+
+			await expect(client!.report(steve)).resolves.toEqual({ kind: 'refused' });
+			expect(requests).toHaveLength(2);
 		});
 
 		it('takes an answer without text as none', async () => {
 			const { client } = reporter([{ status: 200, sealed: { result: 'linked' } }]);
-			await expect(client.report(steve)).resolves.toBeNull();
+			await expect(client.report(steve)).resolves.toEqual(noAnswer);
 		});
 
-		it('gives up a report under way, or waiting to try again, when stopped', async () => {
+		it('ends a report under way, or waiting to try again, as stopping when the helper stops', async () => {
 			const held = reporter([]);
 			const waiting = held.client.report(steve);
 			await vi.advanceTimersByTimeAsync(0);
 			await held.client.stop();
-			await expect(waiting).resolves.toBeNull();
+			await expect(waiting).resolves.toEqual({ kind: 'stopping' });
 
 			const backingOff = reporter([{ fail: true }]);
 			const answer = backingOff.client.report(steve);
 			await vi.advanceTimersByTimeAsync(0);
 			await backingOff.client.stop();
-			await expect(answer).resolves.toBeNull();
-			await expect(backingOff.client.report(steve)).resolves.toBeNull();
+			await expect(answer).resolves.toEqual({ kind: 'stopping' });
+			await expect(backingOff.client.report(steve)).resolves.toEqual({ kind: 'stopping' });
 			expect(backingOff.requests).toHaveLength(1);
 		});
 	});

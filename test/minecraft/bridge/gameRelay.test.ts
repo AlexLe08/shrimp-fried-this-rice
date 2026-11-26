@@ -348,6 +348,19 @@ describe('the game relay', () => {
 		expect(sent.at(-1)!.command).toMatch(/^tellraw Steve .*"\(DC\)".*"Linked Steve\."/);
 	});
 
+	it('names the player of an answer RCON didn’t take, apart from chat’s count', async () => {
+		const { relay, log, refuse } = setup();
+		await relay.serverUp();
+		refuse();
+
+		relay.relay(chat(1));
+		relay.tell('Steve', 'Linked.');
+		await vi.advanceTimersByTimeAsync(1000);
+
+		expect(log).toHaveBeenCalledWith("couldn't answer Steve in game: RCON didn't take it");
+		expect(log).toHaveBeenCalledWith("1 message(s) from Discord couldn't be sent to the game");
+	});
+
 	it("can't tell a player anything while the server is down or RCON is off, or with a name that isn't a player's", async () => {
 		const down = setup();
 		expect(down.relay.tell('Steve', 'hi')).toBe(false);
