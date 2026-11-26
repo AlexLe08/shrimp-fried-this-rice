@@ -6,6 +6,7 @@ import {
 	DEFAULT_STYLE,
 	isColour,
 	isPrefix,
+	privateCommand,
 } from '../../../src/minecraft/bridge/toMinecraft.ts';
 
 interface Part {
@@ -157,6 +158,40 @@ describe('isColour', () => {
 		for (const colour of ['', 'grey', 'White', '#fff', '5865F2', '#5865F2 ', '#gggggg']) {
 			expect(isColour(colour), colour).toBe(false);
 		}
+	});
+});
+
+describe('privateCommand', () => {
+	it('shows one player alone `[Discord] text`, in the bridge’s prefix and colour', () => {
+		expect(privateCommand('Steve_2', 'Linked Steve_2.')).toBe(
+			'tellraw Steve_2 {"text":"","extra":[{"text":"[Discord]","color":"#5865f2"},{"text":" "},{"text":"Linked Steve_2.","color":"white"}]}',
+		);
+		expect(privateCommand('Steve', 'hi', { prefix: '(DC)', colour: 'gold' })).toContain(
+			'{"text":"(DC)","color":"gold"}',
+		);
+	});
+
+	it.each(['Steve Two', '@a', 'Steve @a', '', 'a'.repeat(17), 'Stève'])(
+		'refuses %j, which could aim the command elsewhere',
+		(player) => {
+			expect(() => privateCommand(player, 'hi')).toThrow(TypeError);
+		},
+	);
+
+	it('refuses a style the dashboard wouldn’t accept', () => {
+		expect(() => privateCommand('Steve', 'hi', { prefix: '<x>', colour: 'gold' })).toThrow(TypeError);
+	});
+
+	it('cleans the text as chat’s, returning null when nothing is left', () => {
+		expect(privateCommand('Steve', 'a\nb§c')).toContain('"text":"a bc"');
+		expect(privateCommand('Steve', ' §\n')).toBeNull();
+	});
+
+	it('cuts a long text to fit RCON’s limit', () => {
+		const command = privateCommand('Steve', 'word '.repeat(1000))!;
+		expect(command.length).toBeLessThanOrEqual(MAX_COMMAND_BYTES);
+		expect(command).toMatch(/word\\u2026","color":"white"}]}$/);
+		expect(() => checkCommand(command)).not.toThrow();
 	});
 });
 

@@ -811,6 +811,33 @@ Later item), not a follow-up.
   Whatever gives codes must limit how often a member asks, as `LinkCodes`
   caps nothing. Nothing gives codes yet and the helper doesn't
   report yet (next), so nothing changes for users.
+- **The helper reporting `!link` lines** (2026-11-25, second part of
+  linking, A8f). Once paired, `main.ts` gives `bridge.ts` its `link`
+  option, so a `!link` line no longer reaches Discord: `linkReports.ts`
+  sends a well-formed one through `botClient.ts`'s new `report` and shows
+  that player alone the bot's answer through `gameRelay.ts`'s new `tell`
+  (`privateCommand` in `toMinecraft.ts`, `tellraw <player>`, sharing
+  chat's cleaning, escaping and cut). Worked out here: a report goes
+  beside the poll loop, not through it, so it never waits on a held poll,
+  with a 15 s timeout; it waits out a 429, as reports share the bridge's
+  limit with polls (from the last part's review), corrects for its clock
+  once, and backs off only while nothing takes the connection, its last
+  try ending within a minute, as the player is waiting. From review:
+  anything the bot may have acted on (a timeout, an error page, its own
+  refusal) isn't sent again, as the bot's check isn't idempotent (a
+  right code sent twice would be told "no code waiting", a wrong one
+  would count twice towards voiding); a helper the bot stopped taking
+  (taken over, or a 401) sends nothing, as a newer copy reports, and
+  tells the player the server's mcbridge needs its owner; and a helper
+  shutting down says nothing. Otherwise, without an answer the helper
+  shows its own line ("couldn't check your code … try again in a few
+  minutes"); those two are its only wording. A lost answer is logged
+  under the player's name, not counted as chat. The answer goes
+  in turn with chat but past chat's cap of 50, as there's one per line
+  the bot took and the player is waiting; only a name Minecraft allows
+  (`[A-Za-z0-9_]{1,16}`) is a target, so nothing can aim it at `@a`.
+  Nothing gives codes yet, so a player typing `!link` is told there's no
+  code waiting. Not tried against a real server (A8h).
 
 ## Next up
 
@@ -853,10 +880,9 @@ them ahead of items 5 and 6.
    reaches a server's Minecraft pages, a list of its bridges, adding
    one, who may manage them, regenerating and removing one, its
    settings, pictures for particular players, members' links on a
-   bridge's page, and the bot taking `!link` reports (Done above).
-   Next: linking (the helper reporting `!link` lines and answering the
-   player, My Minecraft accounts, `/minecraft link`) and
-   `/minecraft avatar`.
+   bridge's page, the bot taking `!link` reports, and the helper
+   sending them (Done above). Next: linking (My Minecraft accounts,
+   `/minecraft link`) and `/minecraft avatar`.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the
