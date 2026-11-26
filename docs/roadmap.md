@@ -838,6 +838,27 @@ Later item), not a follow-up.
   (`[A-Za-z0-9_]{1,16}`) is a target, so nothing can aim it at `@a`.
   Nothing gives codes yet, so a player typing `!link` is told there's no
   code waiting. Not tried against a real server (A8h).
+- **My Minecraft accounts** (2026-11-25, third part of linking, A8f).
+  `/servers/:guildId/minecraft/accounts`, for any member, lists their
+  own links on that server's bridges with an Unlink button
+  (`deleteOwnLink`, only theirs), and gives a code for a bridge and
+  Minecraft name, shown once. A fourth access level, `member`, as
+  decision 0013's Consequences foresaw: the guard on `/servers/:guildId/*`
+  now lets in any member, each route requires its own right, and the
+  deny-by-default test also tries every server, bridges and owner route
+  as a member with no right. Worked out here: a code is answered with the
+  page rather than a redirect, as it's shown once, and needs no token, as
+  asking again only replaces the member's code for that name; one account
+  gets at most 5 codes per 10 minutes across servers, as `LinkCodes` caps
+  nothing (from the first part's review); both forms ask Discord afresh
+  (decision 0012); and the server list shows a server where the user is
+  only a member when it has a Minecraft server, linking this page alone.
+  Members in timeout can link, as it's about themselves; managing still
+  excludes them. A helper not yet updated posts a typed `!link` line to
+  Discord as chat, which shows the code there, but only that player can
+  use it, as the bot checks the code against the name typing it.
+  Choosing a linked name's picture comes next. Not tried against Discord
+  or a real server (A8h).
 
 ## Next up
 
@@ -880,9 +901,11 @@ them ahead of items 5 and 6.
    reaches a server's Minecraft pages, a list of its bridges, adding
    one, who may manage them, regenerating and removing one, its
    settings, pictures for particular players, members' links on a
-   bridge's page, the bot taking `!link` reports, and the helper
-   sending them (Done above). Next: linking (My Minecraft accounts,
-   `/minecraft link`) and `/minecraft avatar`.
+   bridge's page, the bot taking `!link` reports, the helper sending
+   them, and My Minecraft accounts (Done above). Next: choosing a linked
+   name's picture there (with previews), `/minecraft link`,
+   `/minecraft avatar`, and sending linked players' pictures to the
+   helper.
 3. **Collection tracker (`/collection`, `/collectionadmin`)**
    ([Track B](plans/minecraft-ff14-features.md#track-b-collection-tracker)).
    Per-server collections (FF14 mounts first), imported once from the
