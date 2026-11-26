@@ -1,6 +1,6 @@
 # 0013: A server's Minecraft pages are for its owner and the role they allow, each route checking its own right
 
-Status: Accepted · 2026-11-25
+Status: Accepted · 2026-11-25; superseded in part by [0014](0014-any-member-reaches-their-own-minecraft-accounts.md) (the guard admits any member, for My Minecraft accounts)
 
 ## Context
 
