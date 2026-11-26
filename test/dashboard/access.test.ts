@@ -227,6 +227,20 @@ describe('serversWithRights', () => {
 		]);
 	});
 
+	it('adds a server where the user is only a member when the caller picks it', async () => {
+		const access = serverAccess(
+			fakeClient([
+				fakeGuild('g1', 'Picked', { u1: false }),
+				fakeGuild('g2', 'Not picked', { u1: false }),
+				fakeGuild('g3', 'Picked, not a member'),
+			]),
+		);
+
+		await expect(access.serversWithRights('u1', (guildId) => guildId !== 'g2')).resolves.toEqual([
+			{ id: 'g1', name: 'Picked', manageServer: false, manageBridges: false, owner: false },
+		]);
+	});
+
 	it('leaves out from serversUserManages a server where the user manages only bridges', async () => {
 		const access = serverAccess(fakeClient([fakeGuild('g1', 'Alpha', { u1: false }, {}, { ownerId: 'u1' })]));
 

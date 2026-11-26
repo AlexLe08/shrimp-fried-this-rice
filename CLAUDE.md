@@ -92,14 +92,16 @@ the workflow, indexed in its `README.md`.
   `dashboard/` holds the web dashboard, served on `127.0.0.1` behind
   `cloudflared` (decisions 0008 and 0009). Every route it serves is
   listed in `ROUTE_ACCESS` (`src/dashboard/app.ts`) as public, signed-in,
-  server, bridges, owner or helper (the Minecraft helper's sealed routes under
+  server, bridges, owner, member or helper (the Minecraft helper's sealed routes under
   `/minecraft/`, `src/minecraft/helperRoutes.ts`), which a test checks; a page about one server goes under
-  `/servers/:guildId`, where the guard admits a member with a right there
+  `/servers/:guildId`, where the guard admits any member there
+  ([decision 0014](docs/decisions/0014-any-member-reaches-their-own-minecraft-accounts.md))
   before its handler runs, and the route itself requires its own:
   `requires('server')` (Manage Server), `requires('bridges')` (the
   server's owner or allowed role,
-  [decision 0013](docs/decisions/0013-bridge-pages-by-owner-or-allowed-role.md))
-  or `requires('owner')` (the owner alone). A route that changes something
+  [decision 0013](docs/decisions/0013-bridge-pages-by-owner-or-allowed-role.md)),
+  `requires('owner')` (the owner alone) or `requires('member')` (nothing
+  more: the member's own Minecraft accounts). A route that changes something
   checks the member afresh, not the 30 s answer (decision 0012):
   `rightsIn(…, { fresh: true })`, or pairing's own fetch
   (`minecraft/dashboardPairing.ts`).

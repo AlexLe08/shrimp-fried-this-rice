@@ -19,6 +19,7 @@ import {
 	visitorKey,
 } from './rateLimit.ts';
 import {
+	accountsPage,
 	addBridgePage,
 	bridgeSettingsPage,
 	homePage,
@@ -31,8 +32,10 @@ import {
 	rolePage,
 	serverPage,
 	serversPage,
+	type AccountsView,
 	type AddBridgeProblem,
 	type BridgeSettingsView,
+	type CodeProblem,
 	type RegenerateProblem,
 	type RoleChoice,
 	type SettingsValues,
@@ -47,14 +50,17 @@ import { bridgeSettings, checkPictureChange, checkSettingsChange } from '../mine
 import type { BridgePairing } from '../minecraft/dashboardPairing.ts';
 import { HelperHub, LEASE_MS, POLL_HOLD_MS } from '../minecraft/helperHub.ts';
 import { registerHelperRoutes } from '../minecraft/helperRoutes.ts';
-import { LinkCodes } from '../minecraft/linking.ts';
+import { isPlayerName } from '../minecraft/bridge/settings.ts';
+import { LINK_CODE_TTL_MS, LinkCodes } from '../minecraft/linking.ts';
 import {
 	MAX_BRIDGES_PER_GUILD,
 	MAX_PICTURES_PER_BRIDGE,
 	deleteLink,
+	deleteOwnLink,
 	getBridge,
 	getBridgeLinks,
 	getGuildBridges,
+	getMemberLinks,
 	getMinecraftGuildSettings,
 	getPlayerPictures,
 	setAllowedRole,
@@ -85,12 +91,13 @@ type Env = { Variables: { session: DashboardSession; server: ServerRights } };
 /**
  * Who may reach each route, which a test checks against the app's routes, so
  * a new route can't be added without saying (decision 0009: deny by default).
- * `signed-in` routes go through requireSession. `server` and `bridges` routes
- * are under /servers/:guildId, where requireServer checks the user has a right
- * in that server before any handler runs, then the route's own `requires`
- * checks the right it needs: Manage Server for `server` (decision 0012), the
- * server's owner or allowed role for `bridges` (decision 0013), the owner
- * alone for `owner`. `helper`
+ * `signed-in` routes go through requireSession. `server`, `bridges`, `owner`
+ * and `member` routes are under /servers/:guildId, where requireServer checks
+ * the user is a member of that server before any handler runs, then the
+ * route's own `requires` checks the right it needs: Manage Server for
+ * `server` (decision 0012), the server's owner or allowed role for `bridges`
+ * (decision 0013), the owner alone for `owner`, and nothing more for
+ * `member` (a member's own Minecraft accounts, decision 0014). `helper`
  * routes are the Minecraft helper's, which open only with a bridge's keys
  * (minecraft/helperRoutes.ts).
  */
@@ -115,10 +122,17 @@ export const ROUTE_ACCESS = {
 	'POST /servers/:guildId/minecraft/bridges/:bridgeId/regenerate': 'bridges',
 	'GET /servers/:guildId/minecraft/bridges/:bridgeId/remove': 'bridges',
 	'POST /servers/:guildId/minecraft/bridges/:bridgeId/remove': 'bridges',
+	'GET /servers/:guildId/minecraft/accounts': 'member',
+	'POST /servers/:guildId/minecraft/accounts/code': 'member',
+	'POST /servers/:guildId/minecraft/accounts/unlink': 'member',
 	'POST /minecraft/connect': 'helper',
 	'POST /minecraft/poll': 'helper',
 	'POST /minecraft/link': 'helper',
 } as const;
+
+/** Link codes one account may ask for per window: a few typos and retries, not a stream. */
+export const LINK_CODES_PER_WINDOW = 5;
+export const LINK_CODE_WINDOW_MS = 10 * 60_000;
 
 // Both __Host-: only this exact hostname can set them, so another site under
 // alexle.dev can't plant or overwrite one (decision 0009).
@@ -147,6 +161,9 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 	const visitorRequests = createRateLimiter(VISITOR_REQUESTS_PER_MINUTE, MINUTE_MS, now);
 	const visitorLogins = createRateLimiter(VISITOR_LOGINS_PER_WINDOW, VISITOR_LOGIN_WINDOW_MS, now);
 	const userRequests = createRateLimiter(USER_REQUESTS_PER_MINUTE, MINUTE_MS, now);
+	// Per account, across servers: each code is held for 10 minutes, and
+	// LinkCodes caps nothing itself.
+	const codeRequests = createRateLimiter(LINK_CODES_PER_WINDOW, LINK_CODE_WINDOW_MS, now);
 
 	const tooMany = (c: Context, waitMs: number, message: string) => {
 		c.header('Retry-After', String(Math.ceil(waitMs / 1000)));
@@ -263,22 +280,24 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 		return next();
 	};
 
-	// One answer, 404, whether the bot isn't in the server, the user isn't a
-	// member, or they can't manage it: none tells a visitor the server exists.
+	// One answer, 404, whether the bot isn't in the server or the user isn't a
+	// member: neither tells a visitor the server exists. Any member gets past,
+	// as My Minecraft accounts is theirs; each route then requires its right.
 	const requireServer: MiddlewareHandler<Env> = async (c, next) => {
 		const rights = access && (await access.rightsIn(c.req.param('guildId') ?? '', c.get('session').user_id));
-		if (!rights || !(rights.manageServer || rights.manageBridges)) return notFound(c);
+		if (!rights) return notFound(c);
 		c.set('server', rights);
 		return next();
 	};
 
 	// Each server route names the right it needs, after requireServer has
-	// found the user's rights; the same 404 for one they lack.
+	// found the user's rights; the same 404 for one they lack, as for a
+	// server they're not in. `member` needs no more than the guard's check.
 	const RIGHT_OF = { server: 'manageServer', bridges: 'manageBridges', owner: 'owner' } as const;
 	const requires =
-		(level: keyof typeof RIGHT_OF): MiddlewareHandler<Env> =>
+		(level: keyof typeof RIGHT_OF | 'member'): MiddlewareHandler<Env> =>
 		async (c, next) =>
-			c.get('server')[RIGHT_OF[level]] ? next() : notFound(c);
+			level === 'member' || c.get('server')[RIGHT_OF[level]] ? next() : notFound(c);
 
 	app.use('/servers', requireSession);
 	// The wildcard matches /servers/:guildId itself too, so one registration
@@ -286,8 +305,16 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 	app.use('/servers/:guildId/*', requireSession, requireServer);
 
 	app.get('/servers', async (c) => {
-		const servers = access ? await access.serversWithRights(c.get('session').user_id) : [];
-		return c.html(serversPage(servers));
+		// A plain member sees a server only where there's a Minecraft server to
+		// link. Read once, so the list and its links agree.
+		const withBridges = new Set(
+			[...(options.client?.guilds.cache.values() ?? [])]
+				.map((guild) => guild.id)
+				.filter((id) => getGuildBridges(id).length > 0),
+		);
+		const hasBridges = (guildId: string) => withBridges.has(guildId);
+		const servers = access ? await access.serversWithRights(c.get('session').user_id, hasBridges) : [];
+		return c.html(serversPage(servers.map((server) => ({ ...server, hasBridges: hasBridges(server.id) }))));
 	});
 
 	app.get('/servers/:guildId', requires('server'), (c) => {
@@ -595,6 +622,80 @@ export function createApp(options: AppOptions = { auth: null }): Hono<Env> {
 		const name = body['name'];
 		if (typeof name === 'string') deleteLink(bridge.id, name);
 		return c.redirect(`/servers/${server.id}/minecraft/bridges/${bridge.id}`, 303);
+	});
+
+	// My Minecraft accounts (decision 0007): any member's own links on this
+	// server's bridges, and codes to link more. Never anyone else's.
+	const accountsView = (server: ServerRights, userId: string, extra: Partial<AccountsView> = {}): AccountsView => {
+		const bridges = getGuildBridges(server.id).map((bridge) => ({ id: bridge.id, serverName: bridge.server_name }));
+		const serverNames = new Map(bridges.map((bridge) => [bridge.id, bridge.serverName]));
+		const links = getMemberLinks(server.id, userId).map((link) => ({
+			bridgeId: link.bridge_id,
+			serverName: serverNames.get(link.bridge_id) ?? '',
+			name: link.name,
+			linkedAt: link.linked_at,
+		}));
+		return { bridges, links, ...extra };
+	};
+	// The bridge a form names, if it's this server's.
+	const formBridge = (server: ServerRights, value: unknown) => {
+		const bridge = typeof value === 'string' ? getBridge(value) : undefined;
+		return bridge && bridge.guild_id === server.id ? bridge : undefined;
+	};
+
+	app.get('/servers/:guildId/minecraft/accounts', requires('member'), (c) =>
+		c.html(accountsPage(c.get('server'), accountsView(c.get('server'), c.get('session').user_id))),
+	);
+
+	// Answered with the page, not a redirect, as the code is shown once. No
+	// token: sending it again only replaces the member's code for that name,
+	// and the per-member limit (LinkCodes caps nothing itself) bounds how many.
+	app.post('/servers/:guildId/minecraft/accounts/code', requires('member'), smallForm, async (c) => {
+		const server = c.get('server');
+		const userId = c.get('session').user_id;
+		// A code changes what the bot will accept, so membership is asked afresh (decision 0012).
+		const fresh = access && (await access.rightsIn(server.id, userId, { fresh: true }));
+		if (!fresh) return notFound(c);
+		const body = await c.req.parseBody();
+		const values = {
+			bridge: typeof body['bridge'] === 'string' ? body['bridge'] : '',
+			name: typeof body['name'] === 'string' ? body['name'].trim() : '',
+		};
+		const refuse = (problem: CodeProblem, status: 400 | 429) =>
+			c.html(accountsPage(server, accountsView(server, userId, { form: { values, problem } })), status);
+		const bridge = formBridge(server, values.bridge);
+		if (!bridge) return refuse('bridge', 400);
+		if (!isPlayerName(values.name)) return refuse('name', 400);
+		const wait = codeRequests.take(userId);
+		if (wait > 0) {
+			c.header('Retry-After', String(Math.ceil(wait / 1000)));
+			return refuse('too-many', 429);
+		}
+		const code = linkCodes.issue(bridge.id, values.name, userId);
+		return c.html(
+			accountsPage(
+				server,
+				accountsView(server, userId, {
+					code: { code, player: values.name, serverName: bridge.server_name, minutes: LINK_CODE_TTL_MS / MINUTE_MS },
+				}),
+			),
+		);
+	});
+
+	// Only the member's own link: someone else's to that name is left alone.
+	// No token or page that asks first, as unlinking twice finds nothing and
+	// they can link again. Nothing goes to the helper, as nothing sends it
+	// linked players' pictures yet.
+	app.post('/servers/:guildId/minecraft/accounts/unlink', requires('member'), smallForm, async (c) => {
+		const server = c.get('server');
+		const userId = c.get('session').user_id;
+		const fresh = access && (await access.rightsIn(server.id, userId, { fresh: true }));
+		if (!fresh) return notFound(c);
+		const body = await c.req.parseBody();
+		const bridge = formBridge(server, body['bridge']);
+		const name = body['name'];
+		if (bridge && typeof name === 'string') deleteOwnLink(bridge.id, name, userId);
+		return c.redirect(`/servers/${server.id}/minecraft/accounts`, 303);
 	});
 
 	app.get('/servers/:guildId/minecraft/bridges/:bridgeId/regenerate', requires('bridges'), (c) => {

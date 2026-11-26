@@ -76,8 +76,12 @@ export interface ServerAccess {
 	 * (decision 0012), and keeps the new answer.
 	 */
 	rightsIn(guildId: string, userId: string, options?: { fresh?: boolean }): Promise<ServerRights | null>;
-	/** Every server the bot is in where the user has either right, by name. */
-	serversWithRights(userId: string): Promise<ServerRights[]>;
+	/**
+	 * Every server the bot is in where the user has either right, by name,
+	 * and those where they're only a member that `memberPagesIn` picks (one
+	 * with a Minecraft server, for My Minecraft accounts).
+	 */
+	serversWithRights(userId: string, memberPagesIn?: (guildId: string) => boolean): Promise<ServerRights[]>;
 }
 
 // How long an answer is reused. Each one costs a Discord call through the
@@ -159,8 +163,8 @@ export function serverAccess(client: DashboardClient, now: () => number = Date.n
 			return (await everyServer(userId, (rights) => rights.manageServer)).map(managed);
 		},
 		rightsIn,
-		serversWithRights(userId) {
-			return everyServer(userId, (rights) => rights.manageServer || rights.manageBridges);
+		serversWithRights(userId, memberPagesIn = () => false) {
+			return everyServer(userId, (rights) => rights.manageServer || rights.manageBridges || memberPagesIn(rights.id));
 		},
 	};
 }

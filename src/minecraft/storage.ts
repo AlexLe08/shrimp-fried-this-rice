@@ -364,6 +364,15 @@ export function deleteLink(bridgeId: string, name: string): boolean {
 	);
 }
 
+/** A member unlinking a name of theirs: someone else's link to it is left alone. */
+export function deleteOwnLink(bridgeId: string, name: string, userId: string): boolean {
+	return (
+		db
+			.prepare('DELETE FROM minecraft_links WHERE bridge_id = ? AND name_key = ? AND user_id = ?')
+			.run(bridgeId, playerNameKey(name), userId).changes > 0
+	);
+}
+
 /** Deletes a member's links on a server's bridges, for when they've left it. Returns how many. */
 export function deleteMemberLinks(guildId: string, userId: string): number {
 	return db
