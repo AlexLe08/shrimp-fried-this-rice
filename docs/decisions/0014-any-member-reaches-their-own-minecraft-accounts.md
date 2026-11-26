@@ -1,6 +1,6 @@
 # 0014: Any member reaches their own Minecraft accounts page; the server guard admits any member
 
-Status: Proposed · 2026-11-25
+Status: Accepted · 2026-11-26
 
 ## Context
 
@@ -27,7 +27,7 @@ Options weighed:
   space.
 - **A second guard for member routes only**: keeps the first guard's
   denial, at the cost of two guards under one prefix to keep in step.
-- **Proposed: the one guard admits any member, and every route requires
+- **Chosen: the one guard admits any member, and every route requires
   its own right, `member` needing nothing more.**
 
 ## Decision
@@ -40,7 +40,9 @@ right it needs in `ROUTE_ACCESS` and with `requires`: `server`,
 own links, unlinking them, and link codes. The server list shows a server
 where the user is only a member when it has a Minecraft server.
 
-**Why:** TODO(Alex)
+**Why:**
+
+Dashboard access by default should be a path of least resistance when possible. This also helps open things up for any future features that could be accessible to regular members. So ideally the management related features that are typically reserved for roles that would usually be a small number of folks are what get treated like edge case behavior instead of default page behavior.
 
 ## Consequences
 
